@@ -5,7 +5,7 @@ los cálculos de renta fija (liquidación T+2, días de devengamiento, pagos de 
 """
 from datetime import date, timedelta
 
-from storage.db import conectar, leer_metadato
+from admin_datos.db import conectar, leer_metadato
 
 BASE = "feriados"
 

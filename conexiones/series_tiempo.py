@@ -8,7 +8,7 @@ guardar en SERIES_CONOCIDAS con un nombre corto, para no tener que buscarlas cad
 from datetime import date, timedelta
 
 import config
-from clients.http import ErrorAPI, get_json
+from conexiones.http import ErrorAPI, get_json
 
 # Nombre corto -> id de la serie. Agregá acá las que uses seguido (los ids salen de buscar_series).
 SERIES_CONOCIDAS = {}

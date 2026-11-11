@@ -11,7 +11,7 @@ from datetime import datetime, timedelta, timezone
 import feedparser
 
 import config
-from clients.http import ErrorAPI, get_texto
+from conexiones.http import ErrorAPI, get_texto
 
 LARGO_RESUMEN = 280  # caracteres máximos del resumen de cada noticia
 

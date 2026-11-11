@@ -1,14 +1,14 @@
 """Herramientas de datos macro para el agente: lo que el modelo ve y puede usar.
 
-Toman los clients (bcra, series_tiempo) y presentan los datos en texto corto:
+Toman las conexiones (bcra, series_tiempo) y presentan los datos en texto corto:
 siempre con la fecha del último dato, y resumidos si la serie es larga,
 para gastar pocos tokens.
 """
 import math
 from datetime import date
 
-from clients import bcra, series_tiempo 
-from clients.http import ErrorAPI
+from conexiones import bcra, series_tiempo 
+from conexiones.http import ErrorAPI
 
 MAX_PUNTOS = 40      # si la serie tiene más valores, se resume
 PUNTOS_RESUMEN = 15  # cuántos de los últimos valores se muestran al resumir

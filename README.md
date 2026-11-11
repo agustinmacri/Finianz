@@ -62,12 +62,12 @@ Finianz/
 │   ├── noticias.py      # buscar_noticias, titulares_recientes
 │   ├── calendario.py    # consultar_feriados, calcular_dia_habil
 │   └── python_exec.py   # ejecutar_python, con acceso a los datos
-├── clients/             # acceso a fuentes externas, sin IA
+├── conexiones/             # acceso a fuentes externas, sin IA
 │   ├── http.py          # timeouts, reintentos y caché comunes
 │   ├── bcra.py          # API del BCRA (Principales Variables v4)
 │   ├── series_tiempo.py # API de Series de Tiempo de datos.gob.ar
 │   └── noticias.py      # Google News RSS y feeds de medios
-├── storage/             # bases de datos locales (SQLite, una por tema)
+├── admin_datos/             # bases de datos locales (SQLite, una por tema)
 │   ├── db.py            # tablas de cada base y conexión
 │   └── feriados.py      # consultas de feriados y días hábiles
 ├── ingesta/             # carga de datos en la base
@@ -83,7 +83,7 @@ Finianz/
     └── arquitectura-multiagente.md   # arquitectura completa y plan por fases
 ```
 
-Las capas están separadas a propósito: `clients/` e `ingesta/` no saben nada de IA, `tools/` no depende de LangGraph y `graph/` solo orquesta. Cambiar el modelo, el framework o una fuente de datos afecta a una sola capa.
+Las capas están separadas a propósito: `conexiones/` e `ingesta/` no saben nada de IA, `tools/` no depende de LangGraph y `graph/` solo orquesta. Cambiar el modelo, el framework o una fuente de datos afecta a una sola capa.
 
 ## Instalación
 

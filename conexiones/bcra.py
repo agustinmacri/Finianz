@@ -9,7 +9,7 @@ import unicodedata
 from datetime import date, timedelta
 
 import config
-from clients.http import ErrorAPI, get_json
+from conexiones.http import ErrorAPI, get_json
 
 
 def listar_variables() -> list[dict]:

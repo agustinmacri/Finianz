@@ -1,6 +1,6 @@
 """Herramienta local: ejecuta código Python para hacer cálculos.
 
-El código tiene acceso directo a los clients de datos (bcra, series_tiempo):
+El código tiene acceso directo a las conexiones de datos (bcra, series_tiempo):
 el modelo trae los datos desde el propio código en vez de copiarlos a mano.
 
 Corre en un proceso aparte con tiempo límite. Ojo: se ejecuta en TU máquina,
@@ -17,7 +17,7 @@ import config
 PREAMBULO = """\
 import math
 from datetime import date
-from clients import bcra, series_tiempo
+from conexiones import bcra, series_tiempo
 """
 
 DEFINICION = {
@@ -61,7 +61,7 @@ def ejecutar(codigo: str) -> str:
         f.write(PREAMBULO + codigo)
         ruta = f.name
 
-    # El proceso corre desde la carpeta del proyecto, para poder importar clients y config
+    # El proceso corre desde la carpeta del proyecto, para poder importar conexiones y config
     entorno = {**os.environ, "PYTHONPATH": str(config.BASE_DIR), "PYTHONIOENCODING": "utf-8"}
     try:
         res = subprocess.run(

@@ -39,7 +39,7 @@ MAX_ITERACIONES = _int("MAX_ITERACIONES", 15)
 CONFIRMAR_CODIGO = _bool("CONFIRMAR_CODIGO", True)
 
 # ---------------------------------------------------------------------------
-# Conexiones HTTP (las usa clients/http.py para todas las APIs)
+# Conexiones HTTP (las usa conexiones/http.py para todas las APIs)
 # ---------------------------------------------------------------------------
 HTTP_TIMEOUT = _int("HTTP_TIMEOUT", 15)          # segundos máximos de espera por pedido
 HTTP_REINTENTOS = _int("HTTP_REINTENTOS", 3)     # reintentos si la API falla momentáneamente

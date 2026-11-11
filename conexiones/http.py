@@ -1,6 +1,6 @@
 """Conexión HTTP común a todas las fuentes externas.
 
-Todos los clients (bcra.py, series_tiempo.py, noticias.py, ...) piden datos a través de
+Todas las conexiones (bcra.py, series_tiempo.py, noticias.py, ...) piden datos a través de
 get_json() o get_texto(). Así, el tiempo máximo de espera, los reintentos y la caché
 se resuelven una sola vez.
 """

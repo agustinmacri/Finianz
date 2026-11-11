@@ -11,7 +11,7 @@ calendarios/feriados_ajustes.toml.
 import sys
 
 from ingesta import feriados
-from storage.feriados import NOMBRES_CALENDARIO
+from admin_datos.feriados import NOMBRES_CALENDARIO
 
 
 def main():

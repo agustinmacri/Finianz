@@ -99,7 +99,7 @@ pedido → router → (macro ∥ noticias) → escenarios → (renta fija ∥ eq
 ## Historial
 
 - **11/11/2026:** arquitectura acordada; se decide arrancar por macro y noticias.
-- **11/11/2026:** capa de datos de noticias lista (`clients/noticias.py`, `tools/noticias.py`: `buscar_noticias`, `titulares_recientes`).
+- **11/11/2026:** capa de datos de noticias lista (`conexiones/noticias.py`, `tools/noticias.py`: `buscar_noticias`, `titulares_recientes`).
 - **11/11/2026:** agregados incorporados al plan por fases.
 - **11/11/2026:** REM de inflación encontrado en la API (variable 29); búsqueda del BCRA con sinónimos (REM/expectativas, inflación/precios); resultados con unidad y frecuencia.
 - **11/11/2026:** fase A, etapa 2: router + agentes macro y noticias en LangGraph. Cada agente es un subgrafo con su prompt y sus herramientas; la ruta "ambos" corre los dos en paralelo y un paso de síntesis los integra. Pendiente en fase A: calendario de eventos.
@@ -119,7 +119,7 @@ graph/
   builder.py    grafo principal
 prompts/        macro.md, noticias.md, router.md, sintesis.md, general.md
 tools/          HERRAMIENTAS_MACRO (datos + calendario + python), HERRAMIENTAS_NOTICIAS (noticias + calendario)
-storage/        db.py (una base SQLite por tema en datos/), feriados.py (consultas y días hábiles)
+admin_datos/        db.py (una base SQLite por tema en datos/), feriados.py (consultas y días hábiles)
 ingesta/        feriados.py (holidays + ajustes)
 datos/          feriados.db, publicaciones.db, cartera.db (no se suben a git)
 calendarios/    feriados_ajustes.toml
