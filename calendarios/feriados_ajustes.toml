@@ -22,3 +22,10 @@
 # accion = "agregar"
 # nombre = "Feriado con fines turísticos"
 # motivo = "Comunicado de BYMA del dd/mm/aaaa"
+
+[[ajuste]]
+fecha = 2026-07-10
+calendario = "BYMA"
+accion = "agregar"
+nombre = "Feriado con fines turísticos"
+motivo = "BYMA no operó. La librería holidays no lo incluye en BYMA."
