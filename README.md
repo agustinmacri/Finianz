@@ -83,7 +83,7 @@ Finianz/
     └── arquitectura-multiagente.md   # arquitectura completa y plan por fases
 ```
 
-Las capas están separadas a propósito: `conexiones/` e `carga_datos/` no saben nada de IA, `tools/` no depende de LangGraph y `graph/` solo orquesta. Cambiar el modelo, el framework o una fuente de datos afecta a una sola capa.
+Las capas están separadas a propósito: `conexiones/` y `carga_datos/` no saben nada de IA, `tools/` no depende de LangGraph y `graph/` solo orquesta. Cambiar el modelo, el framework o una fuente de datos afecta a una sola capa.
 
 ## Instalación
 
@@ -162,7 +162,7 @@ La herramienta `ejecutar_python` corre en tu computadora el código que escribe 
 El sistema se construye por fases. El detalle está en [`docs/arquitectura-multiagente.md`](docs/arquitectura-multiagente.md).
 
 - [ ] **Fase A** (en curso): router + agentes macro y noticias ✓; falta el calendario de eventos.
-- [ ] **Fase B:** base de datos local (✓ feriados), carga_datos, precios de mercado, cartera y registro de pronósticos.
+- [ ] **Fase B:** base de datos local (✓ feriados), carga de datos, precios de mercado, cartera y registro de pronósticos.
 - [ ] **Fase C:** calculadoras de bonos y agente de renta fija.
 - [ ] **Fase D:** agente de escenarios y estratega (retornos esperados, estrés, límites regulatorios).
 - [ ] **Fase E:** redactor de informes y revisión humana.

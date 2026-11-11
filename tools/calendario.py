@@ -5,7 +5,7 @@ la recargan solas desde la librería holidays (no hace falta internet).
 """
 from datetime import date, timedelta
 
-from carga_datos import feriados as ingesta_feriados
+from carga_datos import feriados as carga_feriados
 from admin_datos import feriados as db
 
 DIAS_SEMANA = ["lunes", "martes", "miércoles", "jueves", "viernes", "sábado", "domingo"]
@@ -15,7 +15,7 @@ def _preparar():
     """Carga los feriados si la base está vacía o si cambió el año y falta el año próximo."""
     rango = db.rango_cargado()
     if not rango or rango[1] < date.today().year + 1:
-        ingesta_feriados.cargar()
+        carga_feriados.cargar()
 
 
 def _fecha(texto: str | None, por_defecto: date) -> date:
