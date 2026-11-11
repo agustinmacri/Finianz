@@ -50,4 +50,41 @@ def titulares_recientes(horas: int = 24) -> str:
     try:
         resultados = noticias.titulares(horas=int(horas))
     except ErrorAPI as e:
-        return
+        return f"Error: {e}"
+    if not resultados:
+        return f"No hay titulares en las últimas {horas} horas."
+    return f"Titulares de economía y finanzas (últimas {horas} horas):\n" + _formatear(resultados)
+
+
+TITULARES_RECIENTES = {
+    "name": "titulares_recientes",
+    "description": (
+        "Devuelve los titulares más recientes de economía y finanzas de los medios configurados. "
+        "Usala para responder '¿qué pasó hoy?' o para armar un resumen del día, sin un tema específico."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "horas": {"type": "integer", "description": "Ventana en horas (por defecto 24)"},
+        },
+    },
+}
+
+
+# ---------------------------------------------------------------------------
+# Registro
+# ---------------------------------------------------------------------------
+HERRAMIENTAS = [
+    (BUSCAR_NOTICIAS, buscar_noticias),
+    (TITULARES_RECIENTES, titulares_recientes),
+]
+
+
+def _formatear(resultados: list[dict]) -> str:
+    lineas = []
+    for n in resultados:
+        fecha = n["fecha"].astimezone(HORA_ARGENTINA).strftime("%d/%m %H:%M") if n["fecha"] else "s/f"
+        lineas.append(f"- {fecha} | {n['medio']} | {n['titulo']}")
+        if n["resumen"]:
+            lineas.append(f"  {n['resumen']}")
+    return "\n".join(lineas)
