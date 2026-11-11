@@ -3,15 +3,18 @@
 Uso:
     python actualizar.py
 
-Hoy carga los feriados (datos/feriados.db) y el calendario del INDEC (datos/publicaciones.db).
-Más adelante va a sumar las demás ingestas (publicaciones de EE. UU., precios).
-Conviene correrlo después de actualizar la librería holidays o de editar
-calendarios/feriados_ajustes.toml, o de agregar un PDF del INDEC en calendarios/indec/.
+Hoy carga los feriados (datos/feriados.db) y el calendario de publicaciones
+(datos/publicaciones.db): las del INDEC desde sus PDF y las de EE. UU. desde FRED.
+Conviene correrlo después de actualizar la librería holidays, de editar
+calendarios/feriados_ajustes.toml o calendarios/publicaciones.toml, de agregar un PDF
+del INDEC en calendarios/indec/, y una vez por semana para traer las fechas nuevas de FRED.
 """
 import sys
 
-from carga_datos import catalogo, feriados, publicaciones_indec
+import config
+from carga_datos import catalogo, feriados, publicaciones_fred, publicaciones_indec
 from admin_datos.feriados import NOMBRES_CALENDARIO
+from conexiones.http import ErrorAPI
 
 
 def main():
@@ -37,6 +40,21 @@ def main():
     if indec["sin_encontrar"]:
         print(f"  No se encontraron en los PDF: {', '.join(indec['sin_encontrar'])} (revisá su 'patron' en el catálogo)")
     for aviso in indec["avisos"]:
+        print(f"  Aviso: {aviso}")
+
+    print("\nPublicaciones de EE. UU. (FRED):")
+    if not config.FRED_API_KEY:
+        print("  Se omitió: falta FRED_API_KEY en el .env (clave gratuita en https://fredaccount.stlouisfed.org/apikeys).")
+        return
+    try:
+        eeuu = publicaciones_fred.cargar()
+    except ErrorAPI as e:
+        print(f"  No se actualizaron (quedan las fechas de la carga anterior): {e}")
+        return
+    print(f"  {eeuu['total']} fechas del {eeuu['desde']} al {eeuu['hasta']}")
+    for codigo, datos in eeuu["por_codigo"].items():
+        print(f"  {codigo:<18} próxima: {datos['proxima'] or '(sin fecha)'}")
+    for aviso in eeuu["avisos"]:
         print(f"  Aviso: {aviso}")
 
 

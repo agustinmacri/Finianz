@@ -2,7 +2,8 @@
 
 Leen las bases locales (datos/feriados.db y datos/publicaciones.db). Si están vacías,
 las cargan solas: los feriados desde la librería holidays y las publicaciones del INDEC
-desde los PDF de calendarios/indec/ (no hace falta internet).
+desde los PDF de calendarios/indec/ (no hace falta internet). Las de EE. UU. (FRED)
+se cargan con `python actualizar.py`.
 """
 from datetime import date, timedelta
 
@@ -143,7 +144,7 @@ def consultar_publicaciones(desde: str | None = None, hasta: str | None = None, 
     if ERROR_CATALOGO:
         return f"Error en el catálogo de publicaciones: {ERROR_CATALOGO}"
     try:
-        if not db_pub.hay_datos():
+        if not db_pub.hay_datos(carga_indec.FUENTE):
             carga_indec.cargar()
         inicio = _fecha(desde, date.today())
         # Si se busca una publicación puntual ("¿cuándo sale el IPC?"), se mira medio año hacia adelante
@@ -164,14 +165,15 @@ def consultar_publicaciones(desde: str | None = None, hasta: str | None = None, 
 
     encabezado = f"Publicaciones entre {inicio} y {fin}" + (f" que coinciden con '{buscar}'" if buscar else "") + ":"
     texto = encabezado + "\n" + ("\n".join(lineas) if lineas else "(ninguna)")
-    return texto + _avisos_cobertura(fin, pais, buscar)
+    return texto + _avisos_cobertura(inicio, fin, pais, buscar)
 
 
-def _avisos_cobertura(fin: date, pais: str, buscar: str | None) -> str:
+def _avisos_cobertura(inicio: date, fin: date, pais: str, buscar: str | None) -> str:
     """Aclara qué fechas todavía no están cargadas, para no confundir 'no hay datos' con 'no hay publicación'."""
     avisos = []
+    cargados = db_pub.codigos_con_fechas(inicio)
     pendientes = [c for c, p in CATALOGO.items()
-                  if p["fuente"] != "indec_pdf" and (pais == "todos" or p["pais"] == pais)]
+                  if c not in cargados and (pais == "todos" or p["pais"] == pais)]
     if buscar:
         codigo = buscar.strip().upper().replace(" ", "_")
         if codigo in pendientes:
@@ -183,6 +185,9 @@ def _avisos_cobertura(fin: date, pais: str, buscar: str | None) -> str:
     rango = db_pub.rango_cargado("AR")
     if rango and fin.isoformat() > rango[1] and pais in ("todos", "AR"):
         avisos.append(f"El calendario del INDEC cargado llega hasta el {rango[1]}.")
+    rango = db_pub.rango_cargado("US")
+    if rango and fin.isoformat() > rango[1] and pais in ("todos", "US"):
+        avisos.append(f"Las fechas de EE. UU. cargadas llegan hasta el {rango[1]}.")
     return ("\n\nAclaración: " + " ".join(avisos)) if avisos else ""
 
 
@@ -191,6 +196,7 @@ CONSULTAR_PUBLICACIONES = {
     "description": (
         "Calendario de publicaciones económicas oficiales: qué datos salen y cuándo. "
         "Sin parámetros, muestra las de importancia alta y media de los próximos 14 días. "
+        "Las horas 'ET' son del este de EE. UU. "
         "Para saber cuándo sale un dato puntual, usá 'buscar' con su código: "
         + (", ".join(f"{c} ({p['nombre']})" for c, p in CATALOGO.items()) or "ver calendarios/publicaciones.toml") +
         ". También acepta palabras del título (ej.: 'construcción', 'supermercados')."

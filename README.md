@@ -13,7 +13,7 @@ Construido con [LangGraph](https://langchain-ai.github.io/langgraph/) y modelos 
 
 Los dos agentes consultan además un **calendario de feriados** de Argentina y EE. UU. (nacionales, bancos, BYMA, NYSE y bonos del Tesoro) desde 2016 hasta el año próximo, y calculan días hábiles por mercado (por ejemplo, la liquidación T+2).
 
-También consultan un **calendario de publicaciones** con las fechas de los datos oficiales que sigue el proyecto (IPC, EMAE, salarios, balanza de pagos y demás publicaciones del INDEC), para saber cuándo sale el próximo dato. Las de EE. UU., el BCRA y el Tesoro se suman en el próximo paso.
+También consultan un **calendario de publicaciones** con las fechas de los datos oficiales que sigue el proyecto (IPC, EMAE, salarios y balanza de pagos del INDEC; CPI, empleo, PCE, PBI y otras de EE. UU.), para saber cuándo sale el próximo dato. Las del BCRA, el Tesoro y la Fed se suman en el próximo paso.
 
 Un **router** decide qué agente responde cada pregunta. Si hacen falta los dos, corren en paralelo y sus respuestas se integran en una sola.
 
@@ -68,6 +68,7 @@ Finianz/
 │   ├── http.py          # timeouts, reintentos y caché comunes
 │   ├── bcra.py          # API del BCRA (Principales Variables v4)
 │   ├── series_tiempo.py # API de Series de Tiempo de datos.gob.ar
+│   ├── fred.py          # API de FRED (calendario de publicaciones de EE. UU.)
 │   └── noticias.py      # Google News RSS y feeds de medios
 ├── admin_datos/             # bases de datos locales (SQLite, una por tema)
 │   ├── db.py            # tablas de cada base y conexión
@@ -76,6 +77,7 @@ Finianz/
 ├── carga_datos/             # carga de datos en la base
 │   ├── feriados.py      # librería holidays + ajustes manuales
 │   ├── publicaciones_indec.py  # lector de los PDF del INDEC
+│   ├── publicaciones_fred.py   # fechas de EE. UU. desde FRED
 │   └── catalogo.py      # lectura del catálogo de publicaciones
 ├── datos/               # las bases (no se suben a git)
 │   ├── feriados.db
@@ -106,7 +108,7 @@ pip install -r requirements.txt
 cp .env.example .env
 ```
 
-Completá el `.env` con tu clave de Gemini, que se obtiene gratis en [Google AI Studio](https://aistudio.google.com/apikey).
+Completá el `.env` con tu clave de Gemini, que se obtiene gratis en [Google AI Studio](https://aistudio.google.com/apikey), y con la de FRED, también gratuita, en [FRED](https://fredaccount.stlouisfed.org/apikeys).
 
 > Ubicá el proyecto fuera de carpetas sincronizadas (OneDrive, Dropbox): la sincronización puede dañar archivos del entorno virtual.
 
@@ -115,6 +117,7 @@ Completá el `.env` con tu clave de Gemini, que se obtiene gratis en [Google AI 
 | Variable | Qué hace | Por defecto |
 |---|---|---|
 | `GEMINI_API_KEY` | Clave de la API de Gemini | (obligatoria) |
+| `FRED_API_KEY` | Clave de la API de FRED, para las fechas de publicaciones de EE. UU. | (sin ella, se omiten) |
 | `GEMINI_MODEL` | Modelo principal | `gemini-3.1-flash-lite` |
 | `GEMINI_MODELOS_RESPALDO` | Modelos a usar si el principal está saturado, separados por coma | (ninguno) |
 | `MAX_ITERACIONES` | Tope de vueltas modelo ↔ herramientas por pregunta | `15` |
@@ -122,7 +125,7 @@ Completá el `.env` con tu clave de Gemini, que se obtiene gratis en [Google AI 
 | `CACHE_MINUTOS` | Cuánto tiempo se reutiliza una respuesta de las APIs de datos | `60` |
 | `CACHE_NOTICIAS_MINUTOS` | Ídem para noticias | `15` |
 
-El `.env` contiene tu clave: nunca lo subas al repositorio (ya está en el `.gitignore`).
+El `.env` contiene tus claves: nunca lo subas al repositorio (ya está en el `.gitignore`).
 
 ## Uso
 
@@ -162,6 +165,8 @@ Los feriados salen de la librería [`holidays`](https://github.com/vacanza/holid
 
 Las fechas de publicación del INDEC salen de sus calendarios semestrales en PDF, guardados en `calendarios/indec/`. Cuando el INDEC publica el de un semestre nuevo (`indec.gob.ar/ftp/cuadros/publicaciones/calendario_<1|2>sem<año>.pdf`), copialo a esa carpeta y corré `python actualizar.py`. Si el INDEC actualiza un semestre, reemplazá el PDF viejo.
 
+Las fechas de EE. UU. salen de la API de FRED, que ya tiene programadas las publicaciones de los próximos meses. Conviene correr `python actualizar.py` una vez por semana para traer las nuevas. Las horas se informan en hora del este de EE. UU. (ET).
+
 Qué publicaciones se siguen y con qué importancia se define en `calendarios/publicaciones.toml`. Las del INDEC que no están en el catálogo también se guardan, con importancia baja.
 
 ## Seguridad
@@ -172,7 +177,7 @@ La herramienta `ejecutar_python` corre en tu computadora el código que escribe 
 
 El sistema se construye por fases. El detalle está en [`docs/arquitectura-multiagente.md`](docs/arquitectura-multiagente.md).
 
-- [ ] **Fase A** (en curso): router + agentes macro y noticias ✓; calendario de publicaciones del INDEC ✓; faltan las de EE. UU. (FRED), las manuales (BCRA, Tesoro, FOMC) y las de regla (ISM, recaudación).
+- [ ] **Fase A** (en curso): router + agentes macro y noticias ✓; calendario de publicaciones del INDEC ✓ y de EE. UU. (FRED) ✓; faltan las manuales (BCRA, Tesoro, FOMC) y las de regla (ISM, recaudación).
 - [ ] **Fase B:** bases de datos locales (✓ feriados, ✓ publicaciones), carga de datos, precios de mercado, cartera y registro de pronósticos.
 - [ ] **Fase C:** calculadoras de bonos y agente de renta fija.
 - [ ] **Fase D:** agente de escenarios y estratega (retornos esperados, estrés, límites regulatorios).

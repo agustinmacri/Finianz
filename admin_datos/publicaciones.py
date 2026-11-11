@@ -8,11 +8,15 @@ BASE = "publicaciones"
 NIVELES = {"alta": ("alta",), "media": ("alta", "media"), "baja": ("alta", "media", "baja")}
 
 
-def hay_datos() -> bool:
+def hay_datos(fuente: str | None = None) -> bool:
+    """¿Hay publicaciones cargadas? Con 'fuente', solo de esa fuente (indec_pdf, fred, ...)."""
     if not ruta(BASE).exists():
         return False
+    consulta, parametros = "SELECT 1 FROM publicaciones", ()
+    if fuente:
+        consulta, parametros = consulta + " WHERE fuente = ?", (fuente,)
     with conectar(BASE) as con:
-        return con.execute("SELECT 1 FROM publicaciones LIMIT 1").fetchone() is not None
+        return con.execute(consulta + " LIMIT 1", parametros).fetchone() is not None
 
 
 def entre(desde: date, hasta: date, pais: str | None = None, importancia: str = "media",
@@ -47,6 +51,15 @@ def rango_cargado(pais: str | None = None) -> tuple[str, str] | None:
     with conectar(BASE) as con:
         desde, hasta = con.execute(consulta, parametros).fetchone()
     return (desde, hasta) if desde else None
+
+
+def codigos_con_fechas(desde: date) -> set[str]:
+    """Códigos del catálogo que tienen alguna fecha cargada desde 'desde' en adelante."""
+    if not ruta(BASE).exists():
+        return set()
+    with conectar(BASE) as con:
+        return {f[0] for f in con.execute(
+            "SELECT DISTINCT codigo FROM publicaciones WHERE codigo IS NOT NULL AND fecha >= ?", (desde.isoformat(),))}
 
 
 def _coincide(fila: dict, texto: str) -> bool:

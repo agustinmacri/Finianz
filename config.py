@@ -46,7 +46,7 @@ HTTP_REINTENTOS = _int("HTTP_REINTENTOS", 3)     # reintentos si la API falla mo
 CACHE_MINUTOS = _int("CACHE_MINUTOS", 60)        # cuánto tiempo reutilizar una respuesta ya pedida
 
 # ---------------------------------------------------------------------------
-# APIs de datos (gratuitas, sin clave)
+# APIs de datos (gratuitas)
 # ---------------------------------------------------------------------------
 # BCRA – Principales Variables (reservas, tipo de cambio, tasas, CER, UVA...)
 BCRA_URL = os.getenv("BCRA_URL", "https://api.bcra.gob.ar/estadisticas/v4.0/Monetarias")
@@ -54,6 +54,11 @@ BCRA_URL = os.getenv("BCRA_URL", "https://api.bcra.gob.ar/estadisticas/v4.0/Mone
 # datos.gob.ar – Series de Tiempo (IPC INDEC, EMAE, salarios...)
 SERIES_TIEMPO_URL = os.getenv("SERIES_TIEMPO_URL", "https://apis.datos.gob.ar/series/api/series/")
 SERIES_BUSQUEDA_URL = os.getenv("SERIES_BUSQUEDA_URL", "https://apis.datos.gob.ar/series/api/search/")
+
+# FRED (Reserva Federal de St. Louis) – calendario de publicaciones de EE. UU.
+# Requiere una clave gratuita: FRED_API_KEY en el .env (https://fredaccount.stlouisfed.org/apikeys)
+FRED_API_KEY = os.getenv("FRED_API_KEY")
+FRED_URL = os.getenv("FRED_URL", "https://api.stlouisfed.org/fred")
 
 # ---------------------------------------------------------------------------
 # Noticias (fuentes gratuitas por RSS)

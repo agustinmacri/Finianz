@@ -35,6 +35,8 @@ def leer() -> list[dict]:
                 raise ErrorCatalogo(f"{donde}: {campo} '{p[campo]}' inválido. Opciones: {', '.join(opciones)}.")
         if p["fuente"] == "indec_pdf" and not p.get("patron"):
             raise ErrorCatalogo(f"{donde}: las publicaciones del INDEC necesitan 'patron'.")
+        if p["fuente"] == "fred" and not p.get("fred_release"):
+            raise ErrorCatalogo(f"{donde}: las publicaciones de FRED necesitan 'fred_release'.")
         if p["codigo"] in codigos:
             raise ErrorCatalogo(f"{donde}: el código '{p['codigo']}' está repetido.")
         codigos.add(p["codigo"])

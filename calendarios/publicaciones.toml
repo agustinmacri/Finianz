@@ -7,10 +7,12 @@
 #   organismo    quién la publica
 #   importancia  alta, media o baja (los agentes muestran por defecto alta y media)
 #   fuente       indec_pdf: calendario semestral del INDEC (calendarios/indec/)
-#                fred:      API de FRED (próximamente)
+#                fred:      API de FRED (necesita FRED_API_KEY en el .env)
 #                manual:    fechas cargadas a mano (próximamente)
 #                regla:     se calcula con días hábiles, ej. "primer día hábil del mes" (próximamente)
 #   patron       solo para indec_pdf: comienzo del título tal como aparece en el PDF
+#   fred_release solo para fred: nombre exacto de la publicación en FRED (fred.stlouisfed.org/releases)
+#   hora         opcional: hora habitual de publicación (ej.: "08:30 ET", hora del este de EE. UU.)
 #
 # Las publicaciones del INDEC que NO están en este catálogo también se guardan, con importancia baja.
 # Después de editar este archivo, corré:  python actualizar.py
@@ -123,6 +125,8 @@ pais = "US"
 organismo = "BLS"
 importancia = "alta"
 fuente = "fred"
+fred_release = "Consumer Price Index"
+hora = "08:30 ET"
 
 [[publicacion]]
 codigo = "EMPLEO_US"
@@ -131,6 +135,8 @@ pais = "US"
 organismo = "BLS"
 importancia = "alta"
 fuente = "fred"
+fred_release = "Employment Situation"
+hora = "08:30 ET"
 
 [[publicacion]]
 codigo = "PCE"
@@ -139,6 +145,8 @@ pais = "US"
 organismo = "BEA"
 importancia = "alta"
 fuente = "fred"
+fred_release = "Personal Income and Outlays"
+hora = "08:30 ET"
 
 [[publicacion]]
 codigo = "PBI_US"
@@ -147,6 +155,8 @@ pais = "US"
 organismo = "BEA"
 importancia = "alta"
 fuente = "fred"
+fred_release = "Gross Domestic Product"
+hora = "08:30 ET"
 
 [[publicacion]]
 codigo = "VENTAS_MINORISTAS"
@@ -155,6 +165,8 @@ pais = "US"
 organismo = "Census"
 importancia = "alta"
 fuente = "fred"
+fred_release = "Advance Monthly Sales for Retail and Food Services"
+hora = "08:30 ET"
 
 [[publicacion]]
 codigo = "FOMC"
@@ -171,6 +183,8 @@ pais = "US"
 organismo = "BLS"
 importancia = "media"
 fuente = "fred"
+fred_release = "Producer Price Index"
+hora = "08:30 ET"
 
 [[publicacion]]
 codigo = "JOLTS"
@@ -179,6 +193,8 @@ pais = "US"
 organismo = "BLS"
 importancia = "media"
 fuente = "fred"
+fred_release = "Job Openings and Labor Turnover Survey"
+hora = "10:00 ET"
 
 [[publicacion]]
 codigo = "MICHIGAN"
@@ -187,6 +203,8 @@ pais = "US"
 organismo = "U. de Michigan"
 importancia = "media"
 fuente = "fred"
+fred_release = "Surveys of Consumers"
+hora = "10:00 ET"
 
 [[publicacion]]
 codigo = "MINUTAS_FOMC"
@@ -219,3 +237,5 @@ pais = "US"
 organismo = "Fed"
 importancia = "media"
 fuente = "fred"
+fred_release = "G.17 Industrial Production and Capacity Utilization"
+hora = "09:15 ET"
