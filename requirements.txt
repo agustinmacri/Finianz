@@ -1,0 +1,11 @@
+# Orquestación de agentes (versiones fijas: este ecosistema cambia rápido)
+langgraph==1.2.20
+langchain-core==1.7.6
+langchain-google-genai==4.4.3
+
+# Datos y utilidades
+requests>=2.31
+feedparser>=6.0
+python-dotenv>=1.0
+pandas
+numpy
