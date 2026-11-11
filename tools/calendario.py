@@ -5,7 +5,7 @@ la recargan solas desde la librería holidays (no hace falta internet).
 """
 from datetime import date, timedelta
 
-from ingesta import feriados as ingesta_feriados
+from carga_datos import feriados as ingesta_feriados
 from admin_datos import feriados as db
 
 DIAS_SEMANA = ["lunes", "martes", "miércoles", "jueves", "viernes", "sábado", "domingo"]

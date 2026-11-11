@@ -27,7 +27,7 @@ No todo es un agente:
 
 - Buscar + analizar indicadores → **agente macro**.
 - Econometría + escenarios → **agente escenarios**.
-- Buscar empresas + leer balances → **proceso de ingesta** (no es un agente): cada balance se extrae una sola vez a datos estructurados.
+- Buscar empresas + leer balances → **proceso de carga_datos** (no es un agente): cada balance se extrae una sola vez a datos estructurados.
 - Calculadoras de bonos + rendimientos esperados de bonos → **agente renta fija**.
 
 ## Orquestación
@@ -86,11 +86,11 @@ pedido → router → (macro ∥ noticias) → escenarios → (renta fija ∥ eq
 ## Orden de construcción
 
 - **Fase A (en curso):** router + agente macro + agente noticias. Incluye la comparación con el REM (macro) y el calendario de eventos públicos (noticias).
-- **Fase B:** base de datos e ingesta + fuente de precios + tablas de cartera y de pronósticos.
+- **Fase B:** base de datos e carga_datos + fuente de precios + tablas de cartera y de pronósticos.
 - **Fase C:** calculadoras de bonos (validables contra Excel propio) + agente renta fija + vencimientos y cupones de la cartera.
 - **Fase D:** agente escenarios (contrato + REM + registro de pronósticos) → estratega con retornos esperados, estrés y límites regulatorios.
 - **Fase E:** redactor + revisión humana.
-- **Fase F:** equity (ingesta de balances, DCF, comparables).
+- **Fase F:** equity (carga_datos de balances, DCF, comparables).
 
 ## Pendientes técnicos (no urgentes)
 
@@ -120,7 +120,7 @@ graph/
 prompts/        macro.md, noticias.md, router.md, sintesis.md, general.md
 tools/          HERRAMIENTAS_MACRO (datos + calendario + python), HERRAMIENTAS_NOTICIAS (noticias + calendario)
 admin_datos/        db.py (una base SQLite por tema en datos/), feriados.py (consultas y días hábiles)
-ingesta/        feriados.py (holidays + ajustes)
+carga_datos/        feriados.py (holidays + ajustes)
 datos/          feriados.db, publicaciones.db, cartera.db (no se suben a git)
 calendarios/    feriados_ajustes.toml
 actualizar.py   recarga la base

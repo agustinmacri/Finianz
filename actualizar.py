@@ -10,7 +10,7 @@ calendarios/feriados_ajustes.toml.
 """
 import sys
 
-from ingesta import feriados
+from carga_datos import feriados
 from admin_datos.feriados import NOMBRES_CALENDARIO
 
 
