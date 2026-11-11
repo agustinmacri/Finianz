@@ -11,6 +11,8 @@ Construido con [LangGraph](https://langchain-ai.github.io/langgraph/) y modelos 
 | **Macro** | Busca y analiza indicadores: inflación, expectativas del REM, reservas, tipo de cambio, tasas, CER, UVA, actividad. Calcula acumulados, tasas reales y proyecciones. | API del BCRA, Series de Tiempo de datos.gob.ar |
 | **Noticias** | Busca noticias sobre un tema y resume los titulares del día, con su implicancia para el mercado. | Google News (RSS), feeds de Ámbito |
 
+Los dos agentes consultan además un **calendario de feriados** de Argentina y EE. UU. (nacionales, bancos, BYMA, NYSE y bonos del Tesoro) desde 2016 hasta el año próximo, y calculan días hábiles por mercado (por ejemplo, la liquidación T+2).
+
 Un **router** decide qué agente responde cada pregunta. Si hacen falta los dos, corren en paralelo y sus respuestas se integran en una sola.
 
 Ejemplos de preguntas:
@@ -45,6 +47,7 @@ Principios de diseño:
 ```
 Finianz/
 ├── main.py              # chat por terminal
+├── actualizar.py        # actualiza la base de datos local (hoy: feriados)
 ├── config.py            # configuración central (lee el .env)
 ├── graph/               # orquestación con LangGraph
 │   ├── builder.py       # grafo principal: router + agentes + responder
@@ -57,18 +60,30 @@ Finianz/
 ├── tools/               # lo que ven los agentes
 │   ├── datos_macro.py   # buscar_indicador, consultar_bcra, consultar_serie, inflacion_acumulada
 │   ├── noticias.py      # buscar_noticias, titulares_recientes
+│   ├── calendario.py    # consultar_feriados, calcular_dia_habil
 │   └── python_exec.py   # ejecutar_python, con acceso a los datos
 ├── clients/             # acceso a fuentes externas, sin IA
 │   ├── http.py          # timeouts, reintentos y caché comunes
 │   ├── bcra.py          # API del BCRA (Principales Variables v4)
 │   ├── series_tiempo.py # API de Series de Tiempo de datos.gob.ar
 │   └── noticias.py      # Google News RSS y feeds de medios
+├── storage/             # bases de datos locales (SQLite, una por tema)
+│   ├── db.py            # tablas de cada base y conexión
+│   └── feriados.py      # consultas de feriados y días hábiles
+├── ingesta/             # carga de datos en la base
+│   └── feriados.py      # librería holidays + ajustes manuales
+├── datos/               # las bases (no se suben a git)
+│   ├── feriados.db
+│   ├── publicaciones.db # próximamente
+│   └── cartera.db       # fase B
+├── calendarios/
+│   └── feriados_ajustes.toml   # correcciones manuales a los feriados
 ├── prompts/             # instrucciones de cada agente
 └── docs/
     └── arquitectura-multiagente.md   # arquitectura completa y plan por fases
 ```
 
-Las capas están separadas a propósito: `clients/` no sabe nada de IA, `tools/` no depende de LangGraph y `graph/` solo orquesta. Cambiar el modelo, el framework o una fuente de datos afecta a una sola capa.
+Las capas están separadas a propósito: `clients/` e `ingesta/` no saben nada de IA, `tools/` no depende de LangGraph y `graph/` solo orquesta. Cambiar el modelo, el framework o una fuente de datos afecta a una sola capa.
 
 ## Instalación
 
@@ -126,6 +141,18 @@ Comandos durante la conversación:
 | `reintentar` | Si hubo un error temporal del modelo, continúa desde el paso donde se cortó, sin repetir lo que ya se hizo |
 | `salir` | Termina |
 
+## Bases de datos locales y feriados
+
+```bash
+python actualizar.py
+```
+
+Crea o actualiza `datos/feriados.db` con los feriados de 2016 al año próximo. Los agentes la cargan solos la primera vez, pero conviene correrlo después de actualizar la librería `holidays` o de editar los ajustes. La base no se sube a git: se regenera en cualquier momento.
+
+Los feriados salen de la librería [`holidays`](https://github.com/vacanza/holidays). Para corregir un caso puntual (un feriado decretado que la librería todavía no tiene, o un día que el mercado operó), editá `calendarios/feriados_ajustes.toml` y volvé a correr `python actualizar.py`. Los ajustes tienen prioridad sobre la librería.
+
+> El calendario de BYMA de la librería empieza en 2026. Para años anteriores se usa el calendario nacional como aproximación, y las respuestas lo indican.
+
 ## Seguridad
 
 La herramienta `ejecutar_python` corre en tu computadora el código que escribe el agente. Con `CONFIRMAR_CODIGO=true`, te muestra el código y pide confirmación antes de ejecutarlo. Desactivalo solo cuando conozcas el tipo de código que genera.
@@ -135,7 +162,7 @@ La herramienta `ejecutar_python` corre en tu computadora el código que escribe 
 El sistema se construye por fases. El detalle está en [`docs/arquitectura-multiagente.md`](docs/arquitectura-multiagente.md).
 
 - [ ] **Fase A** (en curso): router + agentes macro y noticias ✓; falta el calendario de eventos.
-- [ ] **Fase B:** base de datos local, ingesta, precios de mercado, cartera y registro de pronósticos.
+- [ ] **Fase B:** base de datos local (✓ feriados), ingesta, precios de mercado, cartera y registro de pronósticos.
 - [ ] **Fase C:** calculadoras de bonos y agente de renta fija.
 - [ ] **Fase D:** agente de escenarios y estratega (retornos esperados, estrés, límites regulatorios).
 - [ ] **Fase E:** redactor de informes y revisión humana.

@@ -1,0 +1,24 @@
+# Correcciones manuales a los feriados que trae la librería holidays.
+#
+# Se aplican DESPUÉS de cargar la librería, así que tienen prioridad.
+# Después de editar este archivo, corré:  python actualizar.py
+#
+# Cada ajuste es un bloque [[ajuste]] con estos campos:
+#   fecha       AAAA-MM-DD, sin comillas
+#   calendario  AR, AR_BANCOS, BYMA, US, NYSE o US_BONOS
+#   accion      "agregar" (suma un feriado) o "quitar" (saca un feriado)
+#   nombre      nombre del feriado (obligatorio para "agregar")
+#   motivo      de dónde sale el dato: decreto, comunicado, etc. Sirve para recordar por qué está.
+#
+# Cuándo usarlo:
+#   - Se decretó un feriado que la librería todavía no tiene (hasta que salga una versión nueva).
+#   - La librería marca como cerrado un día en que el mercado operó, o al revés.
+#
+# Ejemplo (comentado, no se aplica):
+#
+# [[ajuste]]
+# fecha = 2026-12-07
+# calendario = "BYMA"
+# accion = "agregar"
+# nombre = "Feriado con fines turísticos"
+# motivo = "Comunicado de BYMA del dd/mm/aaaa"

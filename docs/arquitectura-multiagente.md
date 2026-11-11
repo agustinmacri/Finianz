@@ -1,6 +1,6 @@
 # Finianz – Arquitectura multiagente
 
-Acordada el 11/11/2026. Última actualización: 11/11/2026 (fase A, etapa 2).
+Acordada el 11/11/2026. Última actualización: 11/11/2026 (feriados y base local).
 
 ## Principio
 
@@ -104,6 +104,8 @@ pedido → router → (macro ∥ noticias) → escenarios → (renta fija ∥ eq
 - **11/11/2026:** REM de inflación encontrado en la API (variable 29); búsqueda del BCRA con sinónimos (REM/expectativas, inflación/precios); resultados con unidad y frecuencia.
 - **11/11/2026:** fase A, etapa 2: router + agentes macro y noticias en LangGraph. Cada agente es un subgrafo con su prompt y sus herramientas; la ruta "ambos" corre los dos en paralelo y un paso de síntesis los integra. Pendiente en fase A: calendario de eventos.
 
+- **11/11/2026:** bases de datos locales en `datos/`, un archivo por tema: `feriados.db`, `publicaciones.db` y `cartera.db` (reservada para la fase B; no regenerable, requiere respaldo). Primera base: feriados, librería `holidays` (Argentina, bancos, BYMA, EE. UU., NYSE, bonos de EE. UU.) desde 2016 hasta el año próximo, más ajustes manuales en `calendarios/feriados_ajustes.toml`. Se descartó ArgentinaDatos por ahora. Herramientas `consultar_feriados` y `calcular_dia_habil` para macro y noticias. El calendario de BYMA de la librería empieza en 2026; antes se aproxima con el nacional. En 2026, la librería excluye de BYMA los días con fines turísticos (23/3, 10/7, 7/12): pendiente de confirmar.
+
 ## Estructura del código (fase A)
 
 ```
@@ -116,5 +118,10 @@ graph/
   responder.py  respuesta final: informe directo, síntesis o respuesta general
   builder.py    grafo principal
 prompts/        macro.md, noticias.md, router.md, sintesis.md, general.md
-tools/          HERRAMIENTAS_MACRO (datos + python), HERRAMIENTAS_NOTICIAS
+tools/          HERRAMIENTAS_MACRO (datos + calendario + python), HERRAMIENTAS_NOTICIAS (noticias + calendario)
+storage/        db.py (una base SQLite por tema en datos/), feriados.py (consultas y días hábiles)
+ingesta/        feriados.py (holidays + ajustes)
+datos/          feriados.db, publicaciones.db, cartera.db (no se suben a git)
+calendarios/    feriados_ajustes.toml
+actualizar.py   recarga la base
 ```

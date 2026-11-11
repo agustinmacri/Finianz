@@ -72,6 +72,15 @@ FUENTES_RSS = {
 CACHE_NOTICIAS_MINUTOS = _int("CACHE_NOTICIAS_MINUTOS", 15)
 
 # ---------------------------------------------------------------------------
+# Base de datos local y calendarios
+# ---------------------------------------------------------------------------
+DATOS_DIR = BASE_DIR / "datos"               # bases SQLite (no se suben a git): feriados, publicaciones, cartera
+CALENDARIOS_DIR = BASE_DIR / "calendarios"   # sí se sube a git: correcciones manuales
+
+# Feriados: se cargan desde este año hasta el año próximo
+FERIADOS_DESDE = _int("FERIADOS_DESDE", 2016)
+
+# ---------------------------------------------------------------------------
 # Rutas
 # ---------------------------------------------------------------------------
 PROMPTS_DIR = BASE_DIR / "prompts"
