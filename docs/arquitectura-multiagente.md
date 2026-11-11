@@ -85,8 +85,8 @@ pedido → router → (macro ∥ noticias) → escenarios → (renta fija ∥ eq
 
 ## Orden de construcción
 
-- **Fase A (en curso):** router + agente macro + agente noticias. Incluye la comparación con el REM (macro) y el calendario de eventos públicos (noticias).
-- **Fase B:** base de datos y carga_datos + fuente de precios + tablas de cartera y de pronósticos.
+- **Fase A (en curso):** router + agente macro + agente noticias. Incluye la comparación con el REM (macro) y el calendario de eventos públicos: feriados ✓, publicaciones del INDEC ✓; faltan FRED (EE. UU.), las manuales (BCRA, Tesoro, FOMC) y las de regla (ISM, recaudación).
+- **Fase B:** base de datos y carga de datos + fuente de precios + tablas de cartera y de pronósticos.
 - **Fase C:** calculadoras de bonos (validables contra Excel propio) + agente renta fija + vencimientos y cupones de la cartera.
 - **Fase D:** agente escenarios (contrato + REM + registro de pronósticos) → estratega con retornos esperados, estrés y límites regulatorios.
 - **Fase E:** redactor + revisión humana.
@@ -105,6 +105,8 @@ pedido → router → (macro ∥ noticias) → escenarios → (renta fija ∥ eq
 - **11/11/2026:** fase A, etapa 2: router + agentes macro y noticias en LangGraph. Cada agente es un subgrafo con su prompt y sus herramientas; la ruta "ambos" corre los dos en paralelo y un paso de síntesis los integra. Pendiente en fase A: calendario de eventos.
 
 - **11/11/2026:** bases de datos locales en `datos/`, un archivo por tema: `feriados.db`, `publicaciones.db` y `cartera.db` (reservada para la fase B; no regenerable, requiere respaldo). Primera base: feriados, librería `holidays` (Argentina, bancos, BYMA, EE. UU., NYSE, bonos de EE. UU.) desde 2016 hasta el año próximo, más ajustes manuales en `calendarios/feriados_ajustes.toml`. Se descartó ArgentinaDatos por ahora. Herramientas `consultar_feriados` y `calcular_dia_habil` para macro y noticias. El calendario de BYMA de la librería empieza en 2026; antes se aproxima con el nacional. En 2026, la librería excluye de BYMA los días con fines turísticos (23/3, 10/7, 7/12): pendiente de confirmar.
+- **11/11/2026:** carpetas renombradas: `clients` → `conexiones`, `storage` → `admin_datos`, `ingesta` → `carga_datos`.
+- **11/11/2026:** catálogo de 24 publicaciones (`calendarios/publicaciones.toml`) con importancia y fuente: indec_pdf (IPC, EMAE, ICA, salarios, balanza de pagos), fred (CPI, empleo, PCE, PBI, ventas minoristas, PPI, JOLTS, Michigan, producción industrial), manual (REM, licitaciones, resultado fiscal, vencimientos de deuda en USD, informe monetario, FOMC, minutas) y regla (ISM manufacturero y de servicios, recaudación). Cargado el calendario del INDEC desde sus PDF semestrales (2.º sem. 2026 y 1.er sem. 2027): 351 publicaciones. Herramienta `consultar_publicaciones` para macro y noticias. El PDF del 1.er semestre 2027 tiene dos días de la semana mal (18/1 y 30/4): se usa la fecha. Pendiente: FRED (ya está la clave), manuales y reglas.
 
 ## Estructura del código (fase A)
 
@@ -119,9 +121,9 @@ graph/
   builder.py    grafo principal
 prompts/        macro.md, noticias.md, router.md, sintesis.md, general.md
 tools/          HERRAMIENTAS_MACRO (datos + calendario + python), HERRAMIENTAS_NOTICIAS (noticias + calendario)
-admin_datos/        db.py (una base SQLite por tema en datos/), feriados.py (consultas y días hábiles)
-carga_datos/        feriados.py (holidays + ajustes)
+admin_datos/        db.py (una base SQLite por tema en datos/), feriados.py (consultas y días hábiles), publicaciones.py
+carga_datos/        feriados.py (holidays + ajustes), publicaciones_indec.py (PDF del INDEC), catalogo.py
 datos/          feriados.db, publicaciones.db, cartera.db (no se suben a git)
-calendarios/    feriados_ajustes.toml
+calendarios/    feriados_ajustes.toml, publicaciones.toml (catálogo), indec/ (PDF semestrales)
 actualizar.py   recarga la base
 ```

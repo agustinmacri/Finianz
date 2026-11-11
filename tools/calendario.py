@@ -1,12 +1,16 @@
-"""Herramientas de calendario para los agentes: feriados y días hábiles.
+"""Herramientas de calendario para los agentes: feriados, días hábiles y publicaciones.
 
-Leen la base local (datos/feriados.db). Si la base está vacía o no cubre el año próximo,
-la recargan solas desde la librería holidays (no hace falta internet).
+Leen las bases locales (datos/feriados.db y datos/publicaciones.db). Si están vacías,
+las cargan solas: los feriados desde la librería holidays y las publicaciones del INDEC
+desde los PDF de calendarios/indec/ (no hace falta internet).
 """
 from datetime import date, timedelta
 
-from carga_datos import feriados as carga_feriados
 from admin_datos import feriados as db
+from admin_datos import publicaciones as db_pub
+from carga_datos import catalogo
+from carga_datos import feriados as carga_feriados
+from carga_datos import publicaciones_indec as carga_indec
 
 DIAS_SEMANA = ["lunes", "martes", "miércoles", "jueves", "viernes", "sábado", "domingo"]
 
@@ -124,9 +128,92 @@ CALCULAR_DIA_HABIL = {
 
 
 # ---------------------------------------------------------------------------
+# 3. Calendario de publicaciones
+# ---------------------------------------------------------------------------
+# Si el catálogo tiene un error, solo falla esta herramienta (con el mensaje), no todo el sistema
+try:
+    CATALOGO = {p["codigo"]: p for p in catalogo.leer()}
+    ERROR_CATALOGO = None
+except catalogo.ErrorCatalogo as e:
+    CATALOGO, ERROR_CATALOGO = {}, str(e)
+
+
+def consultar_publicaciones(desde: str | None = None, hasta: str | None = None, pais: str = "todos",
+                            importancia: str = "media", buscar: str | None = None) -> str:
+    if ERROR_CATALOGO:
+        return f"Error en el catálogo de publicaciones: {ERROR_CATALOGO}"
+    try:
+        if not db_pub.hay_datos():
+            carga_indec.cargar()
+        inicio = _fecha(desde, date.today())
+        # Si se busca una publicación puntual ("¿cuándo sale el IPC?"), se mira medio año hacia adelante
+        fin = _fecha(hasta, inicio + timedelta(days=180 if buscar else 14))
+        filas = db_pub.entre(inicio, fin, None if pais == "todos" else pais, importancia, buscar)
+    except (ValueError, KeyError) as e:
+        return f"Error: {e}"
+
+    if buscar and filas:
+        filas = [f for f in filas if f["codigo"] == filas[0]["codigo"] or not f["codigo"]][:3]
+    lineas = []
+    for f in filas:
+        nombre = CATALOGO[f["codigo"]]["nombre"] if f["codigo"] in CATALOGO else f["titulo"]
+        periodo = f": {f['periodo']}" if f["periodo"] and f["codigo"] else ""
+        hora = f" {f['hora']}" if f["hora"] else ""
+        lineas.append(f"- {_con_dia(date.fromisoformat(f['fecha']))}{hora} | {f['pais']} | {f['organismo']} | "
+                      f"{nombre}{periodo} [{f['importancia']}]")
+
+    encabezado = f"Publicaciones entre {inicio} y {fin}" + (f" que coinciden con '{buscar}'" if buscar else "") + ":"
+    texto = encabezado + "\n" + ("\n".join(lineas) if lineas else "(ninguna)")
+    return texto + _avisos_cobertura(fin, pais, buscar)
+
+
+def _avisos_cobertura(fin: date, pais: str, buscar: str | None) -> str:
+    """Aclara qué fechas todavía no están cargadas, para no confundir 'no hay datos' con 'no hay publicación'."""
+    avisos = []
+    pendientes = [c for c, p in CATALOGO.items()
+                  if p["fuente"] != "indec_pdf" and (pais == "todos" or p["pais"] == pais)]
+    if buscar:
+        codigo = buscar.strip().upper().replace(" ", "_")
+        if codigo in pendientes:
+            avisos.append(f"Todavía NO hay fechas cargadas de {CATALOGO[codigo]['nombre']}: "
+                          "que no aparezca no significa que no se publique.")
+    elif pendientes:
+        avisos.append(f"Todavía NO hay fechas cargadas de {len(pendientes)} publicaciones del catálogo "
+                      f"({', '.join(pendientes)}): que no aparezcan no significa que no se publiquen.")
+    rango = db_pub.rango_cargado("AR")
+    if rango and fin.isoformat() > rango[1] and pais in ("todos", "AR"):
+        avisos.append(f"El calendario del INDEC cargado llega hasta el {rango[1]}.")
+    return ("\n\nAclaración: " + " ".join(avisos)) if avisos else ""
+
+
+CONSULTAR_PUBLICACIONES = {
+    "name": "consultar_publicaciones",
+    "description": (
+        "Calendario de publicaciones económicas oficiales: qué datos salen y cuándo. "
+        "Sin parámetros, muestra las de importancia alta y media de los próximos 14 días. "
+        "Para saber cuándo sale un dato puntual, usá 'buscar' con su código: "
+        + (", ".join(f"{c} ({p['nombre']})" for c, p in CATALOGO.items()) or "ver calendarios/publicaciones.toml") +
+        ". También acepta palabras del título (ej.: 'construcción', 'supermercados')."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "desde": {"type": "string", "description": "Fecha inicial AAAA-MM-DD (por defecto, hoy)"},
+            "hasta": {"type": "string", "description": "Fecha final AAAA-MM-DD (por defecto, 14 días después; 180 si se usa 'buscar')"},
+            "pais": {"type": "string", "enum": ["todos", "AR", "US"], "description": "Filtrar por país (por defecto, todos)"},
+            "importancia": {"type": "string", "enum": ["alta", "media", "baja"],
+                            "description": "Nivel mínimo: alta, media (alta y media, por defecto) o baja (todas)"},
+            "buscar": {"type": "string", "description": "Código del catálogo (ej.: IPC) o palabras del título"},
+        },
+    },
+}
+
+
+# ---------------------------------------------------------------------------
 # Registro
 # ---------------------------------------------------------------------------
 HERRAMIENTAS = [
     (CONSULTAR_FERIADOS, consultar_feriados),
     (CALCULAR_DIA_HABIL, calcular_dia_habil),
+    (CONSULTAR_PUBLICACIONES, consultar_publicaciones),
 ]

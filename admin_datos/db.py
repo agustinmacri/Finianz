@@ -34,7 +34,22 @@ ESQUEMAS = {
         );
         CREATE INDEX IF NOT EXISTS idx_feriados_calendario ON feriados (calendario, fecha);
     """,
-    "publicaciones": "",   # fase A: calendario del INDEC, publicaciones de EE. UU., licitaciones
+    "publicaciones": """
+        CREATE TABLE IF NOT EXISTS publicaciones (
+            fecha        TEXT NOT NULL,   -- AAAA-MM-DD
+            hora         TEXT,            -- HH:MM, hora de Argentina (si se conoce)
+            pais         TEXT NOT NULL,   -- AR, US
+            organismo    TEXT NOT NULL,   -- INDEC, BCRA, BLS, BEA, Fed...
+            codigo       TEXT,            -- código del catálogo (IPC, CPI...); vacío si no se sigue
+            titulo       TEXT NOT NULL,   -- título tal como lo publica la fuente
+            periodo      TEXT,            -- período al que se refiere el dato ("Octubre de 2026")
+            importancia  TEXT NOT NULL,   -- alta, media o baja
+            fuente       TEXT NOT NULL,   -- indec_pdf, fred, manual o regla
+            PRIMARY KEY (fecha, organismo, titulo)
+        );
+        CREATE INDEX IF NOT EXISTS idx_publicaciones_fecha ON publicaciones (fecha, importancia);
+        CREATE INDEX IF NOT EXISTS idx_publicaciones_codigo ON publicaciones (codigo, fecha);
+    """,
     "cartera": "",         # fase B: posiciones, operaciones y registro de pronósticos
 }
 

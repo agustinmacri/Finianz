@@ -13,6 +13,8 @@ Construido con [LangGraph](https://langchain-ai.github.io/langgraph/) y modelos 
 
 Los dos agentes consultan además un **calendario de feriados** de Argentina y EE. UU. (nacionales, bancos, BYMA, NYSE y bonos del Tesoro) desde 2016 hasta el año próximo, y calculan días hábiles por mercado (por ejemplo, la liquidación T+2).
 
+También consultan un **calendario de publicaciones** con las fechas de los datos oficiales que sigue el proyecto (IPC, EMAE, salarios, balanza de pagos y demás publicaciones del INDEC), para saber cuándo sale el próximo dato. Las de EE. UU., el BCRA y el Tesoro se suman en el próximo paso.
+
 Un **router** decide qué agente responde cada pregunta. Si hacen falta los dos, corren en paralelo y sus respuestas se integran en una sola.
 
 Ejemplos de preguntas:
@@ -60,7 +62,7 @@ Finianz/
 ├── tools/               # lo que ven los agentes
 │   ├── datos_macro.py   # buscar_indicador, consultar_bcra, consultar_serie, inflacion_acumulada
 │   ├── noticias.py      # buscar_noticias, titulares_recientes
-│   ├── calendario.py    # consultar_feriados, calcular_dia_habil
+│   ├── calendario.py    # consultar_feriados, calcular_dia_habil, consultar_publicaciones
 │   └── python_exec.py   # ejecutar_python, con acceso a los datos
 ├── conexiones/             # acceso a fuentes externas, sin IA
 │   ├── http.py          # timeouts, reintentos y caché comunes
@@ -69,15 +71,20 @@ Finianz/
 │   └── noticias.py      # Google News RSS y feeds de medios
 ├── admin_datos/             # bases de datos locales (SQLite, una por tema)
 │   ├── db.py            # tablas de cada base y conexión
-│   └── feriados.py      # consultas de feriados y días hábiles
+│   ├── feriados.py      # consultas de feriados y días hábiles
+│   └── publicaciones.py # consultas del calendario de publicaciones
 ├── carga_datos/             # carga de datos en la base
-│   └── feriados.py      # librería holidays + ajustes manuales
+│   ├── feriados.py      # librería holidays + ajustes manuales
+│   ├── publicaciones_indec.py  # lector de los PDF del INDEC
+│   └── catalogo.py      # lectura del catálogo de publicaciones
 ├── datos/               # las bases (no se suben a git)
 │   ├── feriados.db
-│   ├── publicaciones.db # próximamente
+│   ├── publicaciones.db
 │   └── cartera.db       # fase B
 ├── calendarios/
-│   └── feriados_ajustes.toml   # correcciones manuales a los feriados
+│   ├── feriados_ajustes.toml   # correcciones manuales a los feriados
+│   ├── publicaciones.toml      # catálogo de publicaciones que se siguen, con su importancia
+│   └── indec/                  # calendarios semestrales del INDEC en PDF
 ├── prompts/             # instrucciones de cada agente
 └── docs/
     └── arquitectura-multiagente.md   # arquitectura completa y plan por fases
@@ -141,7 +148,7 @@ Comandos durante la conversación:
 | `reintentar` | Si hubo un error temporal del modelo, continúa desde el paso donde se cortó, sin repetir lo que ya se hizo |
 | `salir` | Termina |
 
-## Bases de datos locales y feriados
+## Bases de datos locales: feriados y publicaciones
 
 ```bash
 python actualizar.py
@@ -153,6 +160,10 @@ Los feriados salen de la librería [`holidays`](https://github.com/vacanza/holid
 
 > El calendario de BYMA de la librería empieza en 2026. Para años anteriores se usa el calendario nacional como aproximación, y las respuestas lo indican.
 
+Las fechas de publicación del INDEC salen de sus calendarios semestrales en PDF, guardados en `calendarios/indec/`. Cuando el INDEC publica el de un semestre nuevo (`indec.gob.ar/ftp/cuadros/publicaciones/calendario_<1|2>sem<año>.pdf`), copialo a esa carpeta y corré `python actualizar.py`. Si el INDEC actualiza un semestre, reemplazá el PDF viejo.
+
+Qué publicaciones se siguen y con qué importancia se define en `calendarios/publicaciones.toml`. Las del INDEC que no están en el catálogo también se guardan, con importancia baja.
+
 ## Seguridad
 
 La herramienta `ejecutar_python` corre en tu computadora el código que escribe el agente. Con `CONFIRMAR_CODIGO=true`, te muestra el código y pide confirmación antes de ejecutarlo. Desactivalo solo cuando conozcas el tipo de código que genera.
@@ -161,8 +172,8 @@ La herramienta `ejecutar_python` corre en tu computadora el código que escribe 
 
 El sistema se construye por fases. El detalle está en [`docs/arquitectura-multiagente.md`](docs/arquitectura-multiagente.md).
 
-- [ ] **Fase A** (en curso): router + agentes macro y noticias ✓; falta el calendario de eventos.
-- [ ] **Fase B:** base de datos local (✓ feriados), carga de datos, precios de mercado, cartera y registro de pronósticos.
+- [ ] **Fase A** (en curso): router + agentes macro y noticias ✓; calendario de publicaciones del INDEC ✓; faltan las de EE. UU. (FRED), las manuales (BCRA, Tesoro, FOMC) y las de regla (ISM, recaudación).
+- [ ] **Fase B:** bases de datos locales (✓ feriados, ✓ publicaciones), carga de datos, precios de mercado, cartera y registro de pronósticos.
 - [ ] **Fase C:** calculadoras de bonos y agente de renta fija.
 - [ ] **Fase D:** agente de escenarios y estratega (retornos esperados, estrés, límites regulatorios).
 - [ ] **Fase E:** redactor de informes y revisión humana.

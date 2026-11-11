@@ -1,0 +1,221 @@
+# Catálogo de publicaciones que sigue Finianz.
+#
+# Cada [[publicacion]] define una publicación con su importancia y de dónde sale su fecha:
+#   codigo       identificador corto, único (se usa para buscar: "¿cuándo sale el próximo IPC?")
+#   nombre       cómo se muestra
+#   pais         AR o US
+#   organismo    quién la publica
+#   importancia  alta, media o baja (los agentes muestran por defecto alta y media)
+#   fuente       indec_pdf: calendario semestral del INDEC (calendarios/indec/)
+#                fred:      API de FRED (próximamente)
+#                manual:    fechas cargadas a mano (próximamente)
+#                regla:     se calcula con días hábiles, ej. "primer día hábil del mes" (próximamente)
+#   patron       solo para indec_pdf: comienzo del título tal como aparece en el PDF
+#
+# Las publicaciones del INDEC que NO están en este catálogo también se guardan, con importancia baja.
+# Después de editar este archivo, corré:  python actualizar.py
+
+# ---------------------------------------------------------------------------
+# Argentina
+# ---------------------------------------------------------------------------
+
+[[publicacion]]
+codigo = "IPC"
+nombre = "IPC (inflación)"
+pais = "AR"
+organismo = "INDEC"
+importancia = "alta"
+fuente = "indec_pdf"
+patron = "Índice de precios al consumidor (IPC)"
+
+[[publicacion]]
+codigo = "REM"
+nombre = "REM (expectativas de mercado)"
+pais = "AR"
+organismo = "BCRA"
+importancia = "alta"
+fuente = "manual"
+
+[[publicacion]]
+codigo = "LICITACION"
+nombre = "Licitación del Tesoro"
+pais = "AR"
+organismo = "Secretaría de Finanzas"
+importancia = "alta"
+fuente = "manual"
+
+[[publicacion]]
+codigo = "RESULTADO_FISCAL"
+nombre = "Resultado fiscal"
+pais = "AR"
+organismo = "Ministerio de Economía"
+importancia = "alta"
+fuente = "manual"
+
+[[publicacion]]
+codigo = "VENC_DEUDA_USD"
+nombre = "Vencimientos de deuda en dólares"
+pais = "AR"
+organismo = "Ministerio de Economía"
+importancia = "alta"
+fuente = "manual"
+
+[[publicacion]]
+codigo = "EMAE"
+nombre = "EMAE (actividad)"
+pais = "AR"
+organismo = "INDEC"
+importancia = "media"
+fuente = "indec_pdf"
+patron = "Estimador mensual de actividad económica (EMAE)"
+
+[[publicacion]]
+codigo = "ICA"
+nombre = "Intercambio comercial"
+pais = "AR"
+organismo = "INDEC"
+importancia = "media"
+fuente = "indec_pdf"
+patron = "Intercambio comercial argentino (ICA)"
+
+[[publicacion]]
+codigo = "RECAUDACION"
+nombre = "Recaudación tributaria"
+pais = "AR"
+organismo = "ARCA"
+importancia = "media"
+fuente = "regla"
+
+[[publicacion]]
+codigo = "SALARIOS"
+nombre = "Índice de salarios"
+pais = "AR"
+organismo = "INDEC"
+importancia = "media"
+fuente = "indec_pdf"
+patron = "Índice de salarios"
+
+[[publicacion]]
+codigo = "BALANZA_PAGOS"
+nombre = "Balanza de pagos"
+pais = "AR"
+organismo = "INDEC"
+importancia = "media"
+fuente = "indec_pdf"
+patron = "Balanza de pagos"
+
+[[publicacion]]
+codigo = "INFORME_MONETARIO"
+nombre = "Informe monetario mensual"
+pais = "AR"
+organismo = "BCRA"
+importancia = "media"
+fuente = "manual"
+
+# ---------------------------------------------------------------------------
+# Estados Unidos
+# ---------------------------------------------------------------------------
+
+[[publicacion]]
+codigo = "CPI"
+nombre = "CPI (inflación)"
+pais = "US"
+organismo = "BLS"
+importancia = "alta"
+fuente = "fred"
+
+[[publicacion]]
+codigo = "EMPLEO_US"
+nombre = "Empleo (non-farm payrolls)"
+pais = "US"
+organismo = "BLS"
+importancia = "alta"
+fuente = "fred"
+
+[[publicacion]]
+codigo = "PCE"
+nombre = "PCE (ingresos y gastos personales)"
+pais = "US"
+organismo = "BEA"
+importancia = "alta"
+fuente = "fred"
+
+[[publicacion]]
+codigo = "PBI_US"
+nombre = "PBI de EE. UU."
+pais = "US"
+organismo = "BEA"
+importancia = "alta"
+fuente = "fred"
+
+[[publicacion]]
+codigo = "VENTAS_MINORISTAS"
+nombre = "Ventas minoristas"
+pais = "US"
+organismo = "Census"
+importancia = "alta"
+fuente = "fred"
+
+[[publicacion]]
+codigo = "FOMC"
+nombre = "FOMC (decisión de tasas)"
+pais = "US"
+organismo = "Fed"
+importancia = "alta"
+fuente = "manual"
+
+[[publicacion]]
+codigo = "PPI"
+nombre = "PPI (precios mayoristas)"
+pais = "US"
+organismo = "BLS"
+importancia = "media"
+fuente = "fred"
+
+[[publicacion]]
+codigo = "JOLTS"
+nombre = "JOLTS (vacantes laborales)"
+pais = "US"
+organismo = "BLS"
+importancia = "media"
+fuente = "fred"
+
+[[publicacion]]
+codigo = "MICHIGAN"
+nombre = "Confianza del consumidor (U. de Michigan)"
+pais = "US"
+organismo = "U. de Michigan"
+importancia = "media"
+fuente = "fred"
+
+[[publicacion]]
+codigo = "MINUTAS_FOMC"
+nombre = "Minutas del FOMC"
+pais = "US"
+organismo = "Fed"
+importancia = "media"
+fuente = "manual"
+
+[[publicacion]]
+codigo = "ISM_MANUF"
+nombre = "ISM manufacturero"
+pais = "US"
+organismo = "ISM"
+importancia = "media"
+fuente = "regla"
+
+[[publicacion]]
+codigo = "ISM_SERV"
+nombre = "ISM de servicios"
+pais = "US"
+organismo = "ISM"
+importancia = "media"
+fuente = "regla"
+
+[[publicacion]]
+codigo = "PROD_INDUSTRIAL"
+nombre = "Producción industrial"
+pais = "US"
+organismo = "Fed"
+importancia = "media"
+fuente = "fred"
