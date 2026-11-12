@@ -61,6 +61,7 @@ pedido → router → (macro ∥ noticias) → escenarios → (renta fija ∥ eq
 - **Precios de bonos y acciones:** requiere una fuente de mercado (pendiente).
 - **Balances locales:** CNV (Autopista de Información Financiera), generalmente en PDF → extracción.
 - **Comparables de otro país:** según el país elegido.
+- **EE. UU.:** API de FRED (clave gratuita): series y calendario de publicaciones.
 - **Noticias:** Google News RSS (no oficial) + feeds de medios (Ámbito Economía y Finanzas).
 - **Calendario:** feriados con la librería `holidays` + ajustes manuales; INDEC desde sus PDF semestrales; EE. UU. desde la API de FRED (clave gratuita, `FRED_API_KEY`). Pendientes: BCRA (REM, informe monetario), Secretaría de Finanzas (licitaciones), Ministerio de Economía (resultado fiscal, vencimientos), Fed (FOMC y minutas), ISM y recaudación.
 - **REM:** la API del BCRA (v4) solo publica la inflación esperada a 12 meses (variable 29, mediana). Tipo de cambio, tasas y PBI esperados: Excel mensual de tablas del REM (pendiente, fase D).
@@ -108,6 +109,7 @@ pedido → router → (macro ∥ noticias) → escenarios → (renta fija ∥ eq
 - **11/11/2026:** carpetas renombradas: `clients` → `conexiones`, `storage` → `admin_datos`, `ingesta` → `carga_datos`.
 - **11/11/2026:** catálogo de 24 publicaciones (`calendarios/publicaciones.toml`) con importancia y fuente: indec_pdf (IPC, EMAE, ICA, salarios, balanza de pagos), fred (CPI, empleo, PCE, PBI, ventas minoristas, PPI, JOLTS, Michigan, producción industrial), manual (REM, licitaciones, resultado fiscal, vencimientos de deuda en USD, informe monetario, FOMC, minutas) y regla (ISM manufacturero y de servicios, recaudación). Cargado el calendario del INDEC desde sus PDF semestrales (2.º sem. 2026 y 1.er sem. 2027): 351 publicaciones. Herramienta `consultar_publicaciones` para macro y noticias. El PDF del 1.er semestre 2027 tiene dos días de la semana mal (18/1 y 30/4): se usa la fecha.
 - **11/11/2026:** fechas de EE. UU. desde la API de FRED (`conexiones/fred.py`, `carga_datos/publicaciones_fred.py`): 9 publicaciones, identificadas en el catálogo por su nombre exacto en FRED (`fred_release`) y con su hora habitual en ET. Se cargan desde el 1/1 del año pasado, incluidas las futuras programadas (`include_release_dates_with_no_data=true`). Si FRED falla, la base queda como estaba. La herramienta avisa qué códigos del catálogo no tienen fechas cargadas. Pendiente: manuales (REM, licitaciones, FOMC, etc.) y reglas (ISM, recaudación).
+- **11/11/2026:** datos de EE. UU. para el agente macro: `consultar_fred` (serie con su último dato; las variaciones las calcula FRED con el parámetro `units`) y `buscar_serie_fred`. La descripción trae los ids más usados (CPI con y sin desestacionalizar, PCE, empleo, desempleo, PBI, tasa de la Fed, Tesoro a 2 y 10 años, etc.) para ahorrar búsquedas. `ejecutar_python` también puede usar `fred.obtener_serie`. Motivo: ante "¿cuál fue la última inflación de EE. UU.?", el agente tenía la fecha del próximo CPI pero no el dato, y usaba `ejecutar_python` para escribir un mensaje; el prompt ahora lo prohíbe.
 
 ## Estructura del código (fase A)
 

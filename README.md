@@ -8,7 +8,7 @@ Construido con [LangGraph](https://langchain-ai.github.io/langgraph/) y modelos 
 
 | Agente | Qué hace | Fuentes |
 |---|---|---|
-| **Macro** | Busca y analiza indicadores: inflación, expectativas del REM, reservas, tipo de cambio, tasas, CER, UVA, actividad. Calcula acumulados, tasas reales y proyecciones. | API del BCRA, Series de Tiempo de datos.gob.ar |
+| **Macro** | Busca y analiza indicadores: inflación, expectativas del REM, reservas, tipo de cambio, tasas, CER, UVA, actividad. De EE. UU.: CPI, PCE, empleo, PBI, tasa de la Fed, bonos del Tesoro. Calcula acumulados, tasas reales y proyecciones. | API del BCRA, Series de Tiempo de datos.gob.ar, FRED |
 | **Noticias** | Busca noticias sobre un tema y resume los titulares del día, con su implicancia para el mercado. | Google News (RSS), feeds de Ámbito |
 
 Los dos agentes consultan además un **calendario de feriados** de Argentina y EE. UU. (nacionales, bancos, BYMA, NYSE y bonos del Tesoro) desde 2016 hasta el año próximo, y calculan días hábiles por mercado (por ejemplo, la liquidación T+2).
@@ -21,6 +21,7 @@ Ejemplos de preguntas:
 
 - *¿Cuál fue la última inflación y qué espera el REM?*
 - *¿Cuánto da la inflación acumulada en el año?*
+- *¿Cuál fue el último dato de inflación en EE. UU. y cuándo sale el próximo?*
 - *¿Qué pasó hoy en el mercado?*
 - *¿Cómo viene la inflación y qué se dice de la próxima licitación?*
 
@@ -60,7 +61,8 @@ Finianz/
 │   ├── state.py         # estados del grafo
 │   └── errores.py       # errores temporales y reintentos
 ├── tools/               # lo que ven los agentes
-│   ├── datos_macro.py   # buscar_indicador, consultar_bcra, consultar_serie, inflacion_acumulada
+│   ├── datos_macro.py   # buscar_indicador, consultar_bcra, consultar_serie, inflacion_acumulada,
+│   │                    # consultar_fred, buscar_serie_fred
 │   ├── noticias.py      # buscar_noticias, titulares_recientes
 │   ├── calendario.py    # consultar_feriados, calcular_dia_habil, consultar_publicaciones
 │   └── python_exec.py   # ejecutar_python, con acceso a los datos
@@ -68,7 +70,7 @@ Finianz/
 │   ├── http.py          # timeouts, reintentos y caché comunes
 │   ├── bcra.py          # API del BCRA (Principales Variables v4)
 │   ├── series_tiempo.py # API de Series de Tiempo de datos.gob.ar
-│   ├── fred.py          # API de FRED (calendario de publicaciones de EE. UU.)
+│   ├── fred.py          # API de FRED (series y calendario de publicaciones de EE. UU.)
 │   └── noticias.py      # Google News RSS y feeds de medios
 ├── admin_datos/             # bases de datos locales (SQLite, una por tema)
 │   ├── db.py            # tablas de cada base y conexión
@@ -117,7 +119,7 @@ Completá el `.env` con tu clave de Gemini, que se obtiene gratis en [Google AI 
 | Variable | Qué hace | Por defecto |
 |---|---|---|
 | `GEMINI_API_KEY` | Clave de la API de Gemini | (obligatoria) |
-| `FRED_API_KEY` | Clave de la API de FRED, para las fechas de publicaciones de EE. UU. | (sin ella, se omiten) |
+| `FRED_API_KEY` | Clave de la API de FRED, para los datos y las fechas de publicación de EE. UU. | (sin ella, no hay datos de EE. UU.) |
 | `GEMINI_MODEL` | Modelo principal | `gemini-3.1-flash-lite` |
 | `GEMINI_MODELOS_RESPALDO` | Modelos a usar si el principal está saturado, separados por coma | (ninguno) |
 | `MAX_ITERACIONES` | Tope de vueltas modelo ↔ herramientas por pregunta | `15` |

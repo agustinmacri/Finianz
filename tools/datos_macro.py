@@ -1,13 +1,13 @@
 """Herramientas de datos macro para el agente: lo que el modelo ve y puede usar.
 
-Toman las conexiones (bcra, series_tiempo) y presentan los datos en texto corto:
+Toman las conexiones (bcra, series_tiempo y fred para EE. UU.) y presentan los datos en texto corto:
 siempre con la fecha del último dato, y resumidos si la serie es larga,
 para gastar pocos tokens.
 """
 import math
-from datetime import date
+from datetime import date, timedelta
 
-from conexiones import bcra, series_tiempo 
+from conexiones import bcra, fred, series_tiempo
 from conexiones.http import ErrorAPI
 
 MAX_PUNTOS = 40      # si la serie tiene más valores, se resume
@@ -187,6 +187,95 @@ INFLACION_ACUMULADA = {
 
 
 # ---------------------------------------------------------------------------
+# 5. Estados Unidos (FRED)
+# ---------------------------------------------------------------------------
+# Series más usadas: van en la descripción para que el modelo no tenga que buscarlas
+SERIES_EEUU = {
+    "CPIAUCSL": "CPI general, desestacionalizado (para la variación mensual)",
+    "CPIAUCNS": "CPI general, sin desestacionalizar (para la interanual, como la informa el BLS)",
+    "CPILFESL": "CPI núcleo, desestacionalizado (mensual)",
+    "CPILFENS": "CPI núcleo, sin desestacionalizar (interanual)",
+    "PCEPI": "PCE general",
+    "PCEPILFE": "PCE núcleo (el que mira la Fed)",
+    "PAYEMS": "empleo no agrícola, en miles de puestos",
+    "UNRATE": "tasa de desempleo",
+    "GDPC1": "PBI real (trimestral)",
+    "DFEDTARU": "techo del rango de la tasa de la Fed",
+    "DFEDTARL": "piso del rango de la tasa de la Fed",
+    "EFFR": "tasa efectiva de fondos federales (diaria)",
+    "DGS2": "rendimiento del Tesoro a 2 años",
+    "DGS10": "rendimiento del Tesoro a 10 años",
+    "RSAFS": "ventas minoristas",
+    "PPIFIS": "PPI demanda final",
+    "JTSJOL": "vacantes laborales (JOLTS)",
+    "UMCSENT": "confianza del consumidor (U. de Michigan)",
+    "INDPRO": "producción industrial",
+}
+_SUFIJO_MODO = {"valor": "", "variacion": "%", "variacion_interanual": "%", "variacion_anualizada": "%"}
+
+
+def consultar_fred(serie: str, modo: str = "valor", desde: str | None = None, hasta: str | None = None) -> str:
+    try:
+        info = fred.info_serie(serie)
+        datos = fred.obtener_serie(serie, desde or (date.today() - timedelta(days=730)).isoformat(), hasta, modo)
+    except (ErrorAPI, ValueError) as e:
+        return f"Error: {e}"
+    if not datos:
+        return f"FRED {info['id']}: sin datos en ese período."
+    unidad = info["unidad"] if modo == "valor" else f"{modo.replace('_', ' ')} en % (de: {info['unidad']})"
+    titulo = (f"FRED {info['id']} – {info['titulo']} | {unidad} | {info['frecuencia']} | {info['ajuste']} | "
+              f"actualizada {info['actualizada'][:10]}")
+    return _formatear(datos, titulo=titulo, sufijo=_SUFIJO_MODO[modo])
+
+
+CONSULTAR_FRED = {
+    "name": "consultar_fred",
+    "description": (
+        "Serie económica de EE. UU. desde FRED (Reserva Federal de St. Louis), con su último dato y fecha. "
+        "Las variaciones las calcula FRED: no hace falta calcularlas. Series más usadas: "
+        + "; ".join(f"{k}: {v}" for k, v in SERIES_EEUU.items())
+        + ". Para otras, usá buscar_serie_fred."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "serie": {"type": "string", "description": "Id de la serie en FRED, ej.: CPIAUCSL"},
+            "modo": {"type": "string", "enum": list(fred.UNIDADES),
+                     "description": "valor (nivel), variacion (% contra el período anterior), variacion_interanual "
+                                    "(% contra un año antes) o variacion_anualizada (% anualizado, como se informa el PBI)"},
+            "desde": {"type": "string", "description": "Fecha inicial AAAA-MM-DD (por defecto, dos años atrás)"},
+            "hasta": {"type": "string", "description": "Fecha final AAAA-MM-DD (opcional)"},
+        },
+        "required": ["serie"],
+    },
+}
+
+
+def buscar_serie_fred(texto: str) -> str:
+    try:
+        series = fred.buscar_series(texto)
+    except ErrorAPI as e:
+        return f"Error: {e}"
+    if not series:
+        return f"No se encontraron series en FRED para '{texto}'. Probá con otras palabras, en inglés."
+    return "FRED (usar consultar_fred con el id), las más consultadas primero:\n" + "\n".join(
+        f"  id={s['id']} | {s['titulo']} | {s['unidad']} | {s['frecuencia']} {s['ajuste']} | datos hasta {s['hasta']}"
+        for s in series)
+
+
+BUSCAR_SERIE_FRED = {
+    "name": "buscar_serie_fred",
+    "description": "Busca series de EE. UU. (y de otros países) en FRED por palabras en inglés, ej.: 'housing starts', "
+                   "'consumer credit'. Para las series más usadas no hace falta: ya están en consultar_fred.",
+    "parameters": {
+        "type": "object",
+        "properties": {"texto": {"type": "string", "description": "Palabras clave en inglés"}},
+        "required": ["texto"],
+    },
+}
+
+
+# ---------------------------------------------------------------------------
 # Registro: (definición, función) de cada herramienta de este archivo
 # ---------------------------------------------------------------------------
 HERRAMIENTAS = [
@@ -194,6 +283,8 @@ HERRAMIENTAS = [
     (CONSULTAR_BCRA, consultar_bcra),
     (CONSULTAR_SERIE, consultar_serie),
     (INFLACION_ACUMULADA, inflacion_acumulada),
+    (CONSULTAR_FRED, consultar_fred),
+    (BUSCAR_SERIE_FRED, buscar_serie_fred),
 ]
 
 

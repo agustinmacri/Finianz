@@ -1,6 +1,6 @@
 """Herramienta local: ejecuta código Python para hacer cálculos.
 
-El código tiene acceso directo a las conexiones de datos (bcra, series_tiempo):
+El código tiene acceso directo a las conexiones de datos (bcra, series_tiempo, fred):
 el modelo trae los datos desde el propio código en vez de copiarlos a mano.
 
 Corre en un proceso aparte con tiempo límite. Ojo: se ejecuta en TU máquina,
@@ -17,13 +17,14 @@ import config
 PREAMBULO = """\
 import math
 from datetime import date
-from conexiones import bcra, series_tiempo
+from conexiones import bcra, fred, series_tiempo
 """
 
 DEFINICION = {
     "name": "ejecutar_python",
     "description": (
-        "Ejecuta código Python y devuelve lo que imprime con print(). Usalo para cualquier cálculo. "
+        "Ejecuta código Python y devuelve lo que imprime con print(). Usalo solo para calcular: "
+        "nunca para escribir mensajes, razonar o avisar que falta un dato. "
         "Ya están importados math, date y estas funciones de datos, que devuelven listas "
         "[{'fecha': 'AAAA-MM-DD', 'valor': ...}] ordenadas de la más vieja a la más nueva:\n"
         "- bcra.buscar_variables(texto): variables del BCRA, con 'id', 'descripcion', 'ultima_fecha', 'ultimo_valor'.\n"
@@ -32,6 +33,9 @@ DEFINICION = {
         "- series_tiempo.obtener_serie(id_serie, desde=None, hasta=None, modo='valor'): serie de datos.gob.ar. "
         "modo: 'valor', 'variacion', 'variacion_interanual' o 'variacion_acumulada_anio'; "
         "las variaciones vienen como fracción (0.021 = 2,1%).\n"
+        "- fred.obtener_serie(id_serie, desde=None, hasta=None, modo='valor'): serie de EE. UU. desde FRED "
+        "(ej.: 'CPIAUCSL'). modo: 'valor', 'variacion', 'variacion_interanual' o 'variacion_anualizada'; "
+        "las variaciones vienen en porcentaje (0.3 = 0,3%).\n"
         "Fechas en formato 'AAAA-MM-DD'; sin fechas traen el último año. "
         "Traé siempre los datos con estas funciones: nunca escribas números copiados a mano. "
         "Imprimí los datos usados (fecha y valor) además del resultado. "
