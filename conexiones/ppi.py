@@ -84,16 +84,6 @@ def historico(ticker: str, tipo: str, desde: str | None = None, hasta: str | Non
                                         "settlement": plazo or config.PPI_PLAZO}) or []
 
 
-def estimar_bono(ticker: str, precio: float, cantidad: float = 100, fecha: str | None = None) -> dict | list:
-    """Calculadora de bonos de PPI: TIR, duration modificada, paridad, valor técnico y flujos.
-
-    precio: precio por cada 100 de valor nominal; cantidad: valor nominal (100 por defecto).
-    """
-    return _pedir("MarketData/Bonds/Estimate", {
-        "ticker": ticker.upper(), "date": fecha or date.today().isoformat(), "quantityType": "PAPELES",
-        "quantity": cantidad, "price": precio})
-
-
 def configuracion(tema: str) -> list:
     """Listas de referencia de PPI: InstrumentTypes, Settlements o Markets."""
     return _pedir(f"Configuration/{tema}", {}, cache_minutos=24 * 60)
@@ -118,11 +108,10 @@ def _diagnostico(ticker: str):
     mostrar("Plazos", lambda: configuracion("Settlements"))
     encontrados = mostrar(f"Buscar {ticker}", lambda: buscar_instrumento(ticker))
     tipo = encontrados[0]["type"] if encontrados else "BONOS"
-    actual = mostrar(f"Precio actual de {ticker} ({tipo})", lambda: precio_actual(ticker, tipo))
+    mostrar(f"Precio actual de {ticker} ({tipo})", lambda: precio_actual(ticker, tipo))
     mostrar(f"Histórico de {ticker}, últimos 10 días",
             lambda: historico(ticker, tipo, (date.today() - timedelta(days=10)).isoformat()))
-    if tipo.upper() in ("BONOS", "LETRAS", "ON", "OBLIGACIONES NEGOCIABLES") and actual and actual.get("price"):
-        mostrar(f"Calculadora de bonos para {ticker} a {actual['price']}", lambda: estimar_bono(ticker, actual["price"]))
+    
 
 
 if __name__ == "__main__":

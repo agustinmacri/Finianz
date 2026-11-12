@@ -5,7 +5,8 @@ Uso:
 
 Hoy carga los feriados (datos/feriados.db) y el calendario de publicaciones
 (datos/publicaciones.db): las del INDEC desde sus PDF, las que siguen una regla de días
-hábiles (ISM, recaudación) y las de EE. UU. desde FRED.
+hábiles (ISM, recaudación) y las de EE. UU. desde FRED. También suma los cierres nuevos
+de los activos seguidos a la base de precios (datos/precios.db).
 Conviene correrlo después de actualizar la librería holidays, de editar
 calendarios/feriados_ajustes.toml o calendarios/publicaciones.toml, de agregar un PDF
 del INDEC en calendarios/indec/, y una vez por semana para traer las fechas nuevas de FRED.
@@ -13,10 +14,10 @@ del INDEC en calendarios/indec/, y una vez por semana para traer las fechas nuev
 import sys
 
 import config
-from carga_datos import catalogo, feriados, publicaciones_fred, publicaciones_indec, publicaciones_regla
+from carga_datos import catalogo, feriados, precios, publicaciones_fred, publicaciones_indec, publicaciones_regla
 from admin_datos.feriados import NOMBRES_CALENDARIO
 from conexiones.http import ErrorAPI
-from carga_datos import catalogo, feriados, precios, publicaciones_fred, publicaciones_indec, publicaciones_regla
+
 
 def main():
     try:
@@ -53,7 +54,7 @@ def main():
 
 
 def _publicaciones_fred():
-      print("\nPublicaciones de EE. UU. (FRED):")
+    print("\nPublicaciones de EE. UU. (FRED):")
     if not config.FRED_API_KEY:
         print("  Se omitió: falta FRED_API_KEY en el .env (clave gratuita en https://fredaccount.stlouisfed.org/apikeys).")
         return
@@ -68,16 +69,18 @@ def _publicaciones_fred():
     for aviso in eeuu["avisos"]:
         print(f"  Aviso: {aviso}")
 
-  def _precios():
-      print("\nPrecios de los activos seguidos (PPI):")
-      if not (config.PPI_API_KEY and config.PPI_API_SECRET):
-          print("  Se omitió: faltan PPI_API_KEY y PPI_API_SECRET en el .env.")
-          return
-      resultado = precios.actualizar_todos()
-      if not resultado:
-          print("  Todavía no hay activos seguidos: se agregan solos la primera vez que consultás uno.")
-      for ticker, nuevos in resultado.items():
-          print(f"  {ticker:<10} {nuevos if isinstance(nuevos, str) else f'{nuevos} cierres nuevos'}")
+
+def _precios():
+    print("\nPrecios de los activos seguidos (PPI):")
+    if not (config.PPI_API_KEY and config.PPI_API_SECRET):
+        print("  Se omitió: faltan PPI_API_KEY y PPI_API_SECRET en el .env.")
+        return
+    resultado = precios.actualizar_todos()
+    if not resultado:
+        print("  Todavía no hay activos seguidos: se agregan solos la primera vez que consultás uno.")
+    for ticker, nuevos in resultado.items():
+        print(f"  {ticker:<10} {nuevos if isinstance(nuevos, str) else f'{nuevos} cierres nuevos'}")
+
 
 if __name__ == "__main__":
     main()
