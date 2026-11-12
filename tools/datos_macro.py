@@ -147,25 +147,37 @@ CONSULTAR_SERIE = {
 # ---------------------------------------------------------------------------
 # 4. Inflación acumulada (calculada en código, no por el modelo)
 # ---------------------------------------------------------------------------
+def _inflacion_mensual(desde: str, hasta: str) -> list[dict]:
+    """Serie de inflación mensual del BCRA (en %, 2.1 = 2,1%). Lanza ErrorAPI si no la encuentra."""
+    candidatas = [v for v in bcra.buscar_variables("inflacion mensual")
+                  if "inflacion mensual" in bcra.normalizar(v["descripcion"])]
+    if not candidatas:
+        raise ErrorAPI("no se encontró la variable de inflación mensual en el BCRA.")
+    serie = bcra.obtener_serie(candidatas[0]["id"], desde, hasta)
+    if not serie:
+        raise ErrorAPI(f"el BCRA no tiene inflación mensual entre {desde} y {hasta}.")
+    return serie
+
+
 def inflacion_acumulada(desde: str | None = None, hasta: str | None = None) -> str:
     try:
-        candidatas = [v for v in bcra.buscar_variables("inflacion mensual")
-                      if "inflacion mensual" in bcra.normalizar(v["descripcion"])]
-        if not candidatas:
-            return "Error: no se encontró la variable de inflación mensual en el BCRA."
         hoy = date.today()
-        desde = desde or f"{hoy.year}-01-01"
-        serie = bcra.obtener_serie(candidatas[0]["id"], desde, hasta or hoy.isoformat())
+        serie = _inflacion_mensual(desde or f"{hoy.year}-01-01", hasta or hoy.isoformat())
     except ErrorAPI as e:
         return f"Error: {e}"
 
     acumulado = (math.prod(1 + d["valor"] / 100 for d in serie) - 1) * 100
+    n = len(serie)
+    # Anualización del período: ((1 + acumulada)^(12/n) − 1). Con 12 meses o más, no hace falta.
+    anualizada = ((1 + acumulado / 100) ** (12 / n) - 1) * 100
     meses = "\n".join(f"{d['fecha'][:7]}: {_num(d['valor'])}%" for d in serie)
     return (
         f"Inflación mensual (BCRA) desde {serie[0]['fecha'][:7]} hasta {serie[-1]['fecha'][:7]} "
-        f"({len(serie)} meses):\n{meses}\n"
+        f"({n} meses):\n{meses}\n"
         f"INFLACIÓN ACUMULADA (compuesta): {acumulado:.2f}%\n"
-        f"ÚLTIMO DATO DISPONIBLE: {serie[-1]['fecha'][:7]}"
+        + (f"ANUALIZADA (si el ritmo promedio de estos {n} meses se mantuviera un año, (1 + acumulada)^(12/{n}) − 1): "
+           f"{anualizada:.1f}%\n" if n < 12 else "")
+        + f"ÚLTIMO DATO DISPONIBLE: {serie[-1]['fecha'][:7]}"
     )
 
 
@@ -173,14 +185,58 @@ INFLACION_ACUMULADA = {
     "name": "inflacion_acumulada",
     "description": (
         "Calcula la inflación acumulada (compuesta) entre dos fechas con los datos mensuales del BCRA, "
-        "y devuelve también la inflación de cada mes. Sin fechas, calcula lo que va del año. "
-        "Usala para cualquier pregunta de inflación acumulada, en el año o en un período."
+        "y devuelve también la inflación de cada mes y la acumulada anualizada (si el período tiene menos de 12 meses). "
+        "Sin fechas, calcula lo que va del año. Usala para cualquier pregunta de inflación acumulada, en el año o en un "
+        "período, y para anualizar esa acumulada."
     ),
     "parameters": {
         "type": "object",
         "properties": {
             "desde": {"type": "string", "description": "Fecha inicial AAAA-MM-DD (opcional; por defecto, 1 de enero de este año)"},
             "hasta": {"type": "string", "description": "Fecha final AAAA-MM-DD (opcional; por defecto, hoy)"},
+        },
+    },
+}
+
+
+# ---------------------------------------------------------------------------
+# 4 bis. Inflación anualizada (el ritmo mensual llevado a un año)
+# ---------------------------------------------------------------------------
+def inflacion_anualizada(hasta: str | None = None) -> str:
+    try:
+        fin = date.fromisoformat(hasta) if hasta else date.today()
+        serie = _inflacion_mensual((fin - timedelta(days=400)).isoformat(), fin.isoformat())
+    except (ErrorAPI, ValueError) as e:
+        return f"Error: {e}"
+
+    lineas = []
+    for n in (1, 3, 6):
+        if len(serie) < n:
+            continue
+        tramo = serie[-n:]
+        promedio = (math.prod(1 + d["valor"] / 100 for d in tramo) ** (1 / n) - 1) * 100   # promedio geométrico
+        anualizada = ((1 + promedio / 100) ** 12 - 1) * 100
+        nombre = "Último mes" if n == 1 else f"Promedio de los últimos {n} meses"
+        lineas.append(f"{nombre} ({tramo[0]['fecha'][:7]} a {tramo[-1]['fecha'][:7]}): "
+                      f"mensual {promedio:.2f}% → ANUALIZADA {anualizada:.1f}%")
+    meses = ", ".join(f"{d['fecha'][:7]}: {_num(d['valor'])}%" for d in serie[-6:])
+    return (f"Inflación anualizada (INDEC vía BCRA). Fórmula: (1 + mensual)^12 − 1; para varios meses, "
+            f"con el promedio geométrico.\n" + "\n".join(lineas) +
+            f"\nMeses usados: {meses}\nÚLTIMO DATO DISPONIBLE: {serie[-1]['fecha'][:7]}")
+
+
+INFLACION_ANUALIZADA = {
+    "name": "inflacion_anualizada",
+    "description": (
+        "Inflación anualizada: lleva el ritmo mensual a un año, ((1 + mensual)^12 − 1). Devuelve la del último mes "
+        "y la del promedio de los últimos 3 y 6 meses, ya calculadas. Usala para preguntas de inflación anualizada "
+        "o de ritmo de inflación, y para comparar la inflación mensual con el REM o con la interanual. "
+        "No es lo mismo que la acumulada (inflacion_acumulada) ni que la interanual."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "hasta": {"type": "string", "description": "Fecha final AAAA-MM-DD (opcional; por defecto, el último dato)"},
         },
     },
 }
@@ -283,6 +339,7 @@ HERRAMIENTAS = [
     (CONSULTAR_BCRA, consultar_bcra),
     (CONSULTAR_SERIE, consultar_serie),
     (INFLACION_ACUMULADA, inflacion_acumulada),
+    (INFLACION_ANUALIZADA, inflacion_anualizada),
     (CONSULTAR_FRED, consultar_fred),
     (BUSCAR_SERIE_FRED, buscar_serie_fred),
 ]

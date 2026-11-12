@@ -10,7 +10,10 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 BASE_DIR = Path(__file__).parent
-load_dotenv(BASE_DIR / ".env")
+# El código que escribe el agente (ejecutar_python) corre con FINIANZ_SUBPROCESO=1: no relee el .env,
+# así no accede a las claves que se le quitaron a propósito (por ejemplo, las del broker).
+if not os.getenv("FINIANZ_SUBPROCESO"):
+    load_dotenv(BASE_DIR / ".env")
 
 
 def _int(nombre: str, defecto: int) -> int:
@@ -59,6 +62,18 @@ SERIES_BUSQUEDA_URL = os.getenv("SERIES_BUSQUEDA_URL", "https://apis.datos.gob.a
 # Requiere una clave gratuita: FRED_API_KEY en el .env (https://fredaccount.stlouisfed.org/apikeys)
 FRED_API_KEY = os.getenv("FRED_API_KEY")
 FRED_URL = os.getenv("FRED_URL", "https://api.stlouisfed.org/fred")
+
+# PPI (Portfolio Personal Inversiones) – precios de mercado. Solo lectura: el proyecto no envía órdenes.
+# Las claves se generan en PPI: Gestiones → Gestión de servicio API.
+PPI_API_KEY = os.getenv("PPI_API_KEY")          # clave pública
+PPI_API_SECRET = os.getenv("PPI_API_SECRET")    # clave privada
+PPI_SANDBOX = _bool("PPI_SANDBOX", False)       # true = ambiente de prueba de PPI
+# Identificación de la aplicación que pide la API (valores públicos de la librería oficial de PPI)
+PPI_AUTHORIZED_CLIENT = os.getenv("PPI_AUTHORIZED_CLIENT", "API_CLI_PYTHON")
+PPI_CLIENT_KEY = os.getenv("PPI_CLIENT_KEY", "ppPYTHONSb" if PPI_SANDBOX else "pp19PythonApp12")
+PPI_URL = os.getenv("PPI_URL", "https://clientapisbx.portfoliopersonal.com/api/1.0" if PPI_SANDBOX
+                    else "https://clientapi.portfoliopersonal.com/api/1.0")
+PPI_PLAZO = os.getenv("PPI_PLAZO", "A-24HS")    # plazo de liquidación por defecto para los precios
 
 # ---------------------------------------------------------------------------
 # Noticias (fuentes gratuitas por RSS)

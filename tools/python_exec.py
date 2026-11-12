@@ -3,13 +3,18 @@
 El código tiene acceso directo a las conexiones de datos (bcra, series_tiempo, fred):
 el modelo trae los datos desde el propio código en vez de copiarlos a mano.
 
-Corre en un proceso aparte con tiempo límite. Ojo: se ejecuta en TU máquina,
-por eso por defecto pide confirmación (ver CONFIRMAR_CODIGO en config.py).
+Corre en un proceso aparte con tiempo límite. Ojo: se ejecuta en TU máquina, por eso:
+- por defecto pide confirmación (ver CONFIRMAR_CODIGO en config.py);
+- corre sin las claves del broker ni del modelo;
+- corre vigilado por tools/guardia.py: no puede leer el .env ni las bases, escribir archivos,
+  lanzar programas ni conectarse a sitios que no sean las APIs de datos.
 """
 import os
 import subprocess
 import sys
 import tempfile
+from pathlib import Path
+from urllib.parse import urlparse
 
 import config
 
@@ -39,6 +44,8 @@ DEFINICION = {
         "Fechas en formato 'AAAA-MM-DD'; sin fechas traen el último año. "
         "Traé siempre los datos con estas funciones: nunca escribas números copiados a mano. "
         "Imprimí los datos usados (fecha y valor) además del resultado. "
+        "Por seguridad, el código no puede leer ni escribir archivos, lanzar programas ni conectarse "
+        "a otros sitios: trabajá solo con estas funciones de datos. "
         "También están disponibles pandas y numpy si están instalados."
     ),
     "parameters": {
@@ -49,6 +56,24 @@ DEFINICION = {
         "required": ["codigo"],
     },
 }
+
+GUARDIA = (Path(__file__).parent / "guardia.py").read_text(encoding="utf-8")
+
+
+def _sitios_permitidos() -> list[str]:
+    """Las APIs de datos que puede usar el código."""
+    urls = [config.BCRA_URL, config.SERIES_TIEMPO_URL, config.SERIES_BUSQUEDA_URL, config.FRED_URL]
+    return sorted({urlparse(u).hostname for u in urls if urlparse(u).hostname})
+
+
+def armar_script(codigo: str) -> str:
+    """Preámbulo de datos + guardia activada + código del modelo."""
+    activacion = f"activar({str(config.BASE_DIR)!r}, {str(config.CACHE_DIR)!r}, {_sitios_permitidos()!r})\n"
+    return PREAMBULO + GUARDIA + "\n" + activacion + "del activar\n" + codigo
+
+
+# Claves que el código escrito por el agente nunca recibe (ver también config.py)
+CLAVES_OCULTAS = {"PPI_API_KEY", "PPI_API_SECRET", "GEMINI_API_KEY", "GOOGLE_API_KEY"}
 
 TIMEOUT_SEGUNDOS = 60  # más margen que antes: ahora el código puede consultar APIs
 
@@ -62,11 +87,13 @@ def ejecutar(codigo: str) -> str:
             return "El usuario no autorizó la ejecución. Seguí sin este cálculo o explicá cómo hacerlo."
 
     with tempfile.NamedTemporaryFile("w", suffix=".py", delete=False, encoding="utf-8") as f:
-        f.write(PREAMBULO + codigo)
+        f.write(armar_script(codigo))
         ruta = f.name
 
     # El proceso corre desde la carpeta del proyecto, para poder importar conexiones y config
-    entorno = {**os.environ, "PYTHONPATH": str(config.BASE_DIR), "PYTHONIOENCODING": "utf-8"}
+    # Sin las claves del broker ni la del modelo: el código del agente solo necesita las APIs de datos.
+    entorno = {k: v for k, v in os.environ.items() if k not in CLAVES_OCULTAS}
+    entorno |= {"PYTHONPATH": str(config.BASE_DIR), "PYTHONIOENCODING": "utf-8", "FINIANZ_SUBPROCESO": "1"}
     try:
         res = subprocess.run(
             [sys.executable, ruta],

@@ -8,7 +8,7 @@ Construido con [LangGraph](https://langchain-ai.github.io/langgraph/) y modelos 
 
 | Agente | Qué hace | Fuentes |
 |---|---|---|
-| **Macro** | Busca y analiza indicadores: inflación, expectativas del REM, reservas, tipo de cambio, tasas, CER, UVA, actividad. De EE. UU.: CPI, PCE, empleo, PBI, tasa de la Fed, bonos del Tesoro. Calcula acumulados, tasas reales y proyecciones. | API del BCRA, Series de Tiempo de datos.gob.ar, FRED |
+| **Macro** | Busca y analiza indicadores: inflación, expectativas del REM, reservas, tipo de cambio, tasas, CER, UVA, actividad. De EE. UU.: CPI, PCE, empleo, PBI, tasa de la Fed, bonos del Tesoro. Precios de bonos, letras, ONs, acciones y CEDEARs, con TIR, duration y paridad. Calcula acumulados, tasas reales y proyecciones. | API del BCRA, Series de Tiempo de datos.gob.ar, FRED, API de PPI |
 | **Noticias** | Busca noticias sobre un tema y resume los titulares del día, con su implicancia para el mercado. | Google News (RSS), feeds de Ámbito |
 
 Los dos agentes consultan además un **calendario de feriados** de Argentina y EE. UU. (nacionales, bancos, BYMA, NYSE y bonos del Tesoro) desde 2016 hasta el año próximo, y calculan días hábiles por mercado (por ejemplo, la liquidación T+2).
@@ -62,8 +62,11 @@ Finianz/
 │   └── errores.py       # errores temporales y reintentos
 ├── tools/               # lo que ven los agentes
 │   ├── datos_macro.py   # buscar_indicador, consultar_bcra, consultar_serie, inflacion_acumulada,
+│   │                    # inflacion_anualizada,
 │   │                    # consultar_fred, buscar_serie_fred
 │   ├── noticias.py      # buscar_noticias, titulares_recientes
+│   ├── precios.py       # consultar_precio, calcular_bono (PPI)
+│   ├── guardia.py       # límites de seguridad del código que escribe el agente
 │   ├── calendario.py    # consultar_feriados, calcular_dia_habil, consultar_publicaciones
 │   └── python_exec.py   # ejecutar_python, con acceso a los datos
 ├── conexiones/             # acceso a fuentes externas, sin IA
@@ -71,6 +74,7 @@ Finianz/
 │   ├── bcra.py          # API del BCRA (Principales Variables v4)
 │   ├── series_tiempo.py # API de Series de Tiempo de datos.gob.ar
 │   ├── fred.py          # API de FRED (series y calendario de publicaciones de EE. UU.)
+│   ├── ppi.py           # API de PPI: precios de mercado, solo lectura
 │   └── noticias.py      # Google News RSS y feeds de medios
 ├── admin_datos/             # bases de datos locales (SQLite, una por tema)
 │   ├── db.py            # tablas de cada base y conexión
@@ -111,7 +115,7 @@ pip install -r requirements.txt
 cp .env.example .env
 ```
 
-Completá el `.env` con tu clave de Gemini, que se obtiene gratis en [Google AI Studio](https://aistudio.google.com/apikey), y con la de FRED, también gratuita, en [FRED](https://fredaccount.stlouisfed.org/apikeys).
+Completá el `.env` con tu clave de Gemini, que se obtiene gratis en [Google AI Studio](https://aistudio.google.com/apikey), con la de FRED, también gratuita, en [FRED](https://fredaccount.stlouisfed.org/apikeys), y con las de PPI si tenés cuenta (Gestiones → Gestión de servicio API).
 
 > Ubicá el proyecto fuera de carpetas sincronizadas (OneDrive, Dropbox): la sincronización puede dañar archivos del entorno virtual.
 
@@ -120,6 +124,8 @@ Completá el `.env` con tu clave de Gemini, que se obtiene gratis en [Google AI 
 | Variable | Qué hace | Por defecto |
 |---|---|---|
 | `GEMINI_API_KEY` | Clave de la API de Gemini | (obligatoria) |
+| `PPI_API_KEY` / `PPI_API_SECRET` | Claves pública y privada de la API de PPI, para precios de mercado | (sin ellas, no hay precios) |
+| `PPI_PLAZO` | Plazo de liquidación de los precios | `A-24HS` |
 | `FRED_API_KEY` | Clave de la API de FRED, para los datos y las fechas de publicación de EE. UU. | (sin ella, no hay datos de EE. UU.) |
 | `GEMINI_MODEL` | Modelo principal | `gemini-3.1-flash-lite` |
 | `GEMINI_MODELOS_RESPALDO` | Modelos a usar si el principal está saturado, separados por coma | (ninguno) |
@@ -176,14 +182,21 @@ Qué publicaciones se siguen y con qué importancia se define en `calendarios/pu
 
 ## Seguridad
 
-La herramienta `ejecutar_python` corre en tu computadora el código que escribe el agente. Con `CONFIRMAR_CODIGO=true`, te muestra el código y pide confirmación antes de ejecutarlo. Desactivalo solo cuando conozcas el tipo de código que genera.
+La herramienta `ejecutar_python` corre en tu computadora el código que escribe el agente. Con `CONFIRMAR_CODIGO=true`, te muestra el código y pide confirmación antes de ejecutarlo. Desactivalo solo cuando conozcas el tipo de código que genera. Además, ese código:
+
+- corre sin las claves de PPI ni de Gemini;
+- corre vigilado por `tools/guardia.py`, que bloquea leer el `.env` y las bases de datos, escribir o borrar archivos, lanzar otros programas y conectarse a sitios que no sean las APIs de datos (BCRA, datos.gob.ar, FRED). No es un aislamiento total (Python lo aclara): protege contra errores del modelo y contra instrucciones maliciosas que pudieran llegar en los datos. Si tu red usa un proxy, esas conexiones también quedan bloqueadas.
+
+La conexión con PPI es de solo lectura a propósito: `conexiones/ppi.py` implementa únicamente consultas de precios y la calculadora de bonos. No usa la librería oficial, que incluye órdenes y transferencias, así que nada en el proyecto puede operar con tu cuenta.
+
+Para probar la conexión: `python -m conexiones.ppi AL30` muestra las respuestas de la API, sin claves.
 
 ## Hoja de ruta
 
 El sistema se construye por fases. El detalle está en [`docs/arquitectura-multiagente.md`](docs/arquitectura-multiagente.md).
 
 - [ ] **Fase A** (en curso): router + agentes macro y noticias ✓; calendario de publicaciones del INDEC ✓, de EE. UU. (FRED) ✓ y por regla (ISM, recaudación) ✓; faltan las manuales (BCRA, Tesoro, FOMC).
-- [ ] **Fase B:** bases de datos locales (✓ feriados, ✓ publicaciones), carga de datos, precios de mercado, cartera y registro de pronósticos.
+- [ ] **Fase B** (en curso): bases de datos locales (✓ feriados, ✓ publicaciones), precios de mercado (✓ consulta en vivo vía PPI; falta la base de precios), cartera y registro de pronósticos.
 - [ ] **Fase C:** calculadoras de bonos y agente de renta fija.
 - [ ] **Fase D:** agente de escenarios y estratega (retornos esperados, estrés, límites regulatorios).
 - [ ] **Fase E:** redactor de informes y revisión humana.

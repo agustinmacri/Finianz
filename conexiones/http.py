@@ -16,7 +16,14 @@ import config
 
 
 class ErrorAPI(Exception):
-    """Error al consultar una fuente externa, con un mensaje entendible para el usuario y el modelo."""
+    """Error al consultar una fuente externa, con un mensaje entendible para el usuario y el modelo.
+
+    estado: código HTTP de la respuesta, si lo hubo (ej.: 401 = sesión vencida).
+    """
+
+    def __init__(self, mensaje: str, estado: int | None = None):
+        super().__init__(mensaje)
+        self.estado = estado
 
 
 def _crear_sesion() -> requests.Session:
@@ -38,9 +45,13 @@ def _crear_sesion() -> requests.Session:
 _sesion = _crear_sesion()
 
 
-def get_json(url: str, params: dict | None = None, usar_cache: bool = True, cache_minutos: int | None = None):
-    """GET que devuelve la respuesta JSON ya convertida a dict/list de Python."""
-    return _get(url, params, usar_cache, cache_minutos, como_json=True)
+def get_json(url: str, params: dict | None = None, usar_cache: bool = True, cache_minutos: int | None = None,
+             encabezados: dict | None = None):
+    """GET que devuelve la respuesta JSON ya convertida a dict/list de Python.
+
+    encabezados: headers extra (ej.: el token de una API). No forman parte de la clave de la caché.
+    """
+    return _get(url, params, usar_cache, cache_minutos, como_json=True, encabezados=encabezados)
 
 
 def get_texto(url: str, params: dict | None = None, usar_cache: bool = True, cache_minutos: int | None = None) -> str:
@@ -48,7 +59,7 @@ def get_texto(url: str, params: dict | None = None, usar_cache: bool = True, cac
     return _get(url, params, usar_cache, cache_minutos, como_json=False)
 
 
-def _get(url, params, usar_cache, cache_minutos, como_json):
+def _get(url, params, usar_cache, cache_minutos, como_json, encabezados=None):
     """Si la misma consulta se hizo hace menos de cache_minutos (por defecto CACHE_MINUTOS),
     devuelve la copia guardada sin volver a llamar. Ante cualquier problema lanza ErrorAPI."""
     minutos = config.CACHE_MINUTOS if cache_minutos is None else cache_minutos
@@ -59,7 +70,7 @@ def _get(url, params, usar_cache, cache_minutos, como_json):
             return guardado
 
     try:
-        resp = _sesion.get(url, params=params, timeout=config.HTTP_TIMEOUT)
+        resp = _sesion.get(url, params=params, headers=encabezados, timeout=config.HTTP_TIMEOUT)
         resp.raise_for_status()
         datos = resp.json() if como_json else resp.text
     except ValueError:  # va primero: el error de JSON de requests también es un RequestException
@@ -67,7 +78,7 @@ def _get(url, params, usar_cache, cache_minutos, como_json):
     except requests.exceptions.Timeout:
         raise ErrorAPI(f"La API tardó más de {config.HTTP_TIMEOUT} segundos en responder ({url}).") from None
     except requests.exceptions.HTTPError as e:
-        raise ErrorAPI(f"La API respondió con error {e.response.status_code} ({url}).") from None
+        raise ErrorAPI(f"La API respondió con error {e.response.status_code} ({url}).", e.response.status_code) from None
     except requests.exceptions.RetryError:
         raise ErrorAPI(f"La API falló {config.HTTP_REINTENTOS + 1} veces seguidas; probablemente esté caída ({url}).") from None
     except requests.exceptions.RequestException as e:
@@ -78,6 +89,20 @@ def _get(url, params, usar_cache, cache_minutos, como_json):
     if usar_cache:
         _guardar_cache(clave, datos, minutos)
     return datos
+
+
+def post_json(url: str, encabezados: dict | None = None, datos: dict | None = None):
+    """POST sin caché (ej.: iniciar sesión en una API). Devuelve el JSON de la respuesta."""
+    try:
+        resp = _sesion.post(url, json=datos, headers=encabezados, timeout=config.HTTP_TIMEOUT)
+        resp.raise_for_status()
+        return resp.json()
+    except ValueError:
+        raise ErrorAPI(f"La API no devolvió un JSON válido ({url}).") from None
+    except requests.exceptions.HTTPError as e:
+        raise ErrorAPI(f"La API respondió con error {e.response.status_code} ({url}).", e.response.status_code) from None
+    except requests.exceptions.RequestException:
+        raise ErrorAPI(f"No se pudo conectar con la API ({url}). Revisá tu conexión a internet.") from None
 
 
 def limpiar_cache():

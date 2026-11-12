@@ -58,7 +58,7 @@ pedido → router → (macro ∥ noticias) → escenarios → (renta fija ∥ eq
 
 ## Dependencias de datos
 
-- **Precios de bonos y acciones:** requiere una fuente de mercado (pendiente).
+- **Precios de bonos y acciones:** API de PPI (cuenta propia), conexión propia de solo lectura. Alternativa gratuita anotada: Data912 (no oficial). La API oficial de BYMA es paga.
 - **Balances locales:** CNV (Autopista de Información Financiera), generalmente en PDF → extracción.
 - **Comparables de otro país:** según el país elegido.
 - **EE. UU.:** API de FRED (clave gratuita): series y calendario de publicaciones.
@@ -87,7 +87,7 @@ pedido → router → (macro ∥ noticias) → escenarios → (renta fija ∥ eq
 ## Orden de construcción
 
 - **Fase A (en curso):** router + agente macro + agente noticias. Incluye la comparación con el REM (macro) y el calendario de eventos públicos: feriados ✓, publicaciones del INDEC ✓ de EE. UU. vía FRED ✓ y por regla (ISM, recaudación) ✓; faltan las manuales (BCRA, Tesoro, FOMC).
-- **Fase B:** base de datos y carga de datos + fuente de precios + tablas de cartera y de pronósticos.
+- **Fase B (en curso):** base de datos y carga de datos ✓ + fuente de precios (✓ PPI en vivo; falta la base de precios) + tablas de cartera (varias carteras, carga manual) y de pronósticos.
 - **Fase C:** calculadoras de bonos (validables contra Excel propio) + agente renta fija + vencimientos y cupones de la cartera.
 - **Fase D:** agente escenarios (contrato + REM + registro de pronósticos) → estratega con retornos esperados, estrés y límites regulatorios.
 - **Fase E:** redactor + revisión humana.
@@ -111,6 +111,9 @@ pedido → router → (macro ∥ noticias) → escenarios → (renta fija ∥ eq
 - **11/11/2026:** fechas de EE. UU. desde la API de FRED (`conexiones/fred.py`, `carga_datos/publicaciones_fred.py`): 9 publicaciones, identificadas en el catálogo por su nombre exacto en FRED (`fred_release`) y con su hora habitual en ET. Se cargan desde el 1/1 del año pasado, incluidas las futuras programadas (`include_release_dates_with_no_data=true`). Si FRED falla, la base queda como estaba. La herramienta avisa qué códigos del catálogo no tienen fechas cargadas. Pendiente: manuales (REM, licitaciones, FOMC, etc.) y reglas (ISM, recaudación).
 - **11/11/2026:** datos de EE. UU. para el agente macro: `consultar_fred` (serie con su último dato; las variaciones las calcula FRED con el parámetro `units`) y `buscar_serie_fred`. La descripción trae los ids más usados (CPI con y sin desestacionalizar, PCE, empleo, desempleo, PBI, tasa de la Fed, Tesoro a 2 y 10 años, etc.) para ahorrar búsquedas. `ejecutar_python` también puede usar `fred.obtener_serie`. Motivo: ante "¿cuál fue la última inflación de EE. UU.?", el agente tenía la fecha del próximo CPI pero no el dato, y usaba `ejecutar_python` para escribir un mensaje; el prompt ahora lo prohíbe.
 - **11/11/2026:** publicaciones por regla de días hábiles (`carga_datos/publicaciones_regla.py`): ISM manufacturero (1.er día hábil, NYSE), ISM de servicios (3.er día hábil, NYSE) y recaudación de ARCA (1.er día hábil, AR). El ISM no publica en Viernes Santo ni el 2 de enero (campo `excluir`): con eso, las 24 fechas oficiales de 2026 coinciden. La recaudación se verificó con septiembre (1/10) y octubre (2/11) de 2026. Cubre del año pasado al último año con feriados. Más adelante: bajar las fechas de una fuente oficial. Pendientes: las manuales.
+- **12/11/2026:** fase B, paso 1: precios de mercado desde la API de PPI. Se descartó la librería oficial `ppi-client` (sin licencia ni repositorio público, solo sdist, instala pytest/flake8/vcrpy/signalr como obligatorias e incluye órdenes y transferencias) y se escribió `conexiones/ppi.py`, de solo lectura, con los mismos endpoints: LoginApi (token en memoria, se renueva ante un 401), SearchInstrument, Current, Search (histórico) y Bonds/Estimate. Por decisión de Agustin, no se leen posiciones ni movimientos de la cuenta: la cartera se carga a mano. Herramientas `consultar_precio` y `calcular_bono` para el agente macro. `ejecutar_python` corre sin las claves de PPI ni de Gemini (`FINIANZ_SUBPROCESO`). Diagnóstico: `python -m conexiones.ppi AL30`. Pendiente: base de precios con catálogo de instrumentos, cartera y pronósticos.
+- **12/11/2026:** seguridad de `ejecutar_python`: quitar las claves del entorno no impedía leer el `.env`. Se agregó `tools/guardia.py`, que se inyecta en el código del agente y registra un *audit hook* (no se puede desactivar): bloquea leer archivos del proyecto que no sean código (`.env`, `datos/`, `calendarios/`) y archivos del usuario fuera de la instalación de Python; escribir, borrar o renombrar fuera de la caché; lanzar procesos; ctypes; sqlite3; y conexiones a sitios que no sean las APIs de datos (solo IPs resueltas desde esos sitios). Probado contra 13 acciones peligrosas (todas bloqueadas) y con uso normal (math, pandas, numpy, caché, consulta HTTP permitida). Límite: no es un sandbox total; la protección fuerte sigue siendo `CONFIRMAR_CODIGO=true` o un contenedor. Pendiente: averiguar si PPI permite claves de solo lectura.
+- **12/11/2026:** herramienta `inflacion_anualizada` ((1 + mensual)^12 − 1 del último mes y del promedio geométrico de 3 y 6 meses). Motivo: ante "inflación anualizada", el agente usaba `ejecutar_python` (y con `CONFIRMAR_CODIGO=true` pedía autorización) o preguntaba qué fórmula usar. Las recetas del REM y de "cómo viene la inflación" ahora la usan.
 
 ## Estructura del código (fase A)
 
