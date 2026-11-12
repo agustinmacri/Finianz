@@ -9,6 +9,7 @@ No todo es un agente:
 - **Agentes** donde hace falta criterio.
 - **Código** para cálculos que tienen una forma correcta de hacerse.
 - **Procesos programados** (sin IA) para traer datos que se repiten.
+- **De afuera, solo datos:** las fuentes externas aportan datos (precios, series, fechas); todos los cálculos los hace el proyecto, salvo excepción explícita de Agustin.
 
 ## Agentes
 
@@ -87,7 +88,7 @@ pedido → router → (macro ∥ noticias) → escenarios → (renta fija ∥ eq
 ## Orden de construcción
 
 - **Fase A (en curso):** router + agente macro + agente noticias. Incluye la comparación con el REM (macro) y el calendario de eventos públicos: feriados ✓, publicaciones del INDEC ✓ de EE. UU. vía FRED ✓ y por regla (ISM, recaudación) ✓; faltan las manuales (BCRA, Tesoro, FOMC).
-- **Fase B (en curso):** base de datos y carga de datos ✓ + fuente de precios (✓ PPI en vivo; falta la base de precios) + tablas de cartera (varias carteras, carga manual) y de pronósticos.
+- **Fase B (en curso):** base de datos y carga de datos ✓ + fuente de precios (✓ PPI) + base propia de precios ✓ + tablas de cartera (varias carteras, carga manual) y de pronósticos.
 - **Fase C:** calculadoras de bonos (validables contra Excel propio) + agente renta fija + vencimientos y cupones de la cartera.
 - **Fase D:** agente escenarios (contrato + REM + registro de pronósticos) → estratega con retornos esperados, estrés y límites regulatorios.
 - **Fase E:** redactor + revisión humana.
@@ -113,7 +114,10 @@ pedido → router → (macro ∥ noticias) → escenarios → (renta fija ∥ eq
 - **11/11/2026:** publicaciones por regla de días hábiles (`carga_datos/publicaciones_regla.py`): ISM manufacturero (1.er día hábil, NYSE), ISM de servicios (3.er día hábil, NYSE) y recaudación de ARCA (1.er día hábil, AR). El ISM no publica en Viernes Santo ni el 2 de enero (campo `excluir`): con eso, las 24 fechas oficiales de 2026 coinciden. La recaudación se verificó con septiembre (1/10) y octubre (2/11) de 2026. Cubre del año pasado al último año con feriados. Más adelante: bajar las fechas de una fuente oficial. Pendientes: las manuales.
 - **12/11/2026:** fase B, paso 1: precios de mercado desde la API de PPI. Se descartó la librería oficial `ppi-client` (sin licencia ni repositorio público, solo sdist, instala pytest/flake8/vcrpy/signalr como obligatorias e incluye órdenes y transferencias) y se escribió `conexiones/ppi.py`, de solo lectura, con los mismos endpoints: LoginApi (token en memoria, se renueva ante un 401), SearchInstrument, Current, Search (histórico) y Bonds/Estimate. Por decisión de Agustin, no se leen posiciones ni movimientos de la cuenta: la cartera se carga a mano. Herramientas `consultar_precio` y `calcular_bono` para el agente macro. `ejecutar_python` corre sin las claves de PPI ni de Gemini (`FINIANZ_SUBPROCESO`). Diagnóstico: `python -m conexiones.ppi AL30`. Pendiente: base de precios con catálogo de instrumentos, cartera y pronósticos.
 - **12/11/2026:** seguridad de `ejecutar_python`: quitar las claves del entorno no impedía leer el `.env`. Se agregó `tools/guardia.py`, que se inyecta en el código del agente y registra un *audit hook* (no se puede desactivar): bloquea leer archivos del proyecto que no sean código (`.env`, `datos/`, `calendarios/`) y archivos del usuario fuera de la instalación de Python; escribir, borrar o renombrar fuera de la caché; lanzar procesos; ctypes; sqlite3; y conexiones a sitios que no sean las APIs de datos (solo IPs resueltas desde esos sitios). Probado contra 13 acciones peligrosas (todas bloqueadas) y con uso normal (math, pandas, numpy, caché, consulta HTTP permitida). Límite: no es un sandbox total; la protección fuerte sigue siendo `CONFIRMAR_CODIGO=true` o un contenedor. Pendiente: averiguar si PPI permite claves de solo lectura.
-- **12/11/2026:** herramienta `inflacion_anualizada` ((1 + mensual)^12 − 1 del último mes y del promedio geométrico de 3 y 6 meses). Motivo: ante "inflación anualizada", el agente usaba `ejecutar_python` (y con `CONFIRMAR_CODIGO=true` pedía autorización) o preguntaba qué fórmula usar. Las recetas del REM y de "cómo viene la inflación" ahora la usan.
+- **12/11/2026:** herramienta `inflacion_anualizada` ((1 + mensual)^12 − 1 del último mes y del promedio geométrico de 3 y 6 meses). Motivo: ante "inflación anualizada", el agente usaba `ejecutar_python` (y con `CONFIRMAR_CODIGO=true` pedía autorización) o preguntaba qué fórmula usar. Las recetas del REM y de "cómo viene la inflación" ahora la usan. Además, `inflacion_acumulada` devuelve la acumulada anualizada ((1 + acumulada)^(12/n) − 1) cuando el período tiene menos de 12 meses: el agente copiaba la acumulada a mano en `ejecutar_python` para anualizarla. El prompt ahora prohíbe escribir en el código números devueltos por otra herramienta.
+- **12/11/2026:** principio de diseño (decisión de Agustin): de las fuentes externas se traen solo datos; todos los cálculos los hace el proyecto, salvo excepción explícita. Se quitó la calculadora de bonos de PPI (`calcular_bono`, endpoint Bonds/Estimate); de PPI se usan solo precios actuales e históricos. La calculadora propia va en la fase C (validable contra el Excel de Agustin). Pendiente por el mismo principio: calcular en código las variaciones que hoy calculan FRED (`units`) y datos.gob.ar (`representation_mode`).
+- **12/11/2026:** base propia de precios (`datos/precios.db`, no regenerable del todo: respaldar). Tablas `instrumentos` (activos seguidos: ticker, tipo, moneda, ISIN, mercado, fuente, desde cuándo) y `precios` (ticker, plazo, fecha, OHLC, volumen, fuente). Cada activo consultado se registra y se baja todo su histórico; después solo los días faltantes (`carga_datos/precios.py`). Solo cierres de días terminados (el del día, después de las 18 h). `consultar_precio` lee el histórico de la base y el precio del momento en vivo; si PPI falla, usa lo guardado. `actualizar.py` suma los cierres de todos los seguidos.
+- **12/11/2026:** diseño acordado para las calculadoras (fase C): (1) ficha técnica de cada bono como datos (cronograma, cupones, base de cálculo, ajuste CER/TAMAR/DL, rezago, capitalización); (2) pocos generadores de flujos por familia (tasa fija, CER, variable, dólar linked, cupón cero/capitalizable); (3) un único motor financiero (TIR, duration, MD, convexidad, valor técnico, interés corrido, paridad). Validación por capa contra el Excel de Agustin. Con la base de precios permite TIR histórica.
 
 ## Estructura del código (fase A)
 
@@ -128,9 +132,9 @@ graph/
   builder.py    grafo principal
 prompts/        macro.md, noticias.md, router.md, sintesis.md, general.md
 tools/          HERRAMIENTAS_MACRO (datos + calendario + python), HERRAMIENTAS_NOTICIAS (noticias + calendario)
-admin_datos/        db.py (una base SQLite por tema en datos/), feriados.py (consultas y días hábiles), publicaciones.py
-carga_datos/        feriados.py (holidays + ajustes), publicaciones_indec.py (PDF del INDEC), publicaciones_fred.py (API de FRED), publicaciones_regla.py (días hábiles), catalogo.py
-datos/          feriados.db, publicaciones.db, cartera.db (no se suben a git)
+admin_datos/        db.py (una base SQLite por tema en datos/), feriados.py (consultas y días hábiles), publicaciones.py, precios.py
+carga_datos/        feriados.py (holidays + ajustes), publicaciones_indec.py (PDF del INDEC), publicaciones_fred.py (API de FRED), publicaciones_regla.py (días hábiles), precios.py (PPI, incremental), catalogo.py
+datos/          feriados.db, publicaciones.db, precios.db, cartera.db (no se suben a git)
 calendarios/    feriados_ajustes.toml, publicaciones.toml (catálogo), indec/ (PDF semestrales)
 actualizar.py   recarga la base
 ```

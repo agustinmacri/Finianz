@@ -8,7 +8,7 @@ Construido con [LangGraph](https://langchain-ai.github.io/langgraph/) y modelos 
 
 | Agente | Qué hace | Fuentes |
 |---|---|---|
-| **Macro** | Busca y analiza indicadores: inflación, expectativas del REM, reservas, tipo de cambio, tasas, CER, UVA, actividad. De EE. UU.: CPI, PCE, empleo, PBI, tasa de la Fed, bonos del Tesoro. Precios de bonos, letras, ONs, acciones y CEDEARs, con TIR, duration y paridad. Calcula acumulados, tasas reales y proyecciones. | API del BCRA, Series de Tiempo de datos.gob.ar, FRED, API de PPI |
+| **Macro** | Busca y analiza indicadores: inflación, expectativas del REM, reservas, tipo de cambio, tasas, CER, UVA, actividad. De EE. UU.: CPI, PCE, empleo, PBI, tasa de la Fed, bonos del Tesoro. Precios de bonos, letras, ONs, acciones y CEDEARs. Calcula acumulados, tasas reales y proyecciones. | API del BCRA, Series de Tiempo de datos.gob.ar, FRED, API de PPI |
 | **Noticias** | Busca noticias sobre un tema y resume los titulares del día, con su implicancia para el mercado. | Google News (RSS), feeds de Ámbito |
 
 Los dos agentes consultan además un **calendario de feriados** de Argentina y EE. UU. (nacionales, bancos, BYMA, NYSE y bonos del Tesoro) desde 2016 hasta el año próximo, y calculan días hábiles por mercado (por ejemplo, la liquidación T+2).
@@ -41,6 +41,7 @@ Ejemplos de preguntas:
 
 Principios de diseño:
 
+- **De afuera, solo datos.** Las fuentes externas aportan datos (precios, series, fechas); todos los cálculos los hace el proyecto, para no depender de cálculos ajenos. Las excepciones se deciden explícitamente.
 - **No todo es un agente.** Los cálculos con una forma correcta (como la inflación acumulada) se hacen en código, no los resuelve el modelo.
 - **Los datos nunca pasan por el modelo para calcular.** El código Python que escribe el agente trae los datos directamente de las APIs.
 - **Siempre con fecha.** Cada respuesta indica la fecha del último dato disponible.
@@ -65,7 +66,7 @@ Finianz/
 │   │                    # inflacion_anualizada,
 │   │                    # consultar_fred, buscar_serie_fred
 │   ├── noticias.py      # buscar_noticias, titulares_recientes
-│   ├── precios.py       # consultar_precio, calcular_bono (PPI)
+│   ├── precios.py       # consultar_precio (PPI)
 │   ├── guardia.py       # límites de seguridad del código que escribe el agente
 │   ├── calendario.py    # consultar_feriados, calcular_dia_habil, consultar_publicaciones
 │   └── python_exec.py   # ejecutar_python, con acceso a los datos
@@ -79,16 +80,19 @@ Finianz/
 ├── admin_datos/             # bases de datos locales (SQLite, una por tema)
 │   ├── db.py            # tablas de cada base y conexión
 │   ├── feriados.py      # consultas de feriados y días hábiles
-│   └── publicaciones.py # consultas del calendario de publicaciones
+│   ├── publicaciones.py # consultas del calendario de publicaciones
+│   └── precios.py       # consultas de la base de precios
 ├── carga_datos/             # carga de datos en la base
 │   ├── feriados.py      # librería holidays + ajustes manuales
 │   ├── publicaciones_indec.py  # lector de los PDF del INDEC
 │   ├── publicaciones_fred.py   # fechas de EE. UU. desde FRED
 │   ├── publicaciones_regla.py  # fechas por regla de días hábiles (ISM, recaudación)
+│   ├── precios.py              # precios diarios desde PPI, solo los días que faltan
 │   └── catalogo.py      # lectura del catálogo de publicaciones
 ├── datos/               # las bases (no se suben a git)
 │   ├── feriados.db
 │   ├── publicaciones.db
+│   ├── precios.db       # precios diarios de los activos consultados (respaldar)
 │   └── cartera.db       # fase B
 ├── calendarios/
 │   ├── feriados_ajustes.toml   # correcciones manuales a los feriados
@@ -160,7 +164,7 @@ Comandos durante la conversación:
 | `reintentar` | Si hubo un error temporal del modelo, continúa desde el paso donde se cortó, sin repetir lo que ya se hizo |
 | `salir` | Termina |
 
-## Bases de datos locales: feriados y publicaciones
+## Bases de datos locales: feriados, publicaciones y precios
 
 ```bash
 python actualizar.py
@@ -180,6 +184,8 @@ Las publicaciones con fecha fija por regla (por ejemplo, el ISM manufacturero sa
 
 Qué publicaciones se siguen y con qué importancia se define en `calendarios/publicaciones.toml`. Las del INDEC que no están en el catálogo también se guardan, con importancia baja.
 
+**Precios.** Cada activo que consultás queda "seguido": la primera vez se baja todo su histórico de PPI a `datos/precios.db`, y después solo se piden los días que faltan. `python actualizar.py` suma los cierres nuevos de todos los seguidos (el cierre del día se guarda recién después de las 18 h). El precio del momento se consulta en vivo y no se guarda. A diferencia de las otras bases, esta no se puede regenerar del todo: hacele respaldos.
+
 ## Seguridad
 
 La herramienta `ejecutar_python` corre en tu computadora el código que escribe el agente. Con `CONFIRMAR_CODIGO=true`, te muestra el código y pide confirmación antes de ejecutarlo. Desactivalo solo cuando conozcas el tipo de código que genera. Además, ese código:
@@ -187,7 +193,7 @@ La herramienta `ejecutar_python` corre en tu computadora el código que escribe 
 - corre sin las claves de PPI ni de Gemini;
 - corre vigilado por `tools/guardia.py`, que bloquea leer el `.env` y las bases de datos, escribir o borrar archivos, lanzar otros programas y conectarse a sitios que no sean las APIs de datos (BCRA, datos.gob.ar, FRED). No es un aislamiento total (Python lo aclara): protege contra errores del modelo y contra instrucciones maliciosas que pudieran llegar en los datos. Si tu red usa un proxy, esas conexiones también quedan bloqueadas.
 
-La conexión con PPI es de solo lectura a propósito: `conexiones/ppi.py` implementa únicamente consultas de precios y la calculadora de bonos. No usa la librería oficial, que incluye órdenes y transferencias, así que nada en el proyecto puede operar con tu cuenta.
+La conexión con PPI es de solo lectura a propósito: `conexiones/ppi.py` implementa únicamente consultas de precios. No usa la librería oficial, que incluye órdenes y transferencias, así que nada en el proyecto puede operar con tu cuenta.
 
 Para probar la conexión: `python -m conexiones.ppi AL30` muestra las respuestas de la API, sin claves.
 

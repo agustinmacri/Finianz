@@ -91,5 +91,8 @@ CONSULTAR_PRECIO = {
     },
 }
 
+HERRAMIENTAS = [
+    (CONSULTAR_PRECIO, consultar_precio),
+]
 
 
