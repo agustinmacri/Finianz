@@ -2,6 +2,7 @@
 import tomllib
 
 import config
+from admin_datos.feriados import MERCADOS
 
 ARCHIVO = config.CALENDARIOS_DIR / "publicaciones.toml"
 CAMPOS = ("codigo", "nombre", "pais", "organismo", "importancia", "fuente")
@@ -37,6 +38,13 @@ def leer() -> list[dict]:
             raise ErrorCatalogo(f"{donde}: las publicaciones del INDEC necesitan 'patron'.")
         if p["fuente"] == "fred" and not p.get("fred_release"):
             raise ErrorCatalogo(f"{donde}: las publicaciones de FRED necesitan 'fred_release'.")
+        if p["fuente"] == "regla":
+            if not isinstance(p.get("dia_habil"), int) or not 1 <= p["dia_habil"] <= 15:
+                raise ErrorCatalogo(f"{donde}: las reglas necesitan 'dia_habil' (número entre 1 y 15).")
+            if p.get("calendario") not in MERCADOS:
+                raise ErrorCatalogo(f"{donde}: 'calendario' inválido. Opciones: {', '.join(MERCADOS)}.")
+            if p.get("periodo") not in (None, "mes_anterior"):
+                raise ErrorCatalogo(f"{donde}: 'periodo' solo puede ser \"mes_anterior\".")
         if p["codigo"] in codigos:
             raise ErrorCatalogo(f"{donde}: el código '{p['codigo']}' está repetido.")
         codigos.add(p["codigo"])

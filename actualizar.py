@@ -4,7 +4,8 @@ Uso:
     python actualizar.py
 
 Hoy carga los feriados (datos/feriados.db) y el calendario de publicaciones
-(datos/publicaciones.db): las del INDEC desde sus PDF y las de EE. UU. desde FRED.
+(datos/publicaciones.db): las del INDEC desde sus PDF, las que siguen una regla de días
+hábiles (ISM, recaudación) y las de EE. UU. desde FRED.
 Conviene correrlo después de actualizar la librería holidays, de editar
 calendarios/feriados_ajustes.toml o calendarios/publicaciones.toml, de agregar un PDF
 del INDEC en calendarios/indec/, y una vez por semana para traer las fechas nuevas de FRED.
@@ -12,7 +13,7 @@ del INDEC en calendarios/indec/, y una vez por semana para traer las fechas nuev
 import sys
 
 import config
-from carga_datos import catalogo, feriados, publicaciones_fred, publicaciones_indec
+from carga_datos import catalogo, feriados, publicaciones_fred, publicaciones_indec, publicaciones_regla
 from admin_datos.feriados import NOMBRES_CALENDARIO
 from conexiones.http import ErrorAPI
 
@@ -41,6 +42,11 @@ def main():
         print(f"  No se encontraron en los PDF: {', '.join(indec['sin_encontrar'])} (revisá su 'patron' en el catálogo)")
     for aviso in indec["avisos"]:
         print(f"  Aviso: {aviso}")
+
+    reglas = publicaciones_regla.cargar()
+    print(f"\nPublicaciones por regla de días hábiles ({reglas['desde']} a {reglas['hasta']}):")
+    for codigo, proxima in reglas["proximas"].items():
+        print(f"  {codigo:<18} próxima: {proxima or '(sin fecha)'}")
 
     print("\nPublicaciones de EE. UU. (FRED):")
     if not config.FRED_API_KEY:

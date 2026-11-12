@@ -13,7 +13,7 @@ Construido con [LangGraph](https://langchain-ai.github.io/langgraph/) y modelos 
 
 Los dos agentes consultan además un **calendario de feriados** de Argentina y EE. UU. (nacionales, bancos, BYMA, NYSE y bonos del Tesoro) desde 2016 hasta el año próximo, y calculan días hábiles por mercado (por ejemplo, la liquidación T+2).
 
-También consultan un **calendario de publicaciones** con las fechas de los datos oficiales que sigue el proyecto (IPC, EMAE, salarios y balanza de pagos del INDEC; CPI, empleo, PCE, PBI y otras de EE. UU.), para saber cuándo sale el próximo dato. Las del BCRA, el Tesoro y la Fed se suman en el próximo paso.
+También consultan un **calendario de publicaciones** con las fechas de los datos oficiales que sigue el proyecto (IPC, EMAE, salarios y balanza de pagos del INDEC; recaudación de ARCA; CPI, empleo, PCE, PBI, ISM y otras de EE. UU.), para saber cuándo sale el próximo dato. Las del BCRA, el Tesoro y la Fed se suman en el próximo paso.
 
 Un **router** decide qué agente responde cada pregunta. Si hacen falta los dos, corren en paralelo y sus respuestas se integran en una sola.
 
@@ -80,6 +80,7 @@ Finianz/
 │   ├── feriados.py      # librería holidays + ajustes manuales
 │   ├── publicaciones_indec.py  # lector de los PDF del INDEC
 │   ├── publicaciones_fred.py   # fechas de EE. UU. desde FRED
+│   ├── publicaciones_regla.py  # fechas por regla de días hábiles (ISM, recaudación)
 │   └── catalogo.py      # lectura del catálogo de publicaciones
 ├── datos/               # las bases (no se suben a git)
 │   ├── feriados.db
@@ -169,6 +170,8 @@ Las fechas de publicación del INDEC salen de sus calendarios semestrales en PDF
 
 Las fechas de EE. UU. salen de la API de FRED, que ya tiene programadas las publicaciones de los próximos meses. Conviene correr `python actualizar.py` una vez por semana para traer las nuevas. Las horas se informan en hora del este de EE. UU. (ET).
 
+Las publicaciones con fecha fija por regla (por ejemplo, el ISM manufacturero sale el primer día hábil del mes) se calculan con la base de feriados. La regla de cada una está en el catálogo.
+
 Qué publicaciones se siguen y con qué importancia se define en `calendarios/publicaciones.toml`. Las del INDEC que no están en el catálogo también se guardan, con importancia baja.
 
 ## Seguridad
@@ -179,7 +182,7 @@ La herramienta `ejecutar_python` corre en tu computadora el código que escribe 
 
 El sistema se construye por fases. El detalle está en [`docs/arquitectura-multiagente.md`](docs/arquitectura-multiagente.md).
 
-- [ ] **Fase A** (en curso): router + agentes macro y noticias ✓; calendario de publicaciones del INDEC ✓ y de EE. UU. (FRED) ✓; faltan las manuales (BCRA, Tesoro, FOMC) y las de regla (ISM, recaudación).
+- [ ] **Fase A** (en curso): router + agentes macro y noticias ✓; calendario de publicaciones del INDEC ✓, de EE. UU. (FRED) ✓ y por regla (ISM, recaudación) ✓; faltan las manuales (BCRA, Tesoro, FOMC).
 - [ ] **Fase B:** bases de datos locales (✓ feriados, ✓ publicaciones), carga de datos, precios de mercado, cartera y registro de pronósticos.
 - [ ] **Fase C:** calculadoras de bonos y agente de renta fija.
 - [ ] **Fase D:** agente de escenarios y estratega (retornos esperados, estrés, límites regulatorios).

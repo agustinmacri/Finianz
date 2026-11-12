@@ -1,8 +1,8 @@
 """Herramientas de calendario para los agentes: feriados, días hábiles y publicaciones.
 
 Leen las bases locales (datos/feriados.db y datos/publicaciones.db). Si están vacías,
-las cargan solas: los feriados desde la librería holidays y las publicaciones del INDEC
-desde los PDF de calendarios/indec/ (no hace falta internet). Las de EE. UU. (FRED)
+las cargan solas: los feriados desde la librería holidays, las publicaciones del INDEC
+desde los PDF de calendarios/indec/ y las que siguen una regla de días hábiles (no hace falta internet). Las de EE. UU. (FRED)
 se cargan con `python actualizar.py`.
 """
 from datetime import date, timedelta
@@ -12,6 +12,7 @@ from admin_datos import publicaciones as db_pub
 from carga_datos import catalogo
 from carga_datos import feriados as carga_feriados
 from carga_datos import publicaciones_indec as carga_indec
+from carga_datos import publicaciones_regla as carga_regla
 
 DIAS_SEMANA = ["lunes", "martes", "miércoles", "jueves", "viernes", "sábado", "domingo"]
 
@@ -146,6 +147,9 @@ def consultar_publicaciones(desde: str | None = None, hasta: str | None = None, 
     try:
         if not db_pub.hay_datos(carga_indec.FUENTE):
             carga_indec.cargar()
+        if not db_pub.hay_datos(carga_regla.FUENTE):
+            _preparar()                       # las reglas cuentan días hábiles: necesitan los feriados
+            carga_regla.cargar()
         inicio = _fecha(desde, date.today())
         # Si se busca una publicación puntual ("¿cuándo sale el IPC?"), se mira medio año hacia adelante
         fin = _fecha(hasta, inicio + timedelta(days=180 if buscar else 14))

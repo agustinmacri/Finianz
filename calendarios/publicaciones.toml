@@ -9,9 +9,10 @@
 #   fuente       indec_pdf: calendario semestral del INDEC (calendarios/indec/)
 #                fred:      API de FRED (necesita FRED_API_KEY en el .env)
 #                manual:    fechas cargadas a mano (próximamente)
-#                regla:     se calcula con días hábiles, ej. "primer día hábil del mes" (próximamente)
+#                regla:     se calcula con días hábiles, ej. "primer día hábil del mes"
 #   patron       solo para indec_pdf: comienzo del título tal como aparece en el PDF
 #   fred_release solo para fred: nombre exacto de la publicación en FRED (fred.stlouisfed.org/releases)
+#   dia_habil, calendario, excluir, periodo: solo para regla (ver carga_datos/publicaciones_regla.py)
 #   hora         opcional: hora habitual de publicación (ej.: "08:30 ET", hora del este de EE. UU.)
 #
 # Las publicaciones del INDEC que NO están en este catálogo también se guardan, con importancia baja.
@@ -87,6 +88,9 @@ pais = "AR"
 organismo = "ARCA"
 importancia = "media"
 fuente = "regla"
+dia_habil = 1                 # primer día hábil del mes (verificado: sep-2026 el 1/10, oct-2026 el 2/11)
+calendario = "AR"
+periodo = "mes_anterior"
 
 [[publicacion]]
 codigo = "SALARIOS"
@@ -221,6 +225,11 @@ pais = "US"
 organismo = "ISM"
 importancia = "media"
 fuente = "regla"
+dia_habil = 1                 # primer día hábil del mes, según ismworld.org
+calendario = "NYSE"           # el ISM no publica en Viernes Santo, como la bolsa
+excluir = ["01-02"]           # ni el 2 de enero
+periodo = "mes_anterior"
+hora = "10:00 ET"
 
 [[publicacion]]
 codigo = "ISM_SERV"
@@ -229,6 +238,11 @@ pais = "US"
 organismo = "ISM"
 importancia = "media"
 fuente = "regla"
+dia_habil = 3                 # tercer día hábil del mes, según ismworld.org
+calendario = "NYSE"
+excluir = ["01-02"]
+periodo = "mes_anterior"
+hora = "10:00 ET"
 
 [[publicacion]]
 codigo = "PROD_INDUSTRIAL"
