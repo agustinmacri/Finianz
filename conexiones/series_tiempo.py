@@ -13,15 +13,6 @@ from conexiones.http import ErrorAPI, get_json
 # Nombre corto -> id de la serie. Agregá acá las que uses seguido (los ids salen de buscar_series).
 SERIES_CONOCIDAS = {}
 
-# Cómo pedir los datos. La API calcula las variaciones por nosotros.
-# Las variaciones vienen como fracción: 0.021 significa 2,1%.
-MODOS = {
-    "valor": "value",                                           # el nivel de la serie
-    "variacion": "percent_change",                              # contra el período anterior (ej. inflación mensual)
-    "variacion_interanual": "percent_change_a_year_ago",        # contra el mismo período del año anterior
-    "variacion_acumulada_anio": "percent_change_since_beginning_of_year",  # acumulada en el año
-}
-
 LIMITE_API = 1000  # máximo de valores que la API devuelve por consulta
 
 
@@ -47,23 +38,20 @@ def obtener_serie(
     serie: str,
     desde: str | None = None,
     hasta: str | None = None,
-    modo: str = "valor",
     ultimos: int | None = None,
 ) -> list[dict]:
-    """Valores de una serie, ordenados del más viejo al más nuevo.
+    """Valores (niveles) de una serie, ordenados del más viejo al más nuevo.
 
+    Las variaciones las calcula el proyecto (calculos/series.py), no la API.
     serie:  un id de la API o un nombre de SERIES_CONOCIDAS (ej. "ipc").
     desde / hasta: fechas 'AAAA-MM-DD'. Si no se indican, trae el último año.
-    modo:   "valor", "variacion", "variacion_interanual" o "variacion_acumulada_anio".
     ultimos: si se indica, trae solo los últimos N valores (ignora desde/hasta).
 
-    Devuelve [{'fecha': '2026-09-01', 'valor': 0.021}, ...]
+    Devuelve [{'fecha': '2026-09-01', 'valor': 123.4}, ...]
     """
-    if modo not in MODOS:
-        raise ErrorAPI(f"Modo '{modo}' inválido. Opciones: {', '.join(MODOS)}.")
     id_serie = SERIES_CONOCIDAS.get(serie.lower(), serie)
 
-    params = {"ids": id_serie, "representation_mode": MODOS[modo], "metadata": "none"}
+    params = {"ids": id_serie, "representation_mode": "value", "metadata": "none"}
     if ultimos:
         params["last"] = ultimos
     else:

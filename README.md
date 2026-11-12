@@ -70,6 +70,8 @@ Finianz/
 │   ├── guardia.py       # límites de seguridad del código que escribe el agente
 │   ├── calendario.py    # consultar_feriados, calcular_dia_habil, consultar_publicaciones
 │   └── python_exec.py   # ejecutar_python, con acceso a los datos
+├── calculos/            # cálculos propios, sin acceso externo
+│   └── series.py        # variaciones de series (mensual, interanual, anualizada, acumulada)
 ├── conexiones/             # acceso a fuentes externas, sin IA
 │   ├── http.py          # timeouts, reintentos y caché comunes
 │   ├── bcra.py          # API del BCRA (Principales Variables v4)

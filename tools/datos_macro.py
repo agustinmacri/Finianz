@@ -7,6 +7,7 @@ para gastar pocos tokens.
 import math
 from datetime import date, timedelta
 
+from calculos import series as calc
 from conexiones import bcra, fred, series_tiempo
 from conexiones.http import ErrorAPI
 
@@ -105,23 +106,41 @@ CONSULTAR_BCRA = {
 # ---------------------------------------------------------------------------
 # 3. Serie de datos.gob.ar
 # ---------------------------------------------------------------------------
+def _con_modo(obtener, modo: str, desde: str | None, hasta: str | None) -> tuple[list[dict], str]:
+    """Trae los niveles (con datos previos si hace falta) y calcula la variación en el proyecto.
+
+    Devuelve (serie, aviso): el aviso lista las fechas con dato pero sin variación calculable.
+    """
+    hasta = hasta or date.today().isoformat()
+    if modo == "valor":
+        return obtener(desde, hasta), ""
+    desde = desde or (date.fromisoformat(hasta) - timedelta(days=365)).isoformat()
+    niveles = obtener(calc.desde_extendido(desde), hasta)
+    serie = calc.transformar(niveles, modo)
+    sin_calculo = calc.faltantes(niveles, serie, modo, desde)
+    aviso = "".join(
+        f"\nAVISO: no existe {modo.replace('_', ' ')} para {f['fecha']} porque la fuente no tiene el dato de "
+        f"{f['base']} (no se publicó). No es una demora: esa variación no va a aparecer más adelante. Explicalo así."
+        for f in sin_calculo)
+    return calc.recortar(serie, desde, hasta), aviso
+
+
 def consultar_serie(id_serie: str, modo: str = "valor", desde: str | None = None, hasta: str | None = None) -> str:
     try:
-        serie = series_tiempo.obtener_serie(id_serie, desde, hasta, modo=modo)
-    except ErrorAPI as e:
+        serie, aviso = _con_modo(lambda d, h: series_tiempo.obtener_serie(id_serie, d, h), modo, desde, hasta)
+    except (ErrorAPI, ValueError) as e:
         return f"Error: {e}"
-    # La API devuelve las variaciones como fracción (0.021): se muestran en porcentaje
-    es_variacion = modo != "valor"
-    if es_variacion:
-        serie = [{"fecha": d["fecha"], "valor": d["valor"] * 100} for d in serie]
-    return _formatear(serie, titulo=f"Serie {id_serie} ({modo})", sufijo="%" if es_variacion else "")
+    if not serie:
+        return f"Serie {id_serie}: no hay datos suficientes para calcular '{modo}' en ese período.{aviso}"
+    calculo = "" if modo == "valor" else ", calculada por Finianz sobre los niveles"
+    return _formatear(serie, titulo=f"Serie {id_serie} ({modo}{calculo})", sufijo="" if modo == "valor" else "%") + aviso
 
 
 CONSULTAR_SERIE = {
     "name": "consultar_serie",
     "description": (
         "Devuelve una serie de datos.gob.ar (el id sale de buscar_indicador). "
-        "Puede calcular variaciones directamente con el parámetro modo. "
+        "Con el parámetro modo, calcula variaciones (en %) sobre los niveles de la serie. "
         "Si no se indican fechas, trae el último año."
     ),
     "parameters": {
@@ -130,10 +149,11 @@ CONSULTAR_SERIE = {
             "id_serie": {"type": "string", "description": "Id de la serie en datos.gob.ar"},
             "modo": {
                 "type": "string",
-                "enum": list(series_tiempo.MODOS),
+                "enum": list(calc.MODOS),
                 "description": (
                     "valor: el nivel de la serie; variacion: contra el período anterior; "
-                    "variacion_interanual: contra un año antes; variacion_acumulada_anio: acumulada en el año"
+                    "variacion_interanual: contra un año antes; variacion_anualizada: la del período llevada a un año; "
+                    "variacion_acumulada_anio: acumulada en el año"
                 ),
             },
             "desde": {"type": "string", "description": "Fecha inicial AAAA-MM-DD (opcional)"},
@@ -184,10 +204,10 @@ def inflacion_acumulada(desde: str | None = None, hasta: str | None = None) -> s
 INFLACION_ACUMULADA = {
     "name": "inflacion_acumulada",
     "description": (
-        "Calcula la inflación acumulada (compuesta) entre dos fechas con los datos mensuales del BCRA, "
+        "Solo Argentina. Calcula la inflación acumulada (compuesta) entre dos fechas con los datos mensuales del BCRA, "
         "y devuelve también la inflación de cada mes y la acumulada anualizada (si el período tiene menos de 12 meses). "
         "Sin fechas, calcula lo que va del año. Usala para cualquier pregunta de inflación acumulada, en el año o en un "
-        "período, y para anualizar esa acumulada."
+        "período, y para anualizar esa acumulada. Para EE. UU. usá consultar_fred con modo variacion_acumulada_anio."
     ),
     "parameters": {
         "type": "object",
@@ -202,40 +222,71 @@ INFLACION_ACUMULADA = {
 # ---------------------------------------------------------------------------
 # 4 bis. Inflación anualizada (el ritmo mensual llevado a un año)
 # ---------------------------------------------------------------------------
-def inflacion_anualizada(hasta: str | None = None) -> str:
+FUENTES_INFLACION = {
+    "AR": "INDEC vía BCRA",
+    "US": "BLS vía FRED; CPI desestacionalizado, CPIAUCSL; variaciones calculadas por Finianz",
+}
+
+
+def _inflacion_mensual_us(desde: str, hasta: str) -> list[dict]:
+    """Inflación mensual de EE. UU. (en %), calculada sobre los niveles del CPI desestacionalizado."""
+    niveles = fred.obtener_serie("CPIAUCSL", calc.desde_extendido(desde), hasta)
+    return calc.recortar(calc.transformar(niveles, "variacion"), desde, hasta)
+
+
+def _meses_consecutivos(tramo: list[dict]) -> bool:
+    """¿El tramo son meses seguidos? (falta un mes, por ejemplo, si la fuente no lo publicó)."""
+    a, b = tramo[0]["fecha"], tramo[-1]["fecha"]
+    return (int(b[:4]) - int(a[:4])) * 12 + int(b[5:7]) - int(a[5:7]) == len(tramo) - 1
+
+
+def inflacion_anualizada(pais: str = "AR", hasta: str | None = None) -> str:
+    pais = pais.upper()
+    if pais not in FUENTES_INFLACION:
+        return "Error: pais tiene que ser AR (Argentina) o US (Estados Unidos)."
     try:
         fin = date.fromisoformat(hasta) if hasta else date.today()
-        serie = _inflacion_mensual((fin - timedelta(days=400)).isoformat(), fin.isoformat())
+        desde = (fin - timedelta(days=400)).isoformat()
+        serie = (_inflacion_mensual(desde, fin.isoformat()) if pais == "AR"
+                 else _inflacion_mensual_us(desde, fin.isoformat()))
     except (ErrorAPI, ValueError) as e:
         return f"Error: {e}"
+    if not serie:
+        return f"Error: no hay inflación mensual de {pais} hasta {fin}."
 
     lineas = []
     for n in (1, 3, 6):
         if len(serie) < n:
             continue
         tramo = serie[-n:]
+        if not _meses_consecutivos(tramo):
+            lineas.append(f"Promedio de los últimos {n} meses: no se calcula, falta algún mes en la fuente.")
+            continue
         promedio = (math.prod(1 + d["valor"] / 100 for d in tramo) ** (1 / n) - 1) * 100   # promedio geométrico
         anualizada = ((1 + promedio / 100) ** 12 - 1) * 100
         nombre = "Último mes" if n == 1 else f"Promedio de los últimos {n} meses"
         lineas.append(f"{nombre} ({tramo[0]['fecha'][:7]} a {tramo[-1]['fecha'][:7]}): "
                       f"mensual {promedio:.2f}% → ANUALIZADA {anualizada:.1f}%")
     meses = ", ".join(f"{d['fecha'][:7]}: {_num(d['valor'])}%" for d in serie[-6:])
-    return (f"Inflación anualizada (INDEC vía BCRA). Fórmula: (1 + mensual)^12 − 1; para varios meses, "
-            f"con el promedio geométrico.\n" + "\n".join(lineas) +
-            f"\nMeses usados: {meses}\nÚLTIMO DATO DISPONIBLE: {serie[-1]['fecha'][:7]}")
+    return (f"Inflación anualizada de {'Argentina' if pais == 'AR' else 'EE. UU.'} ({FUENTES_INFLACION[pais]}). "
+            f"Fórmula: (1 + mensual)^12 − 1; para varios meses, con el promedio geométrico de las mensuales.\n"
+            + "\n".join(lineas) + f"\nMeses usados: {meses}\nÚLTIMO DATO DISPONIBLE: {serie[-1]['fecha'][:7]}")
 
 
 INFLACION_ANUALIZADA = {
     "name": "inflacion_anualizada",
     "description": (
-        "Inflación anualizada: lleva el ritmo mensual a un año, ((1 + mensual)^12 − 1). Devuelve la del último mes "
-        "y la del promedio de los últimos 3 y 6 meses, ya calculadas. Usala para preguntas de inflación anualizada "
-        "o de ritmo de inflación, y para comparar la inflación mensual con el REM o con la interanual. "
-        "No es lo mismo que la acumulada (inflacion_acumulada) ni que la interanual."
+        "Inflación anualizada de Argentina (pais='AR') o de EE. UU. (pais='US'): lleva el ritmo mensual a un año, "
+        "((1 + mensual)^12 − 1). Devuelve la del último mes y la del promedio de los últimos 3 y 6 meses, ya calculadas. "
+        "Usala para preguntas de inflación anualizada o de ritmo de inflación, y para comparar la inflación mensual "
+        "con el REM o con la interanual. No es lo mismo que la acumulada ni que la interanual."
     ),
     "parameters": {
         "type": "object",
         "properties": {
+            "pais": {"type": "string", "enum": ["AR", "US"],
+                     "description": "AR = Argentina (por defecto), US = Estados Unidos. Si la conversación venía "
+                                    "hablando de EE. UU., usá US."},
             "hasta": {"type": "string", "description": "Fecha final AAAA-MM-DD (opcional; por defecto, el último dato)"},
         },
     },
@@ -267,28 +318,27 @@ SERIES_EEUU = {
     "UMCSENT": "confianza del consumidor (U. de Michigan)",
     "INDPRO": "producción industrial",
 }
-_SUFIJO_MODO = {"valor": "", "variacion": "%", "variacion_interanual": "%", "variacion_anualizada": "%"}
-
-
 def consultar_fred(serie: str, modo: str = "valor", desde: str | None = None, hasta: str | None = None) -> str:
     try:
         info = fred.info_serie(serie)
-        datos = fred.obtener_serie(serie, desde or (date.today() - timedelta(days=730)).isoformat(), hasta, modo)
+        datos, aviso = _con_modo(lambda d, h: fred.obtener_serie(serie, d, h), modo,
+                                 desde or (date.today() - timedelta(days=730)).isoformat(), hasta)
     except (ErrorAPI, ValueError) as e:
         return f"Error: {e}"
     if not datos:
-        return f"FRED {info['id']}: sin datos en ese período."
-    unidad = info["unidad"] if modo == "valor" else f"{modo.replace('_', ' ')} en % (de: {info['unidad']})"
+        return f"FRED {info['id']}: sin datos suficientes para '{modo}' en ese período.{aviso}"
+    unidad = (info["unidad"] if modo == "valor"
+              else f"{modo.replace('_', ' ')} en %, calculada por Finianz (sobre: {info['unidad']})")
     titulo = (f"FRED {info['id']} – {info['titulo']} | {unidad} | {info['frecuencia']} | {info['ajuste']} | "
               f"actualizada {info['actualizada'][:10]}")
-    return _formatear(datos, titulo=titulo, sufijo=_SUFIJO_MODO[modo])
+    return _formatear(datos, titulo=titulo, sufijo="" if modo == "valor" else "%") + aviso
 
 
 CONSULTAR_FRED = {
     "name": "consultar_fred",
     "description": (
         "Serie económica de EE. UU. desde FRED (Reserva Federal de St. Louis), con su último dato y fecha. "
-        "Las variaciones las calcula FRED: no hace falta calcularlas. Series más usadas: "
+        "Con el parámetro modo, devuelve las variaciones ya calculadas (en %): no hace falta calcularlas. Series más usadas: "
         + "; ".join(f"{k}: {v}" for k, v in SERIES_EEUU.items())
         + ". Para otras, usá buscar_serie_fred."
     ),
@@ -296,9 +346,10 @@ CONSULTAR_FRED = {
         "type": "object",
         "properties": {
             "serie": {"type": "string", "description": "Id de la serie en FRED, ej.: CPIAUCSL"},
-            "modo": {"type": "string", "enum": list(fred.UNIDADES),
+            "modo": {"type": "string", "enum": list(calc.MODOS),
                      "description": "valor (nivel), variacion (% contra el período anterior), variacion_interanual "
-                                    "(% contra un año antes) o variacion_anualizada (% anualizado, como se informa el PBI)"},
+                                    "(% contra un año antes), variacion_anualizada (% anualizado, como se informa el PBI) "
+                                    "o variacion_acumulada_anio"},
             "desde": {"type": "string", "description": "Fecha inicial AAAA-MM-DD (por defecto, dos años atrás)"},
             "hasta": {"type": "string", "description": "Fecha final AAAA-MM-DD (opcional)"},
         },

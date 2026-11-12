@@ -13,15 +13,6 @@ from conexiones.http import ErrorAPI, get_json
 CACHE_FRED_MINUTOS = 12 * 60
 
 
-# Transformaciones que FRED calcula del lado del servidor (parámetro 'units')
-UNIDADES = {
-    "valor": "lin",                     # nivel, sin transformar
-    "variacion": "pch",                 # % contra el período anterior (mes, trimestre...)
-    "variacion_interanual": "pc1",      # % contra el mismo período del año anterior
-    "variacion_anualizada": "pca",      # % contra el período anterior, anualizada (así se informa el PBI)
-}
-
-
 def _pedir(ruta: str, cache_minutos: int = CACHE_FRED_MINUTOS, **params) -> dict:
     if not config.FRED_API_KEY:
         raise ErrorAPI("Falta FRED_API_KEY en el .env (clave gratuita en https://fredaccount.stlouisfed.org/apikeys).")
@@ -71,15 +62,13 @@ def info_serie(serie_id: str) -> dict:
             "ajuste": s.get("seasonal_adjustment", ""), "actualizada": s.get("last_updated", "")}
 
 
-def obtener_serie(serie_id: str, desde: str | None = None, hasta: str | None = None, modo: str = "valor") -> list[dict]:
+def obtener_serie(serie_id: str, desde: str | None = None, hasta: str | None = None) -> list[dict]:
     """Serie de FRED como [{'fecha': 'AAAA-MM-DD', 'valor': float}], de la más vieja a la más nueva.
 
-    Sin fechas, trae el último año. modo: valor, variacion, variacion_interanual o variacion_anualizada
-    (las variaciones vienen en porcentaje: 0.3 = 0,3%). Los valores faltantes (".") se omiten.
+    Solo niveles: las variaciones las calcula el proyecto (calculos/series.py), no FRED.
+    Sin fechas, trae el último año. Los valores faltantes (".") se omiten.
     """
-    if modo not in UNIDADES:
-        raise ValueError(f"modo '{modo}' inválido. Opciones: {', '.join(UNIDADES)}.")
-    params = {"series_id": serie_id.upper(), "units": UNIDADES[modo],
+    params = {"series_id": serie_id.upper(),
               "observation_start": desde or (date.today() - timedelta(days=365)).isoformat()}
     if hasta:
         params["observation_end"] = hasta

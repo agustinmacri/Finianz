@@ -23,6 +23,7 @@ PREAMBULO = """\
 import math
 from datetime import date
 from conexiones import bcra, fred, series_tiempo
+from calculos.series import transformar
 """
 
 DEFINICION = {
@@ -35,12 +36,12 @@ DEFINICION = {
         "- bcra.buscar_variables(texto): variables del BCRA, con 'id', 'descripcion', 'ultima_fecha', 'ultimo_valor'.\n"
         "- bcra.obtener_serie(id_variable, desde=None, hasta=None): serie del BCRA. "
         "Las variables en % vienen como porcentaje (2.1 = 2,1%).\n"
-        "- series_tiempo.obtener_serie(id_serie, desde=None, hasta=None, modo='valor'): serie de datos.gob.ar. "
-        "modo: 'valor', 'variacion', 'variacion_interanual' o 'variacion_acumulada_anio'; "
-        "las variaciones vienen como fracción (0.021 = 2,1%).\n"
-        "- fred.obtener_serie(id_serie, desde=None, hasta=None, modo='valor'): serie de EE. UU. desde FRED "
-        "(ej.: 'CPIAUCSL'). modo: 'valor', 'variacion', 'variacion_interanual' o 'variacion_anualizada'; "
-        "las variaciones vienen en porcentaje (0.3 = 0,3%).\n"
+        "- series_tiempo.obtener_serie(id_serie, desde=None, hasta=None): niveles de una serie de datos.gob.ar.\n"
+        "- fred.obtener_serie(id_serie, desde=None, hasta=None): niveles de una serie de EE. UU. desde FRED "
+        "(ej.: 'CPIAUCSL').\n"
+        "- transformar(serie, modo): calcula variaciones sobre los niveles, en porcentaje (0.3 = 0,3%). "
+        "modo: 'variacion', 'variacion_interanual', 'variacion_anualizada' o 'variacion_acumulada_anio'. "
+        "Para variaciones, traé datos desde antes del período (por ejemplo, un año más).\n"
         "Fechas en formato 'AAAA-MM-DD'; sin fechas traen el último año. "
         "Traé siempre los datos con estas funciones: nunca escribas números copiados a mano. "
         "Imprimí los datos usados (fecha y valor) además del resultado. "
