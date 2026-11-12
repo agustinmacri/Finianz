@@ -1,29 +1,25 @@
 """Herramientas de precios de mercado (bonos, letras, ONs, acciones, CEDEARs) desde PPI.
 
-Solo lectura: consultan precios y la calculadora de bonos de PPI; no hay nada que opere.
+Solo traen precios (actuales e históricos): no operan y no usan cálculos de PPI.
+Los cálculos (TIR, duration, etc.) los hace el proyecto: ver docs/arquitectura-multiagente.md.
 Las respuestas son cortas y siempre con la fecha del precio.
-"""
-import json
 
+El histórico sale de la base propia (datos/precios.db): cada activo consultado queda guardado
+y a la API solo se le piden los días que faltan. El precio del momento se consulta en vivo.
+"""
 import config
+from admin_datos import precios as db
+from carga_datos import precios as carga
 from conexiones import ppi
 from conexiones.http import ErrorAPI
 
 PUNTOS_HISTORICO = 15   # cuántos precios diarios se muestran del histórico
 
 
-def _tipo(ticker: str) -> str:
-    """Tipo de instrumento según PPI (BONOS, ACCIONES, CEDEARS...). Prefiere el que cotiza en BYMA."""
-    encontrados = ppi.buscar_instrumento(ticker)
-    exactos = [i for i in encontrados if str(i.get("ticker", "")).upper() == ticker.upper()] or encontrados
-    if not exactos:
-        raise ValueError(f"PPI no encontró el ticker '{ticker}'.")
-    en_byma = [i for i in exactos if str(i.get("market", "")).upper() == "BYMA"]
-    return (en_byma or exactos)[0]["type"]
-
-
 def _n(valor) -> str:
-    """Números con separador de miles; hasta 4 decimales para los chicos (TIR, duration)."""
+    """Números con separador de miles; hasta 4 decimales para los chicos."""
+    if valor is None:
+        return "s/d"
     if not isinstance(valor, (int, float)):
         return str(valor)
     return f"{valor:,.2f}" if abs(valor) >= 1000 else f"{valor:,.4f}".rstrip("0").rstrip(".")
@@ -34,29 +30,47 @@ def _n(valor) -> str:
 # ---------------------------------------------------------------------------
 def consultar_precio(ticker: str, desde: str | None = None, hasta: str | None = None,
                      plazo: str | None = None) -> str:
+    plazo = plazo or config.PPI_PLAZO
+    # 1. Guardar en la base lo que falte (todo el histórico si el activo es nuevo)
+    aviso = ""
     try:
-        tipo = _tipo(ticker)
-        plazo = plazo or config.PPI_PLAZO
-        if not desde:
-            p = ppi.precio_actual(ticker, tipo, plazo)
-            return (f"{ticker.upper()} ({tipo}, {plazo}) – PPI. Fecha del precio: {p.get('date')}\n"
-                    f"Último: {_n(p.get('price'))} | apertura {_n(p.get('openingPrice'))} | "
-                    f"máx {_n(p.get('max'))} | mín {_n(p.get('min'))} | volumen {_n(p.get('volume'))}")
-        datos = sorted(ppi.historico(ticker, tipo, desde, hasta, plazo), key=lambda d: d.get("date", ""))
+        carga.actualizar(ticker, plazo)
+        instrumento = db.instrumento(ticker)
     except (ErrorAPI, ValueError) as e:
-        return f"Error: {e}"
+        instrumento = db.instrumento(ticker)
+        if not instrumento:
+            return f"Error: {e}"
+        aviso = f"\n(No se pudo actualizar desde PPI: {e}. Se usan los precios guardados.)"
+    titulo = (f"{ticker.upper()} – {instrumento.get('descripcion') or ''} ({instrumento['tipo']}, "
+              f"en {instrumento.get('moneda') or 's/d'}, {plazo})")
 
+    # 2. Precio del momento: en vivo, no se guarda
+    if not desde:
+        try:
+            p = ppi.precio_actual(ticker, instrumento["tipo"], plazo)
+        except ErrorAPI as e:
+            ultimo = db.entre(ticker, plazo)[-1:] or [None]
+            if not ultimo[0]:
+                return f"Error: {e}"
+            return (f"{titulo} – sin conexión con PPI ({e}). Último cierre guardado: "
+                    f"{ultimo[0]['fecha']} = {_n(ultimo[0]['cierre'])}")
+        return (f"{titulo} – PPI en vivo. Fecha y hora del precio: {str(p.get('date'))[:16]}\n"
+                f"Último: {_n(p.get('price'))} | variación del día {p.get('marketChangePercent') or 's/d'} "
+                f"(cierre anterior {_n(p.get('previousClose'))}) | apertura {_n(p.get('openingPrice'))} | "
+                f"máx {_n(p.get('max'))} | mín {_n(p.get('min'))} | volumen {_n(p.get('volume'))}{aviso}")
+
+    # 3. Histórico: desde la base propia
+    datos = db.entre(ticker, plazo, desde, hasta)
     if not datos:
-        return f"{ticker.upper()}: PPI no tiene precios entre {desde} y {hasta or 'hoy'}."
-    precios = [d["price"] for d in datos if isinstance(d.get("price"), (int, float))]
-    lineas = [f"{d.get('date', '')[:10]}: {_n(d.get('price'))} (vol. {_n(d.get('volume'))})"
-              for d in datos[-PUNTOS_HISTORICO:]]
-    return (f"{ticker.upper()} ({tipo}, {plazo}) – PPI: {len(datos)} precios entre {datos[0].get('date', '')[:10]} "
-            f"y {datos[-1].get('date', '')[:10]}.\n"
-            f"ÚLTIMO: {datos[-1].get('date', '')[:10]} = {_n(datos[-1].get('price'))} | "
-            f"mín {_n(min(precios))} | máx {_n(max(precios))}\n"
-            + (f"Últimos {PUNTOS_HISTORICO}:\n" if len(datos) > PUNTOS_HISTORICO else "") + "\n".join(lineas))
-
+        guardado = db.rango(ticker, plazo)
+        return (f"{ticker.upper()}: no hay precios guardados entre {desde} y {hasta or 'hoy'}"
+                + (f" (la base tiene del {guardado[0]} al {guardado[1]})." if guardado else ".") + aviso)
+    cierres = [d["cierre"] for d in datos]
+    lineas = [f"{d['fecha']}: {_n(d['cierre'])} (vol. {_n(d['volumen'])})" for d in datos[-PUNTOS_HISTORICO:]]
+    return (f"{titulo} – base propia (fuente: PPI): {len(datos)} cierres entre {datos[0]['fecha']} "
+            f"y {datos[-1]['fecha']}.\n"
+            f"ÚLTIMO: {datos[-1]['fecha']} = {_n(datos[-1]['cierre'])} | mín {_n(min(cierres))} | máx {_n(max(cierres))}\n"
+            + (f"Últimos {PUNTOS_HISTORICO}:\n" if len(datos) > PUNTOS_HISTORICO else "") + "\n".join(lineas) + aviso)
 
 CONSULTAR_PRECIO = {
     "name": "consultar_precio",

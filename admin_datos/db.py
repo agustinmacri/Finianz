@@ -3,6 +3,7 @@
     datos/
     ├── feriados.db        feriados de Argentina y EE. UU. por calendario   (regenerable)
     ├── publicaciones.db   fechas de publicación: INDEC, FRED, licitaciones  (regenerable)
+    ├── precios.db         precios diarios de los activos consultados       (NO regenerable del todo: respaldar)
     └── cartera.db         posiciones, operaciones y pronósticos propios     (NO regenerable: respaldar)
 
 Acá se definen las tablas de cada base y la forma de conectarse. Las consultas de cada
@@ -50,6 +51,30 @@ ESQUEMAS = {
         CREATE INDEX IF NOT EXISTS idx_publicaciones_fecha ON publicaciones (fecha, importancia);
         CREATE INDEX IF NOT EXISTS idx_publicaciones_codigo ON publicaciones (codigo, fecha);
     """,
+          "precios": """
+          CREATE TABLE IF NOT EXISTS instrumentos (
+              ticker          TEXT PRIMARY KEY,   -- AL30, AL30D, TX26, GGAL...
+              tipo            TEXT NOT NULL,      -- BONOS, LETRAS, ON, ACCIONES, CEDEARS... (según la fuente)
+              moneda          TEXT,               -- moneda en la que cotiza ese ticker
+              descripcion     TEXT,
+              isin            TEXT,               -- une las versiones en distintas monedas (AL30, AL30D, AL30C)
+              mercado         TEXT,               -- BYMA, ROFEX...
+              fuente          TEXT NOT NULL,      -- de dónde se bajan sus precios (ppi)
+              seguido_desde   TEXT NOT NULL       -- cuándo se consultó por primera vez
+          );
+          CREATE TABLE IF NOT EXISTS precios (
+              ticker    TEXT NOT NULL,
+              plazo     TEXT NOT NULL,            -- plazo de liquidación: INMEDIATA, A-24HS...
+              fecha     TEXT NOT NULL,            -- AAAA-MM-DD
+              apertura  REAL,
+              maximo    REAL,
+              minimo    REAL,
+              cierre    REAL NOT NULL,
+              volumen   REAL,
+              fuente    TEXT NOT NULL,            -- ppi, data912, manual...
+              PRIMARY KEY (ticker, plazo, fecha)
+          );
+      """,
     "cartera": "",         # fase B: posiciones, operaciones y registro de pronósticos
 }
 

@@ -16,7 +16,7 @@ import config
 from carga_datos import catalogo, feriados, publicaciones_fred, publicaciones_indec, publicaciones_regla
 from admin_datos.feriados import NOMBRES_CALENDARIO
 from conexiones.http import ErrorAPI
-
+from carga_datos import catalogo, feriados, precios, publicaciones_fred, publicaciones_indec, publicaciones_regla
 
 def main():
     try:
@@ -48,7 +48,12 @@ def main():
     for codigo, proxima in reglas["proximas"].items():
         print(f"  {codigo:<18} próxima: {proxima or '(sin fecha)'}")
 
-    print("\nPublicaciones de EE. UU. (FRED):")
+    _publicaciones_fred()
+    _precios()
+
+
+def _publicaciones_fred():
+      print("\nPublicaciones de EE. UU. (FRED):")
     if not config.FRED_API_KEY:
         print("  Se omitió: falta FRED_API_KEY en el .env (clave gratuita en https://fredaccount.stlouisfed.org/apikeys).")
         return
@@ -63,6 +68,16 @@ def main():
     for aviso in eeuu["avisos"]:
         print(f"  Aviso: {aviso}")
 
+  def _precios():
+      print("\nPrecios de los activos seguidos (PPI):")
+      if not (config.PPI_API_KEY and config.PPI_API_SECRET):
+          print("  Se omitió: faltan PPI_API_KEY y PPI_API_SECRET en el .env.")
+          return
+      resultado = precios.actualizar_todos()
+      if not resultado:
+          print("  Todavía no hay activos seguidos: se agregan solos la primera vez que consultás uno.")
+      for ticker, nuevos in resultado.items():
+          print(f"  {ticker:<10} {nuevos if isinstance(nuevos, str) else f'{nuevos} cierres nuevos'}")
 
 if __name__ == "__main__":
     main()
