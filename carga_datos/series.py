@@ -1,4 +1,4 @@
-"""Carga de series diarias oficiales en datos/series.db: el CER y la TAMAR del BCRA.
+"""Carga de series diarias oficiales en datos/series.db: el CER, la TAMAR y el A3500 del BCRA.
 
 Cómo funciona:
 - Se piden solo fechas dentro del rango que el BCRA informa para cada variable (primera y última
@@ -21,6 +21,7 @@ FUENTE = "bcra"
 SERIES = {                      # nombre en la base -> id de la variable en el BCRA
     "CER": bcra.ID_CER,         # índice, todos los días
     "TAMAR": bcra.ID_TAMAR,     # % TNA tal como se publica (24.4375 = 24,4375%), días hábiles
+    "A3500": bcra.ID_A3500,     # $ por US$, días hábiles (se publica alrededor de las 15 h)
 }
 DIAS_ADELANTE = 60              # tope por las dudas: nunca se piden fechas más allá de hoy + 60 días
 

@@ -4,7 +4,7 @@
     ├── feriados.db        feriados de Argentina y EE. UU. por calendario   (regenerable)
     ├── publicaciones.db   fechas de publicación: INDEC, FRED, licitaciones  (regenerable)
     ├── precios.db         precios diarios de los activos consultados       (NO regenerable del todo: respaldar)
-    ├── series.db          series diarias oficiales: CER y TAMAR del BCRA   (regenerable)
+    ├── series.db          series diarias oficiales: CER, TAMAR y A3500     (regenerable)
     └── cartera.db         posiciones, operaciones y pronósticos propios     (NO regenerable: respaldar)
 
 Acá se definen las tablas de cada base y la forma de conectarse. Las consultas de cada
@@ -78,7 +78,7 @@ ESQUEMAS = {
     """,
     "series": """
         CREATE TABLE IF NOT EXISTS series (
-            variable  TEXT NOT NULL,            -- CER, TAMAR (después: A3500, UVA...)
+            variable  TEXT NOT NULL,            -- CER, TAMAR, A3500 (después: UVA...)
             fecha     TEXT NOT NULL,            -- AAAA-MM-DD
             valor     REAL NOT NULL,
             fuente    TEXT NOT NULL,            -- bcra

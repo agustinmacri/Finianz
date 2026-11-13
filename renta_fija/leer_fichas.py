@@ -18,6 +18,7 @@ CAMPOS = {
     "tasa_fija_capitalizable": ("ticker", "tipo", "familia", "emision", "vencimiento", "tem"),
     "tasa_fija_cupon": ("ticker", "tipo", "familia", "emision", "vencimiento", "cupon", "frecuencia", "pagos"),
     "tamar_capitalizable": ("ticker", "tipo", "familia", "emision", "vencimiento", "margen"),
+    "dolar_linked_bullet": ("ticker", "tipo", "familia", "emision", "vencimiento"),
     "hard_dollar": ("ticker", "tipo", "familia", "ley", "emision", "vencimiento", "tramos", "pagos"),  # par opcional
 }
 

@@ -61,7 +61,7 @@ def test_carga_completa_e_incremental():
 
 def test_series_definidas():
     """CER (id 30) y TAMAR de bancos privados en TNA (id 44, no la 45 que es la TEA)."""
-    assert carga.SERIES["CER"] == 30 and carga.SERIES["TAMAR"] == 44
+    assert carga.SERIES["CER"] == 30 and carga.SERIES["TAMAR"] == 44 and carga.SERIES["A3500"] == 5
 
 
 def test_fichas_sin_cer_inicial():

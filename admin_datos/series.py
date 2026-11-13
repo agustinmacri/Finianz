@@ -1,7 +1,7 @@
 """Consultas de la base de series (datos/series.db).
 
 Guarda series diarias oficiales que usan las calculadoras, para no pedirlas a la API en cada
-cálculo: el CER y la TAMAR de bancos privados (% TNA) del BCRA; más adelante tipo de cambio A3500, UVA, etc.
+cálculo: el CER, la TAMAR de bancos privados (% TNA) y el tipo de cambio A3500 del BCRA; más adelante UVA, etc.
 Los valores se guardan como los publica la fuente (la TAMAR en %, no en fracción).
 La carga y la actualización están en carga_datos/series.py.
 """

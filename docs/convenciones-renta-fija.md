@@ -117,6 +117,18 @@ Bonares (ley argentina, AL) y Globales (ley Nueva York, GD). Bonares AL29, AL30,
 
 Fechas de pago corridas al día hábil siguiente, como en el resto de los bonos (la convención de mercado suele contar el 30/360 hasta la fecha teórica: la diferencia es de uno o dos días por flujo).
 
+## Dollar linked
+
+Valor nominal en dólares; se suscriben, cotizan y pagan en pesos al tipo de cambio. Por ahora los del Tesoro, que son bullet: D30N6, D15E7, D31M7, TZV27, TZV28, TZVD8. Código: `renta_fija/calculadoras/dolar_linked.py`. Fichas: `renta_fija/fichas/dolar_linked.toml`.
+
+| Variable | Definición (Agustin) |
+|---|---|
+| Precio en dólares | Precio en pesos por 100 VN / A3500 del día de concertación de la operación (no del de liquidación). Intradiario, hasta que se publica (alrededor de las 15 h), se estima con el A3500 del día hábil anterior |
+| Pago | 100 dólares por 100 VN al vencimiento, en pesos al tipo de cambio de pago del prospecto (A3500, BNA vendedor o un promedio de días, según cada bono) |
+| TNA | (100 / precio en dólares − 1) × 365 / plazo residual (actual/365, distinto de los hard dollar) |
+| TIR | (1 + TNA × plazo / 365) ^ (365 / plazo) − 1 |
+| Duration, TEM | Plazo / 365; TEM de 30 días corridos |
+
 ## Puntos abiertos (para decidir con Agustin)
 
 1. **Para más adelante (decisión de Agustin, 13/11/2026):** duration modificada, convexidad, valor técnico y paridad de los CER cero cupón. Por ahora no hacen falta.
@@ -124,7 +136,9 @@ Fechas de pago corridas al día hábil siguiente, como en el resto de los bonos 
 3. **Para más adelante:** curva teórica de tasa fija (regresión de la TEA contra el logaritmo de la duration, con cada letra por encima o por debajo de la curva).
 4. **Para más adelante:** calculadora de letras a descuento (hoy todas las letras vigentes son capitalizables).
 5. **Para más adelante:** la pata tasa fija del dual TTD26 (hoy se calcula solo como TAMAR).
-6. **Objetivo:** que las condiciones de emisión de cada bono salgan del análisis de los prospectos, sin carga manual.
+6. **Para más adelante:** breakeven (devaluación o inflación implícita) entre curvas, para todas las curvas (decisión de Agustin, 13/11/2026).
+7. **Para más adelante:** dollar linked corporativos con cupones y amortizaciones, con el tipo de cambio de pago de cada prospecto.
+8. **Objetivo:** que las condiciones de emisión de cada bono salgan del análisis de los prospectos, sin carga manual.
 
 ## Historial de cambios de definición
 
@@ -139,3 +153,4 @@ Fechas de pago corridas al día hábil siguiente, como en el resto de los bonos 
 - **13/11/2026:** calculadora TAMAR (Bonos TAMAR capitalizables y pata TAMAR de los duales), con la TAMAR de bancos privados en TNA (BCRA 44) de la base de series. TEM con base 32 días (condiciones de emisión). Spread sobre la TNA de 30 días. Los duales CER/TAMAR se calculan de las dos formas.
 - **13/11/2026:** hard dollar: AL30 y GD30, con TIR semestral 30/360 (convención de mercado, solo para esta familia), precio MEP y cable, spread contra Treasuries a la duration, spread entre leyes y dólar implícito. Cronogramas del canje 2020, a validar con la planilla de Agustin.
 - **13/11/2026:** AL30 y GD30 validados por Agustin. Se suman AL29/GD29, AL35/GD35, AE38/GD38, AL41/GD41 y GD46 desde el Anexo II del Decreto 676/2020 (Bonares iguales a los Globales), a validar.
+- **13/11/2026:** dollar linked del Tesoro (bullet), actual/365, con el A3500 del día de concertación (estimado con el del día hábil anterior hasta que se publica). A3500 (BCRA id 5) en la base de series.

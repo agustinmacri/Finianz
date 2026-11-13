@@ -19,7 +19,7 @@ from carga_datos import series as carga_series
 from conexiones import bcra, fred, ppi
 from conexiones.http import ErrorAPI
 from renta_fija import leer_fichas as fichas
-from renta_fija.calculadoras import cer, cer_cupon, hard_dollar, tamar, tasa_fija
+from renta_fija.calculadoras import cer, cer_cupon, dolar_linked, hard_dollar, tamar, tasa_fija
 
 PLAZO_LIQUIDACION = 1          # T+1: precios y cálculos a la fecha de liquidación, salvo que se indique otra cosa
 CALENDARIO_HABILES = "BYMA"    # días hábiles del rezago del CER y de las fechas de pago (decisión de Agustin, 13/11/2026)
@@ -126,7 +126,7 @@ def calcular_bono(ticker: str, precio: float | None = None, fecha: str | None = 
 
 NOMBRE_FAMILIA = {
     "cer_cero_cupon": "CER", "cer_cupon": "CER", "tasa_fija_capitalizable": "tasa fija",
-    "tasa_fija_cupon": "tasa fija", "tamar_capitalizable": "TAMAR",
+    "tasa_fija_cupon": "tasa fija", "tamar_capitalizable": "TAMAR", "dolar_linked_bullet": "dollar linked",
 }
 
 
@@ -141,6 +141,8 @@ def _calcular_ficha(f: dict, precio: float, liquidacion: date, operacion: date,
         return _tasa_fija_capitalizable(f, precio, liquidacion)
     if f["familia"] == "tamar_capitalizable":
         return _tamar_capitalizable(f, precio, liquidacion, operacion)
+    if f["familia"] == "dolar_linked_bullet":
+        return _dolar_linked_bullet(f, precio, liquidacion, operacion)
     return _tasa_fija_cupon(f, precio, liquidacion)
 
 
@@ -156,6 +158,36 @@ def _datos_cer(f: dict, liquidacion: date) -> tuple[str, dict, float]:
              f"del {f['emision']}) | CER corriente: {cer_corriente:,.5f} "
              f"(al {fecha_cer_corriente}, 10.º día hábil anterior a la liquidación)\n")
     return texto, f, cer_corriente
+
+
+def _a3500(operacion: date) -> tuple[float, date, bool]:
+    """A3500 del día de concertación. Si todavía no se publicó (sale alrededor de las 15 h), se estima con el
+    del último día hábil anterior. Devuelve (valor, fecha del dato, estimado)."""
+    valor = db_series.valor("A3500", operacion)
+    if valor is None:
+        carga_series.actualizar("A3500")
+        valor = db_series.valor("A3500", operacion)
+    if valor is not None:
+        return valor, operacion, False
+    anteriores = db_series.entre("A3500", (operacion - timedelta(days=10)).isoformat(),
+                                 (operacion - timedelta(days=1)).isoformat())
+    if not anteriores:
+        raise ErrorAPI(f"no hay A3500 del {operacion} ni de los días anteriores en la base ni en el BCRA.")
+    return anteriores[-1]["valor"], date.fromisoformat(anteriores[-1]["fecha"]), True
+
+
+def _dolar_linked_bullet(f: dict, precio: float, liquidacion: date, operacion: date) -> str:
+    tc, fecha_tc, estimado = _a3500(operacion)
+    r = dolar_linked.calcular_bullet(precio, tc, liquidacion, f["vencimiento"])
+    origen_tc = (f"A3500 del {fecha_tc}, estimado: el del {operacion} todavía no se publicó" if estimado
+                 else f"A3500 del día de concertación, {fecha_tc}")
+    pago = f" | tipo de cambio de pago: {f['tipo_cambio_pago']}" if f.get("tipo_cambio_pago") else ""
+    return (
+        f"Precio en dólares: {r['precio_usd']:.4f} por 100 VN (precio en pesos / {tc:,.4f}, {origen_tc})\n"
+        f"Paga 100 dólares por 100 VN al vencimiento, en pesos{pago}\n"
+        f"Plazo residual: {r['plazo_residual']} días | duration: {r['duration']:.4f}\n"
+        f"TNA: {_pct(r['tna'])} | TIR (TEA): {_pct(r['tea'])} | TEM (30 días): {_pct(r['tem'])} (en dólares, actual/365)"
+    )
 
 
 # Treasuries de EE. UU. (constant maturity, FRED): serie -> plazo en años
@@ -371,6 +403,8 @@ CALCULAR_BONO = {
         "de mercado: en vivo, o el cierre de 'fecha' si se indica. Cálculos en T+1. TAMAR capitalizables (TMF27, TML27, TMG27, "
         "TMF28, TMG28 y el dual TTD26): TAMAR proyectada, TEM, pago final teórico, TNA, TEA, TNA 30 d y spread sobre TAMAR. "
         "Los duales CER/TAMAR (TXMJ8, TXMD8, TXMJ9, TXMD9, TXMJ0) se devuelven calculados como CER y como TAMAR. "
+        "Dollar linked del Tesoro (D30N6, D15E7, D31M7, TZV27, TZV28, TZVD8): precio en dólares con el A3500 del día "
+        "de concertación, TNA, TIR y TEM en dólares (actual/365), duration. "
         "Hard dollar (Bonares AL29, AL30, AL35, AE38, AL41 y Globales GD29, GD30, GD35, GD38, GD41, GD46; también "
         "con el ticker en dólares, ej.: AL30D, GD35C): TIR semestral 30/360 con precio MEP y cable, duration, paridad, "
         "spread contra Treasuries, spread ley NY − ley AR y dólar implícito MEP y CCL; 'precio' es en dólares."
