@@ -1,0 +1,75 @@
+# Fichas técnicas de los bonos soberanos en dólares (hard dollar).
+#
+# Cada [[bono]] tiene los datos de su norma de emisión:
+#   ticker       ticker en pesos en BYMA (el MEP es el mismo + "D" y el cable + "C": AL30D, AL30C)
+#   tipo         BONAR (ley argentina) o GLOBAL (ley Nueva York)
+#   familia      hard_dollar
+#   ley          AR o NY
+#   par          el bono del mismo vencimiento con la otra ley, para el spread de ley
+#   emision      fecha de emisión (desde ahí devenga el primer cupón)
+#   vencimiento  último pago
+#   base         30/360
+#   tramos       cupón step-up: [{desde = fecha, tasa = anual}]; cada período devenga la tasa vigente al inicio
+#   pagos        cronograma: cada fecha de pago y la amortización de ese día (% del VN original)
+#   revisado     true si Agustin lo validó
+#   fuente       de dónde salió el dato
+#
+# Las definiciones de cada variable están en docs/convenciones-renta-fija.md.
+
+[[bono]]
+ticker = "AL30"
+tipo = "BONAR"
+familia = "hard_dollar"
+ley = "AR"
+par = "GD30"
+emision = 2020-09-04
+vencimiento = 2030-07-09
+base = "30/360"
+tramos = [
+    { desde = 2020-09-04, tasa = 0.00125 },
+    { desde = 2021-07-09, tasa = 0.005 },
+    { desde = 2023-07-09, tasa = 0.0075 },
+    { desde = 2027-07-09, tasa = 0.0175 },
+]
+pagos = [
+    { fecha = 2021-07-09 }, { fecha = 2022-01-09 }, { fecha = 2022-07-09 }, { fecha = 2023-01-09 },
+    { fecha = 2023-07-09 }, { fecha = 2024-01-09 },
+    { fecha = 2024-07-09, amortizacion = 4 },
+    { fecha = 2025-01-09, amortizacion = 8 }, { fecha = 2025-07-09, amortizacion = 8 },
+    { fecha = 2026-01-09, amortizacion = 8 }, { fecha = 2026-07-09, amortizacion = 8 },
+    { fecha = 2027-01-09, amortizacion = 8 }, { fecha = 2027-07-09, amortizacion = 8 },
+    { fecha = 2028-01-09, amortizacion = 8 }, { fecha = 2028-07-09, amortizacion = 8 },
+    { fecha = 2029-01-09, amortizacion = 8 }, { fecha = 2029-07-09, amortizacion = 8 },
+    { fecha = 2030-01-09, amortizacion = 8 }, { fecha = 2030-07-09, amortizacion = 8 },
+]
+revisado = false
+fuente = "Condiciones del canje 2020 (iguales a las del GD30 según el Anexo II del Decreto 676/2020); a validar con la planilla de Agustin"
+
+[[bono]]
+ticker = "GD30"
+tipo = "GLOBAL"
+familia = "hard_dollar"
+ley = "NY"
+par = "AL30"
+emision = 2020-09-04
+vencimiento = 2030-07-09
+base = "30/360"
+tramos = [
+    { desde = 2020-09-04, tasa = 0.00125 },
+    { desde = 2021-07-09, tasa = 0.005 },
+    { desde = 2023-07-09, tasa = 0.0075 },
+    { desde = 2027-07-09, tasa = 0.0175 },
+]
+pagos = [
+    { fecha = 2021-07-09 }, { fecha = 2022-01-09 }, { fecha = 2022-07-09 }, { fecha = 2023-01-09 },
+    { fecha = 2023-07-09 }, { fecha = 2024-01-09 },
+    { fecha = 2024-07-09, amortizacion = 4 },
+    { fecha = 2025-01-09, amortizacion = 8 }, { fecha = 2025-07-09, amortizacion = 8 },
+    { fecha = 2026-01-09, amortizacion = 8 }, { fecha = 2026-07-09, amortizacion = 8 },
+    { fecha = 2027-01-09, amortizacion = 8 }, { fecha = 2027-07-09, amortizacion = 8 },
+    { fecha = 2028-01-09, amortizacion = 8 }, { fecha = 2028-07-09, amortizacion = 8 },
+    { fecha = 2029-01-09, amortizacion = 8 }, { fecha = 2029-07-09, amortizacion = 8 },
+    { fecha = 2030-01-09, amortizacion = 8 }, { fecha = 2030-07-09, amortizacion = 8 },
+]
+revisado = false
+fuente = "Anexo II del Decreto 676/2020 (Bonos Globales Step Up 2030); a validar con la planilla de Agustin"

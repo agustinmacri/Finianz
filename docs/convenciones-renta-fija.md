@@ -97,6 +97,26 @@ Bonos TAMAR capitalizables del Tesoro (TMF27, TML27, TMG27, TMF28, TMG28) y la p
 
 Correcciones a la planilla del 13/11/2026: la serie proyectada terminaba el 10/01/2029, así que en TXMJ9, TXMD9 y TXMJ0 el promedio dejaba afuera el resto de la ventana (TXMD9 y TXMJ0 daban la misma TEM); ahora se proyecta hasta el final de la ventana. La proyección usaba valores fijos (24,22% y 24%) y el spread restaba un 24,19% cargado a mano; ahora ambos usan el promedio de los últimos 5 días hábiles publicados. La TNA 30 d pasa de NOMINAL(TEA; 12) a la de 30 días corridos (menos de 3 pb de diferencia).
 
+## Hard dollar
+
+Bonares (ley argentina, AL) y Globales (ley Nueva York, GD). Por ahora AL30 y GD30 (decisión de Agustin, 13/11/2026). Código: `renta_fija/calculadoras/hard_dollar.py`. Fichas: `renta_fija/fichas/hard_dollar.toml` (cupón step-up en `tramos`, cronograma en `pagos`).
+
+| Variable | Definición |
+|---|---|
+| Precio | Por 100 VN original, en dólares, con cupón corrido. Se calcula con el MEP (ticker D) y con el cable (ticker C) |
+| Cupón de cada pago | Residual × tasa vigente al inicio del período × días 30/360 del período / 360 |
+| Interés corrido | Residual × tasa vigente × días 30/360 desde el último cupón / 360 |
+| Valor técnico, paridad, precio clean | Como los bonos con cupón |
+| TIR | Nominal anual con capitalización semestral, base 30/360: precio = Σ flujo / (1 + TIR/2) ^ (días 30/360 / 180) (convención de mercado; solo para esta familia) |
+| TEA | (1 + TIR/2)² − 1 |
+| Duration / modificada / convexidad | Macaulay en años con esa TIR; modificada = duration / (1 + TIR/2) |
+| Current yield, cash yield | Cupón vigente × residual / clean; flujos de 12 meses / clean |
+| Spread contra Treasuries | TIR − rendimiento del Treasury constant maturity (FRED, también semestral) interpolado linealmente a la duration del bono, en pb |
+| Spread ley NY − ley AR | TIR del Global − TIR del Bonar del mismo vencimiento, con el mismo tipo de precio (MEP con MEP, cable con cable) |
+| Dólar implícito | Precio en pesos / precio en dólares: MEP con el D, CCL con el C |
+
+Fechas de pago corridas al día hábil siguiente, como en el resto de los bonos (la convención de mercado suele contar el 30/360 hasta la fecha teórica: la diferencia es de uno o dos días por flujo).
+
 ## Puntos abiertos (para decidir con Agustin)
 
 1. **Para más adelante (decisión de Agustin, 13/11/2026):** duration modificada, convexidad, valor técnico y paridad de los CER cero cupón. Por ahora no hacen falta.
@@ -117,3 +137,4 @@ Correcciones a la planilla del 13/11/2026: la serie proyectada terminaba el 10/0
 - **13/11/2026:** el CER inicial deja de cargarse en las fichas: se toma de la nueva base de series (`datos/series.db`, CER diario del BCRA desde 2002) con la fecha de emisión, igual que el CER corriente. Las bases de los Excel quedan solo en las pruebas, como contraste (`python -m tests.verificar_cer_inicial`). TZXD8: emisión 30/06/2026, validada por Agustin contra su Excel.
 - **13/11/2026:** verificación de las bases contra los Excel: coinciden todas salvo las emitidas el 31/03/2026 (TZXM8, TZXM9, TZXS7, TZXS8), por el feriado puente del 23/03/2026, que la librería no tenía en el calendario de BYMA. Se agrega como ajuste (como el 10/07 y el 7/12): la base pasa a ser el CER del 13/03/2026. TXMJ8 y TXMJ9 difieren en el 7.º decimal porque el Excel tenía la base redondeada.
 - **13/11/2026:** calculadora TAMAR (Bonos TAMAR capitalizables y pata TAMAR de los duales), con la TAMAR de bancos privados en TNA (BCRA 44) de la base de series. TEM con base 32 días (condiciones de emisión). Spread sobre la TNA de 30 días. Los duales CER/TAMAR se calculan de las dos formas.
+- **13/11/2026:** hard dollar: AL30 y GD30, con TIR semestral 30/360 (convención de mercado, solo para esta familia), precio MEP y cable, spread contra Treasuries a la duration, spread entre leyes y dólar implícito. Cronogramas del canje 2020, a validar con la planilla de Agustin.

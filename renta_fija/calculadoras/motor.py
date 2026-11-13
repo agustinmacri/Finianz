@@ -7,6 +7,9 @@ No sabe de CER, tasa fija ni dólares: eso lo resuelven los generadores de cada 
 Convenciones (acordadas con Agustin):
 - TIR efectiva anual, base 365 días corridos, desde la fecha de liquidación:
       precio = Σ flujo_i / (1 + TIR) ^ (días_i / 365)
+- Bonos en dólares (hard dollar): TIR nominal anual con capitalización semestral, base 30/360
+  (convención de mercado): precio = Σ flujo_i / (1 + TIR/2) ^ (días 30/360_i / 180).
+  Funciones *_30_360.
 - Solo cuentan los flujos posteriores a la liquidación.
 - Duration de Macaulay en años; duration modificada = Macaulay / (1 + TIR); convexidad en años².
 - Precio y flujos por cada 100 de valor nominal original.
@@ -50,7 +53,11 @@ def tir(flujos: list[Flujo], precio: float, liquidacion: date) -> float:
     Newton-Raphson con respaldo por bisección: el valor presente baja cuando sube la tasa,
     así que la solución es única si todos los flujos son positivos.
     """
-    plazos = _plazos(flujos, liquidacion)
+    return _resolver(_plazos(flujos, liquidacion), precio)
+
+
+def _resolver(plazos: list[tuple[float, float]], precio: float) -> float:
+    """Tasa por período que iguala Σ monto / (1 + r) ^ t al precio (t en períodos)."""
     if not plazos:
         raise ValueError("No quedan flujos después de la fecha de liquidación.")
     if precio <= 0:
@@ -173,3 +180,33 @@ def tem(tir_: float) -> float:
 def sensibilidad(precio: float, md: float, cvx: float, variacion: float) -> float:
     """Cambio del precio ante una suba de la TIR de 'variacion' (0.0001 = 1 pb): −MD·Δ + CVX·Δ²/2."""
     return precio * (-variacion * md + variacion ** 2 * cvx / 2)
+
+
+# --- Convención 30/360 con capitalización periódica (bonos en dólares) ---
+
+def _periodos_30_360(flujos: list[Flujo], liquidacion: date, frecuencia: int) -> list[tuple[float, float]]:
+    """(períodos, monto) de cada flujo futuro: días 30/360 desde la liquidación / (360 / frecuencia)."""
+    return [(dias_30_360(liquidacion, f.fecha) * frecuencia / 360, f.total) for f in futuros(flujos, liquidacion)]
+
+
+def tir_30_360(flujos: list[Flujo], precio: float, liquidacion: date, frecuencia: int = 2) -> float:
+    """TIR nominal anual capitalizable 'frecuencia' veces por año, base 30/360 (semestral: frecuencia 2)."""
+    return _resolver(_periodos_30_360(flujos, liquidacion, frecuencia), precio) * frecuencia
+
+
+def duration_30_360(flujos: list[Flujo], liquidacion: date, tir_: float, frecuencia: int = 2) -> float:
+    """Duration de Macaulay en años, con la TIR nominal periódica 30/360."""
+    r, plazos = tir_ / frecuencia, _periodos_30_360(flujos, liquidacion, frecuencia)
+    vp = sum(m / (1 + r) ** n for n, m in plazos)
+    return sum(n * m / (1 + r) ** n for n, m in plazos) / vp / frecuencia
+
+
+def duration_modificada_30_360(flujos: list[Flujo], liquidacion: date, tir_: float, frecuencia: int = 2) -> float:
+    return duration_30_360(flujos, liquidacion, tir_, frecuencia) / (1 + tir_ / frecuencia)
+
+
+def convexidad_30_360(flujos: list[Flujo], liquidacion: date, tir_: float, frecuencia: int = 2) -> float:
+    """Convexidad en años², con la TIR nominal periódica 30/360."""
+    r, plazos = tir_ / frecuencia, _periodos_30_360(flujos, liquidacion, frecuencia)
+    vp = sum(m / (1 + r) ** n for n, m in plazos)
+    return sum(n * (n + 1) * m / (1 + r) ** (n + 2) for n, m in plazos) / vp / frecuencia ** 2

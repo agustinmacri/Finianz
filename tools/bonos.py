@@ -16,10 +16,10 @@ from admin_datos import series as db_series
 from carga_datos import feriados as carga_feriados
 from carga_datos import precios as carga_precios
 from carga_datos import series as carga_series
-from conexiones import bcra, ppi
+from conexiones import bcra, fred, ppi
 from conexiones.http import ErrorAPI
 from renta_fija import leer_fichas as fichas
-from renta_fija.calculadoras import cer, cer_cupon, tamar, tasa_fija
+from renta_fija.calculadoras import cer, cer_cupon, hard_dollar, tamar, tasa_fija
 
 PLAZO_LIQUIDACION = 1          # T+1: precios y cálculos a la fecha de liquidación, salvo que se indique otra cosa
 CALENDARIO_HABILES = "BYMA"    # días hábiles del rezago del CER y de las fechas de pago (decisión de Agustin, 13/11/2026)
@@ -76,6 +76,8 @@ def calcular_bono(ticker: str, precio: float | None = None, fecha: str | None = 
                   inflacion_mensual: float | None = None) -> str:
     try:
         lista = fichas.fichas_de(ticker)
+        if not lista and ticker.upper()[-1:] in ("D", "C"):     # AL30D / GD30C: el bono en dólares
+            lista = [f for f in fichas.fichas_de(ticker[:-1]) if f["familia"] == "hard_dollar"]
         if not lista:
             disponibles = ", ".join(sorted(fichas.leer_todas()))
             return f"No hay ficha técnica de {ticker.upper()}. Bonos con ficha: {disponibles}."
@@ -90,6 +92,8 @@ def calcular_bono(ticker: str, precio: float | None = None, fecha: str | None = 
         liquidacion = feriados.sumar_dias_habiles(operacion, PLAZO_LIQUIDACION, "BYMA")
         if liquidacion >= f["vencimiento"]:
             return f"{ticker.upper()} vence el {f['vencimiento']}: no quedan flujos para la liquidación del {liquidacion}."
+        if f["familia"] == "hard_dollar":
+            return _hard_dollar(f, precio, date.fromisoformat(fecha) if fecha else None, liquidacion)
         if precio is None:
             precio, origen = _precio(ticker, date.fromisoformat(fecha) if fecha else None)
         else:
@@ -152,6 +156,101 @@ def _datos_cer(f: dict, liquidacion: date) -> tuple[str, dict, float]:
              f"del {f['emision']}) | CER corriente: {cer_corriente:,.5f} "
              f"(al {fecha_cer_corriente}, 10.º día hábil anterior a la liquidación)\n")
     return texto, f, cer_corriente
+
+
+# Treasuries de EE. UU. (constant maturity, FRED): serie -> plazo en años
+TREASURIES = {"DGS1MO": 1 / 12, "DGS3MO": 0.25, "DGS6MO": 0.5, "DGS1": 1, "DGS2": 2, "DGS3": 3, "DGS5": 5,
+              "DGS7": 7, "DGS10": 10, "DGS20": 20, "DGS30": 30}
+SUFIJOS_USD = {"MEP": "D", "cable": "C"}
+
+
+def _treasuries(fecha: date) -> tuple[list[tuple[float, float]], str]:
+    """Curva de Treasuries al último dato disponible hasta 'fecha': [(años, tasa)] y la fecha del dato."""
+    curva, fechas = [], []
+    for serie, plazo in TREASURIES.items():
+        datos = fred.obtener_serie(serie, (fecha - timedelta(days=15)).isoformat(), fecha.isoformat())
+        if datos:
+            curva.append((plazo, datos[-1]["valor"] / 100))
+            fechas.append(datos[-1]["fecha"])
+    if len(curva) < 2:
+        raise ErrorAPI("FRED no devolvió la curva de Treasuries.")
+    return curva, max(fechas)
+
+
+def _hard_dollar(f: dict, precio: float | None, fecha: date | None, liquidacion: date) -> str:
+    """Bono en dólares: TIR con precio MEP y cable, spreads contra Treasuries y entre leyes, dólar implícito."""
+    base = f["ticker"].upper()
+    ajustar = lambda d: feriados.proximo_dia_habil(d, CALENDARIO_HABILES)
+
+    def calcular(ficha_, p):
+        return hard_dollar.calcular(p, liquidacion, ficha_["pagos"], ficha_["tramos"], ficha_["emision"], ajustar)
+
+    precios, faltantes = {}, []
+    if precio is not None:
+        precios["MEP"] = (precio, "precio indicado")
+    else:
+        for nombre, sufijo in SUFIJOS_USD.items():
+            try:
+                precios[nombre] = _precio(base + sufijo, fecha)
+            except (ErrorAPI, ValueError) as e:
+                faltantes.append(f"{nombre} ({base + sufijo}): {e}")
+    if not precios:
+        raise ErrorAPI("no hay precio en dólares. " + " | ".join(faltantes))
+    resultados = {nombre: calcular(f, p) for nombre, (p, _) in precios.items()}
+
+    try:
+        curva, fecha_ust = _treasuries(fecha or date.today())
+    except ErrorAPI as e:
+        curva, fecha_ust = None, str(e)
+    par = fichas.ficha(f["par"], "hard_dollar")
+
+    r0 = next(iter(resultados.values()))
+    proximos = "; ".join(f"{fl.fecha}: {fl.renta:.4f} + {fl.amortizacion:g} = {fl.total:.4f}" for fl in r0["flujos"][:4])
+    texto = (
+        f"{base} ({f['tipo']}, ley {f['ley']}, vence {f['vencimiento']}) – calculadora de Finianz\n"
+        f"Liquidación {liquidacion} (T+{PLAZO_LIQUIDACION}) | residual: {r0['residual']:g} | cupón vigente: "
+        f"{_pct(r0['tasa_vigente'])} | interés corrido: {r0['interes_corrido']:.4f} | valor técnico: {r0['valor_tecnico']:.4f}\n"
+        f"Próximos flujos por 100 VN en USD (renta + amortización, fechas corridas): {proximos}\n"
+        f"TIR: nominal anual semestral, base 30/360. Precios por 100 VN en dólares.\n"
+    )
+    for nombre, r in resultados.items():
+        p, origen = precios[nombre]
+        texto += (
+            f"\n— Con precio {nombre} ({base + SUFIJOS_USD[nombre] if origen != 'precio indicado' else 'indicado'}): "
+            f"{p:,.2f} ({origen}) —\n"
+            f"Precio clean: {r['precio_clean']:.4f} | paridad: {_pct(r['paridad'])}\n"
+            f"TIR: {_pct(r['tir'])} | TEA: {_pct(r['tea'])}\n"
+            f"Duration: {r['duration']:.4f} | duration modificada: {r['duration_modificada']:.4f} | "
+            f"convexidad: {r['convexidad']:.4f} | PV01: {r['pv01']:.6f} | DD (100 pb): {r['dd']:.4f}\n"
+            f"Current yield: {_pct(r['current_yield'])} | cash yield (12 meses): {_pct(r['cash_yield'])}\n"
+        )
+        if curva:
+            ust = hard_dollar.interpolar(curva, r["duration"])
+            texto += (f"Spread contra Treasuries: {(r['tir'] - ust) * 10000:,.0f} pb (Treasury interpolado a "
+                      f"{r['duration']:.2f} años: {_pct(ust)}, FRED al {fecha_ust})\n")
+        if par and precio is None:
+            try:
+                p_par, _ = _precio(par["ticker"].upper() + SUFIJOS_USD[nombre], fecha)
+                tir_par = calcular(par, p_par)["tir"]
+                ny, ar = (r["tir"], tir_par) if f["ley"] == "NY" else (tir_par, r["tir"])
+                texto += (f"Spread ley NY − ley AR: {(ny - ar) * 10000:,.0f} pb ({par['ticker'].upper()} a "
+                          f"{p_par:,.2f}: TIR {_pct(tir_par)})\n")
+            except (ErrorAPI, ValueError) as e:
+                texto += f"Spread ley NY − ley AR: sin dato ({e})\n"
+    if not curva:
+        texto += f"\nSpread contra Treasuries: sin dato ({fecha_ust})\n"
+    if precio is None:
+        try:
+            pesos, origen_pesos = _precio(base, fecha)
+            implicitos = " | ".join(f"{'MEP' if n == 'MEP' else 'CCL'}: {pesos / p:,.2f}" for n, (p, _) in precios.items())
+            texto += f"\nDólar implícito ({base} en pesos a {pesos:,.2f} / precio en dólares): {implicitos}\n"
+        except (ErrorAPI, ValueError) as e:
+            texto += f"\nDólar implícito: sin dato ({e})\n"
+    for faltante in faltantes:
+        texto += f"\nSin precio {faltante}"
+    if not f.get("revisado"):
+        texto += "\nAVISO: la ficha técnica todavía no fue revisada por Agustin; tomá el resultado como preliminar."
+    return texto.rstrip("\n")
 
 
 def _datos_tamar(f: dict, corte: date) -> dict:
@@ -271,7 +370,9 @@ CALCULAR_BONO = {
         "TNA, TEA, TEM, duration) y Bonte con cupón (TY30P: como los CER con cupón, en pesos). Sin precio, usa el precio "
         "de mercado: en vivo, o el cierre de 'fecha' si se indica. Cálculos en T+1. TAMAR capitalizables (TMF27, TML27, TMG27, "
         "TMF28, TMG28 y el dual TTD26): TAMAR proyectada, TEM, pago final teórico, TNA, TEA, TNA 30 d y spread sobre TAMAR. "
-        "Los duales CER/TAMAR (TXMJ8, TXMD8, TXMJ9, TXMD9, TXMJ0) se devuelven calculados como CER y como TAMAR."
+        "Los duales CER/TAMAR (TXMJ8, TXMD8, TXMJ9, TXMD9, TXMJ0) se devuelven calculados como CER y como TAMAR. "
+        "Hard dollar (AL30, GD30, o AL30D/GD30C): TIR semestral 30/360 con precio MEP y cable, duration, paridad, "
+        "spread contra Treasuries, spread ley NY − ley AR y dólar implícito MEP y CCL; 'precio' es en dólares."
     ),
     "parameters": {
         "type": "object",

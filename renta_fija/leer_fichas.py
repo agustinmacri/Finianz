@@ -18,6 +18,7 @@ CAMPOS = {
     "tasa_fija_capitalizable": ("ticker", "tipo", "familia", "emision", "vencimiento", "tem"),
     "tasa_fija_cupon": ("ticker", "tipo", "familia", "emision", "vencimiento", "cupon", "frecuencia", "pagos"),
     "tamar_capitalizable": ("ticker", "tipo", "familia", "emision", "vencimiento", "margen"),
+    "hard_dollar": ("ticker", "tipo", "familia", "ley", "par", "emision", "vencimiento", "tramos", "pagos"),
 }
 
 
@@ -47,8 +48,10 @@ def leer_todas() -> dict[str, list[dict]]:
             if "cer_inicial" in bono:
                 raise ErrorFicha(f"{donde}: 'cer_inicial' no va en la ficha. El CER inicial se toma de la base "
                                  "de series (10.º día hábil anterior a la emisión): borrá esa línea.")
-            if familia in ("cer_cupon", "tasa_fija_cupon"):
+            if familia in ("cer_cupon", "tasa_fija_cupon", "hard_dollar"):
                 _validar_pagos(bono, donde)
+            if familia == "hard_dollar":
+                _validar_tramos(bono, donde)
             ticker = bono["ticker"].upper()
             if any(otra["familia"] == familia for otra in fichas.get(ticker, [])):
                 raise ErrorFicha(f"{donde}: el ticker {ticker} está repetido en la familia {familia}.")
@@ -76,6 +79,18 @@ def _validar_pagos(bono: dict, donde: str):
         raise ErrorFicha(f"{donde}: las amortizaciones suman {total}, tienen que sumar 100.")
     if bono.get("base", "30/360") != "30/360":
         raise ErrorFicha(f"{donde}: base '{bono['base']}' todavía no implementada (hoy: 30/360).")
+
+
+def _validar_tramos(bono: dict, donde: str):
+    """El step-up tiene fechas en orden, el primer tramo arranca en la emisión y las tasas son fracciones."""
+    tramos = bono["tramos"]
+    if not tramos or not all(isinstance(t.get("desde"), date) and isinstance(t.get("tasa"), (int, float)) for t in tramos):
+        raise ErrorFicha(f"{donde}: cada tramo necesita 'desde' (fecha AAAA-MM-DD) y 'tasa' (ej.: 0.0075 = 0,75%).")
+    desdes = [t["desde"] for t in tramos]
+    if desdes != sorted(desdes) or desdes[0] != bono["emision"]:
+        raise ErrorFicha(f"{donde}: los tramos tienen que estar en orden y el primero empezar en la emisión.")
+    if any(not 0 <= t["tasa"] < 1 for t in tramos):
+        raise ErrorFicha(f"{donde}: las tasas van en fracción (0.0175 = 1,75%).")
 
 
 def fichas_de(ticker: str) -> list[dict]:

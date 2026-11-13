@@ -14,26 +14,34 @@ from conexiones import bcra
 from conexiones.http import ErrorAPI
 
 
+PUBLICADO_HASTA = date.today() + timedelta(days=40)
+
+
+def _listado_falso():
+    return [{"id": 30, "primera_fecha": "2002-02-02", "ultima_fecha": PUBLICADO_HASTA.isoformat()}]
+
+
 def _bcra_falso(pedidos):
-    """CER inventado = 1 + días desde el 2/2/2002 / 1000, publicado hasta 40 días después de hoy."""
-    publicado_hasta = date.today() + timedelta(days=40)
+    """CER inventado = 1 + días desde el 2/2/2002 / 1000, publicado hasta 40 días después de hoy.
+    Como el BCRA real, responde con error 400 si se le piden fechas fuera de ese rango."""
 
     def obtener_serie(id_variable, desde, hasta):
         pedidos.append((desde, hasta))
-        d, h = date.fromisoformat(desde), min(date.fromisoformat(hasta), publicado_hasta)
-        if d > h:
-            raise ErrorAPI(f"El BCRA no devolvió datos para la variable {id_variable} entre {desde} y {hasta}.")
+        d, h = date.fromisoformat(desde), date.fromisoformat(hasta)
+        if d < date(2002, 2, 2) or d > PUBLICADO_HASTA or h > PUBLICADO_HASTA:
+            raise ErrorAPI("La API respondió con error 400 (falso).", 400)
         return [{"fecha": (d + timedelta(days=i)).isoformat(), "valor": 1 + ((d + timedelta(days=i)) - date(2002, 2, 2)).days / 1000}
                 for i in range((h - d).days + 1)]
     return obtener_serie
 
 
 def test_carga_completa_e_incremental():
-    original_dir, original_api = config.DATOS_DIR, bcra.obtener_serie
+    original_dir, original_api, original_listado = config.DATOS_DIR, bcra.obtener_serie, bcra.listar_variables
     with tempfile.TemporaryDirectory() as tmp:
         config.DATOS_DIR = Path(tmp)
         pedidos = []
         bcra.obtener_serie = _bcra_falso(pedidos)
+        bcra.listar_variables = _listado_falso
         try:
             nuevos = carga.actualizar("CER")
             primera, ultima, cantidad = db.rango("CER")
@@ -43,17 +51,17 @@ def test_carga_completa_e_incremental():
             assert db.valor("CER", date(2022, 5, 13)) == 1 + (date(2022, 5, 13) - date(2002, 2, 2)).days / 1000
             pedidos.clear()
             assert carga.actualizar("CER") == 0                      # ya está al día: no guarda nada nuevo
-            assert len(pedidos) == 1 and pedidos[0][0] == (date.today() + timedelta(days=41)).isoformat()
+            assert pedidos == []                                     # ni siquiera le pregunta al BCRA
 
             from tools import bonos                                   # la calculadora lee el CER de la base
             assert bonos._cer(date(2020, 8, 20)) == db.valor("CER", date(2020, 8, 20))
         finally:
-            config.DATOS_DIR, bcra.obtener_serie = original_dir, original_api
+            config.DATOS_DIR, bcra.obtener_serie, bcra.listar_variables = original_dir, original_api, original_listado
 
 
 def test_series_definidas():
     """CER (id 30) y TAMAR de bancos privados en TNA (id 44, no la 45 que es la TEA)."""
-    assert carga.SERIES["CER"][0] == 30 and carga.SERIES["TAMAR"][0] == 44
+    assert carga.SERIES["CER"] == 30 and carga.SERIES["TAMAR"] == 44
 
 
 def test_fichas_sin_cer_inicial():

@@ -22,6 +22,7 @@ def listar_variables() -> list[dict]:
             "categoria": v.get("categoria"),
             "periodicidad": v.get("periodicidad"),
             "unidad": v.get("unidadExpresion"),
+            "primera_fecha": v.get("primerFechaInformada"),
             "ultima_fecha": v.get("ultFechaInformada"),
             "ultimo_valor": v.get("ultValorInformado"),
         }
