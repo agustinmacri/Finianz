@@ -1,0 +1,220 @@
+# Fichas técnicas de los bonos y letras ajustados por CER que no pagan intereses ni amortizaciones.
+#
+# Cada [[bono]] tiene los datos de su norma de emisión:
+#   ticker       ticker en BYMA (en pesos)
+#   tipo         BONCER, LECER o DUAL CER/TAMAR
+#   familia      cer_cero_cupon: paga el capital ajustado por CER al vencimiento
+#   emision      fecha de emisión (liquidación inicial)
+#   vencimiento  fecha de pago del capital
+#   cer_inicial  base: CER del décimo día hábil anterior a la liquidación inicial (fijo aunque haya reaperturas)
+#   revisado     true si Agustin lo validó (contra su Excel o la norma)
+#   fuente       de dónde salió el dato
+#   nota         opcional: aclaraciones
+#
+# Las definiciones de cada variable están en docs/convenciones-renta-fija.md.
+# Después de editar este archivo no hace falta correr nada: se lee en cada cálculo.
+
+[[bono]]
+ticker = "X30N6"
+tipo = "LECER"
+familia = "cer_cero_cupon"
+emision = 2025-12-12
+vencimiento = 2026-11-30
+cer_inicial = 659.1790598022395
+revisado = true
+fuente = "Excel de Agustin (ejemplo_Cer.xlsx), 12/11/2026"
+
+[[bono]]
+ticker = "TZXD6"
+tipo = "BONCER"
+familia = "cer_cero_cupon"
+emision = 2024-03-15
+vencimiento = 2026-12-15
+cer_inicial = 271.047555509126
+revisado = true
+fuente = "Excel de Agustin (ejemplo_Cer.xlsx), 12/11/2026"
+
+[[bono]]
+ticker = "X29E7"
+tipo = "LECER"
+familia = "cer_cero_cupon"
+emision = 2026-08-14
+vencimiento = 2027-01-29
+cer_inicial = 815.43451086916
+revisado = true
+fuente = "Excel de Agustin (ejemplo_Cer.xlsx), 12/11/2026"
+
+[[bono]]
+ticker = "TZXM7"
+tipo = "BONCER"
+familia = "cer_cero_cupon"
+emision = 2024-05-20
+vencimiento = 2027-03-31
+cer_inicial = 361.3176034572122
+revisado = true
+fuente = "Excel de Agustin (ejemplo_Cer.xlsx), 12/11/2026"
+
+[[bono]]
+ticker = "TZXA7"
+tipo = "BONCER"
+familia = "cer_cero_cupon"
+emision = 2025-11-28
+vencimiento = 2027-04-30
+cer_inicial = 651.8980624429383
+revisado = true
+fuente = "Excel de Agustin (ejemplo_Cer.xlsx), 12/11/2026"
+
+[[bono]]
+ticker = "TZXY7"
+tipo = "BONCER"
+familia = "cer_cero_cupon"
+emision = 2025-12-12
+vencimiento = 2027-05-31
+cer_inicial = 659.1790598022395
+revisado = true
+fuente = "Excel de Agustin (ejemplo_Cer.xlsx), 12/11/2026"
+
+[[bono]]
+ticker = "TZX27"
+tipo = "BONCER"
+familia = "cer_cero_cupon"
+emision = 2024-02-01
+vencimiento = 2027-06-30
+cer_inicial = 200.38801458911763
+revisado = true
+fuente = "Excel de Agustin (ejemplo_Cer.xlsx), 12/11/2026"
+
+[[bono]]
+ticker = "TZXS7"
+tipo = "BONCER"
+familia = "cer_cero_cupon"
+emision = 2026-03-31
+vencimiento = 2027-09-30
+cer_inicial = 723.0599806219161
+revisado = true
+fuente = "Excel de Agustin (ejemplo_Cer.xlsx), 12/11/2026"
+
+[[bono]]
+ticker = "TZXO7"
+tipo = "BONCER"
+familia = "cer_cero_cupon"
+emision = 2026-06-30
+vencimiento = 2027-10-29
+cer_inicial = 791.48970450621
+revisado = true
+fuente = "Excel de Agustin (ejemplo_Cer.xlsx), 12/11/2026"
+
+[[bono]]
+ticker = "TZXD7"
+tipo = "BONCER"
+familia = "cer_cero_cupon"
+emision = 2024-03-15
+vencimiento = 2027-12-15
+cer_inicial = 271.047555509126
+revisado = true
+fuente = "Excel de Agustin (ejemplo_Cer.xlsx), 12/11/2026"
+
+[[bono]]
+ticker = "TZXM8"
+tipo = "BONCER"
+familia = "cer_cero_cupon"
+emision = 2026-03-31
+vencimiento = 2028-03-31
+cer_inicial = 723.0599806219161
+revisado = true
+fuente = "Excel de Agustin (ejemplo_Cer.xlsx), 12/11/2026"
+
+[[bono]]
+ticker = "TZX28"
+tipo = "BONCER"
+familia = "cer_cero_cupon"
+emision = 2024-02-01
+vencimiento = 2028-06-30
+cer_inicial = 200.38801458911763
+revisado = true
+fuente = "Excel de Agustin (ejemplo_Cer.xlsx), 12/11/2026"
+
+[[bono]]
+ticker = "TXMJ8"
+tipo = "DUAL CER/TAMAR"
+familia = "cer_cero_cupon"
+emision = 2026-05-15
+vencimiento = 2028-06-30
+cer_inicial = 758.118
+revisado = true
+fuente = "Excel de Agustin (ejemplo_Cer.xlsx), 12/11/2026"
+nota = "Dual: paga el mayor entre el ajuste CER y TAMAR TEM + 3%. Se calcula solo la parte CER."
+
+[[bono]]
+ticker = "TZXS8"
+tipo = "BONCER"
+familia = "cer_cero_cupon"
+emision = 2026-03-31
+vencimiento = 2028-09-29
+cer_inicial = 723.0599806219161
+revisado = true
+fuente = "Excel de Agustin (ejemplo_Cer.xlsx), 12/11/2026"
+
+[[bono]]
+ticker = "TXMD8"
+tipo = "DUAL CER/TAMAR"
+familia = "cer_cero_cupon"
+emision = 2026-06-12
+vencimiento = 2028-12-15
+cer_inicial = 779.88639312623
+revisado = true
+fuente = "Excel de Agustin (ejemplo_Cer.xlsx), 12/11/2026"
+nota = "Dual: paga el mayor entre el ajuste CER y TAMAR TEM + 3%. Se calcula solo la parte CER."
+
+[[bono]]
+ticker = "TZXM9"
+tipo = "BONCER"
+familia = "cer_cero_cupon"
+emision = 2026-03-31
+vencimiento = 2029-03-28
+cer_inicial = 723.0599806219161
+revisado = true
+fuente = "Excel de Agustin (ejemplo_Cer.xlsx), 12/11/2026"
+
+[[bono]]
+ticker = "TXMJ9"
+tipo = "DUAL CER/TAMAR"
+familia = "cer_cero_cupon"
+emision = 2026-04-30
+vencimiento = 2029-06-29
+cer_inicial = 746.3809
+revisado = true
+fuente = "Excel de Agustin (ejemplo_Cer.xlsx), 12/11/2026"
+nota = "Dual: paga el mayor entre el ajuste CER y TAMAR TEM + 3%. Se calcula solo la parte CER."
+
+[[bono]]
+ticker = "TXMD9"
+tipo = "DUAL CER/TAMAR"
+familia = "cer_cero_cupon"
+emision = 2026-06-12
+vencimiento = 2029-12-14
+cer_inicial = 779.88639312623
+revisado = true
+fuente = "Excel de Agustin (ejemplo_Cer.xlsx), 12/11/2026"
+nota = "Dual: paga el mayor entre el ajuste CER y TAMAR TEM + 3%. Se calcula solo la parte CER."
+
+[[bono]]
+ticker = "TXMJ0"
+tipo = "DUAL CER/TAMAR"
+familia = "cer_cero_cupon"
+emision = 2026-06-12
+vencimiento = 2030-06-28
+cer_inicial = 779.88639312623
+revisado = true
+fuente = "Excel de Agustin (ejemplo_Cer.xlsx), 12/11/2026"
+nota = "Dual: paga el mayor entre el ajuste CER y TAMAR TEM + 3%. Se calcula solo la parte CER."
+
+[[bono]]
+ticker = "TZXD8"
+tipo = "BONCER"
+familia = "cer_cero_cupon"
+vencimiento = 2028-12-15
+cer_inicial = 791.4897
+revisado = false
+fuente = "sinelefantesblancos.com.ar (calculador de BONCER), 12/11/2026"
+nota = "No está en el Excel de Agustin. Ojo: el CER inicial es igual al del TZXO7, puede estar mal."

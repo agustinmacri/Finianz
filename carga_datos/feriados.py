@@ -32,13 +32,13 @@ class ErrorAjustes(Exception):
 
 
 def cargar(desde: int | None = None, hasta: int | None = None) -> dict:
-    """Recarga los feriados entre dos años (por defecto, desde FERIADOS_DESDE hasta el año próximo).
+    """Recarga los feriados entre dos años (por defecto, desde FERIADOS_DESDE hasta FERIADOS_ANIOS_ADELANTE años adelante).
 
     Reemplaza lo que había en ese rango: si la librería corrigió un feriado, la base queda al día.
     Devuelve un resumen con cuántos feriados se cargaron por calendario y cuántos ajustes se aplicaron.
     """
     desde = desde or config.FERIADOS_DESDE
-    hasta = hasta or date.today().year + 1
+    hasta = hasta or date.today().year + config.FERIADOS_ANIOS_ADELANTE
     anios = list(range(desde, hasta + 1))
     ajustes = leer_ajustes()  # se valida antes de tocar la base: si el archivo tiene errores, no se borra nada
 

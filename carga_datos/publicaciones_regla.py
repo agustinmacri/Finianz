@@ -27,8 +27,8 @@ def cargar() -> dict:
     rango = feriados.rango_cargado()
     if not rango:
         raise ValueError("Primero hay que cargar los feriados (python actualizar.py).")
-    # Desde el año pasado (como FRED) hasta el último año con feriados
-    desde_anio, hasta_anio = max(rango[0], date.today().year - 1), rango[1]
+    # Desde el año pasado (como FRED) hasta el año próximo (los feriados se cargan más adelante, para los bonos)
+    desde_anio, hasta_anio = max(rango[0], date.today().year - 1), min(rango[1], date.today().year + 1)
 
     filas, por_codigo = [], {}
     for p in (p for p in catalogo.leer() if p["fuente"] == FUENTE):

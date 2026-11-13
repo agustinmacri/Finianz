@@ -32,10 +32,16 @@ def listar_variables() -> list[dict]:
 # Cada palabra de la búsqueda cuenta como encontrada si aparece cualquiera de sus alternativas.
 _INFLACION = ("inflacion", "precios")
 _EXPECTATIVAS = ("expectativas",)  # el BCRA no usa la sigla REM: dice "relevamiento de expectativas de mercado"
+_CER = ("estabilizacion", "cer")  # el CER no figura con su sigla: "coeficiente de estabilización de referencia"
+
+# Variables que el proyecto usa por su id fijo (no dependen de cómo esté escrita la descripción)
+ID_CER = 30                        # Coeficiente de estabilización de referencia (base 2.2.02=1), diario
+
 SINONIMOS = {
     "inflacion": _INFLACION, "ipc": _INFLACION, "precios": _INFLACION,
     "dolar": ("cambio",),
     "rem": _EXPECTATIVAS, "esperada": _EXPECTATIVAS, "expectativa": _EXPECTATIVAS, "consenso": _EXPECTATIVAS,
+    "cer": _CER,
 }
 
 # Palabras que no ayudan a distinguir variables y se ignoran

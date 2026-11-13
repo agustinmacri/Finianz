@@ -67,11 +67,16 @@ Finianz/
 │   │                    # consultar_fred, buscar_serie_fred
 │   ├── noticias.py      # buscar_noticias, titulares_recientes
 │   ├── precios.py       # consultar_precio (PPI)
+│   ├── bonos.py         # calcular_bono (calculadora propia)
 │   ├── guardia.py       # límites de seguridad del código que escribe el agente
 │   ├── calendario.py    # consultar_feriados, calcular_dia_habil, consultar_publicaciones
 │   └── python_exec.py   # ejecutar_python, con acceso a los datos
 ├── calculos/            # cálculos propios, sin acceso externo
 │   └── series.py        # variaciones de series (mensual, interanual, anualizada, acumulada)
+├── renta_fija/          # todo lo propio de bonos y letras
+│   ├── fichas/          # fichas técnicas de cada bono (cer.toml) y prospectos/ con los PDF
+│   ├── calculadoras/    # cuentas puras: motor.py (TIR, duration...) y una por familia (cer.py)
+│   └── leer_fichas.py   # lee y valida las fichas
 ├── conexiones/             # acceso a fuentes externas, sin IA
 │   ├── http.py          # timeouts, reintentos y caché comunes
 │   ├── bcra.py          # API del BCRA (Principales Variables v4)
@@ -101,8 +106,10 @@ Finianz/
 │   ├── publicaciones.toml      # catálogo de publicaciones que se siguen, con su importancia
 │   └── indec/                  # calendarios semestrales del INDEC en PDF
 ├── prompts/             # instrucciones de cada agente
+├── tests/               # pruebas automáticas (python -m tests.test_renta_fija_cer)
 └── docs/
-    └── arquitectura-multiagente.md   # arquitectura completa y plan por fases
+    ├── arquitectura-multiagente.md   # arquitectura completa y plan por fases
+    └── convenciones-renta-fija.md    # cómo se calcula cada variable de cada bono
 ```
 
 Las capas están separadas a propósito: `conexiones/` y `carga_datos/` no saben nada de IA, `tools/` no depende de LangGraph y `graph/` solo orquesta. Cambiar el modelo, el framework o una fuente de datos afecta a una sola capa.
@@ -205,7 +212,7 @@ El sistema se construye por fases. El detalle está en [`docs/arquitectura-multi
 
 - [ ] **Fase A** (en curso): router + agentes macro y noticias ✓; calendario de publicaciones del INDEC ✓, de EE. UU. (FRED) ✓ y por regla (ISM, recaudación) ✓; faltan las manuales (BCRA, Tesoro, FOMC).
 - [ ] **Fase B** (en curso): bases de datos locales (✓ feriados, ✓ publicaciones), precios de mercado (✓ consulta en vivo vía PPI; falta la base de precios), cartera y registro de pronósticos.
-- [ ] **Fase C:** calculadoras de bonos y agente de renta fija.
+- [ ] **Fase C** (en curso): calculadoras de bonos (✓ motor, ✓ CER cupón cero; faltan CER con cupón, duales, tasa fija, hard dollar) y agente de renta fija.
 - [ ] **Fase D:** agente de escenarios y estratega (retornos esperados, estrés, límites regulatorios).
 - [ ] **Fase E:** redactor de informes y revisión humana.
 - [ ] **Fase F:** agente de equity (balances, DCF, comparables).

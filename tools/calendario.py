@@ -72,7 +72,7 @@ CONSULTAR_FERIADOS = {
         "Lista los feriados entre dos fechas, de Argentina y de Estados Unidos, indicando en qué "
         "calendarios aplica cada uno: Argentina (nacional), Bancos AR, BYMA (mercado local), "
         "EE. UU. (federal), NYSE (bolsa) y Bonos EE. UU. (Treasuries). "
-        "Sin fechas, muestra los próximos 60 días. Hay datos desde 2016 hasta el año próximo."
+        "Sin fechas, muestra los próximos 60 días. Hay datos desde 2016 hasta 20 años adelante."
     ),
     "parameters": {
         "type": "object",
