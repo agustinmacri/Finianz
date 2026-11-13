@@ -4,10 +4,9 @@
 #   ticker       ticker en BYMA (en pesos)
 #   tipo         BONCER
 #   familia      cer_cupon
-#   emision      fecha de emisión (liquidación inicial)
+#   emision      fecha de emisión (liquidación inicial). El CER inicial (base) es el del décimo día hábil
+#                anterior: se toma de la base de series (datos/series.db), no se carga acá.
 #   vencimiento  fecha del último pago
-#   cer_inicial  base: CER del décimo día hábil anterior a la liquidación inicial. Opcional: si falta,
-#                se calcula con la serie del BCRA (y la respuesta lo aclara)
 #   cupon        tasa anual (0.0225 = 2,25%)
 #   frecuencia   pagos por año (2 = semestral)
 #   base         base de cálculo del interés corrido (hoy: 30/360)
@@ -24,7 +23,6 @@ tipo = "BONCER"
 familia = "cer_cupon"
 emision = 2020-09-04
 vencimiento = 2028-11-09
-cer_inicial = 22.543951089590315
 cupon = 0.0225
 frecuencia = 2
 base = "30/360"
@@ -54,11 +52,10 @@ tipo = "BONCER"
 familia = "cer_cupon"
 emision = 2022-05-31
 vencimiento = 2031-11-30
-# cer_inicial: sin cargar. Se calcula con el CER del BCRA del 10.º día hábil anterior a la emisión (13/05/2022).
 cupon = 0.025
 frecuencia = 2
 base = "30/360"
-revisado = false
+revisado = true
 fuente = "Condiciones de emisión (prospectos/TX31_condiciones_de_emision.png), enviadas por Agustin el 13/11/2026"
 pagos = [
     { fecha = 2022-11-30, amortizacion = 0 },

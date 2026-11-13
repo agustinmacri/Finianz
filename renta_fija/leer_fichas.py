@@ -2,6 +2,8 @@
 
 Cada archivo .toml de renta_fija/fichas/ tiene una lista [[bono]]. El formato de cada familia está
 explicado al principio de su archivo (por ejemplo, renta_fija/fichas/cer.toml).
+Las fichas tienen solo condiciones de emisión: ningún valor de mercado ni de índices (el CER
+inicial, por ejemplo, se toma de la base de series a partir de la fecha de emisión).
 """
 import tomllib
 from datetime import date
@@ -10,8 +12,8 @@ import config
 
 CARPETA = config.BASE_DIR / "renta_fija" / "fichas"
 CAMPOS = {
-    "cer_cero_cupon": ("ticker", "tipo", "familia", "vencimiento", "cer_inicial"),
-    "cer_cupon": ("ticker", "tipo", "familia", "emision", "vencimiento", "cupon", "frecuencia", "pagos"),  # cer_inicial opcional
+    "cer_cero_cupon": ("ticker", "tipo", "familia", "emision", "vencimiento"),
+    "cer_cupon": ("ticker", "tipo", "familia", "emision", "vencimiento", "cupon", "frecuencia", "pagos"),
     "tasa_fija_capitalizable": ("ticker", "tipo", "familia", "emision", "vencimiento", "tem"),
     "tasa_fija_cupon": ("ticker", "tipo", "familia", "emision", "vencimiento", "cupon", "frecuencia", "pagos"),
 }
@@ -37,8 +39,12 @@ def leer_todas() -> dict[str, dict]:
             for campo in CAMPOS[familia]:
                 if bono.get(campo) in (None, ""):
                     raise ErrorFicha(f"{donde}: falta el campo '{campo}'.")
-            if not isinstance(bono["vencimiento"], date):
-                raise ErrorFicha(f"{donde}: 'vencimiento' tiene que ser una fecha AAAA-MM-DD sin comillas.")
+            for campo in ("emision", "vencimiento"):
+                if campo in bono and not isinstance(bono[campo], date):
+                    raise ErrorFicha(f"{donde}: '{campo}' tiene que ser una fecha AAAA-MM-DD sin comillas.")
+            if "cer_inicial" in bono:
+                raise ErrorFicha(f"{donde}: 'cer_inicial' no va en la ficha. El CER inicial se toma de la base "
+                                 "de series (10.º día hábil anterior a la emisión): borrá esa línea.")
             if familia in ("cer_cupon", "tasa_fija_cupon"):
                 _validar_pagos(bono, donde)
             ticker = bono["ticker"].upper()

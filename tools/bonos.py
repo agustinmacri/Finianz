@@ -3,17 +3,19 @@
 Arma el cálculo con piezas de cada capa:
 - la ficha técnica del bono (renta_fija/fichas/*.toml, vía renta_fija/leer_fichas.py);
 - el precio (PPI en vivo, o el cierre guardado en la base propia para una fecha pasada);
-- el CER y la inflación del BCRA, y los días hábiles (base de feriados);
+- el CER (base propia de series, cargada desde el BCRA), la inflación del BCRA y los días hábiles (base de feriados);
 - la calculadora de la familia (renta_fija/calculadoras/).
 Ningún número sale de cálculos externos: de afuera vienen solo datos.
 """
-from datetime import date, timedelta
+from datetime import date
 
 import config
 from admin_datos import feriados
 from admin_datos import precios as db_precios
+from admin_datos import series as db_series
 from carga_datos import feriados as carga_feriados
 from carga_datos import precios as carga_precios
+from carga_datos import series as carga_series
 from conexiones import bcra, ppi
 from conexiones.http import ErrorAPI
 from renta_fija import leer_fichas as fichas
@@ -26,16 +28,20 @@ CALENDARIO_HABILES = "BYMA"    # días hábiles del rezago del CER y de las fech
 def _asegurar_feriados(*fechas: date):
     rango = feriados.rango_cargado()
     if not rango or any(not rango[0] <= f.year <= rango[1] for f in fechas):
-        carga_feriados.cargar(hasta=max([f.year for f in fechas] + [date.today().year + config.FERIADOS_ANIOS_ADELANTE]))
+        anios = [f.year for f in fechas]
+        carga_feriados.cargar(desde=min(anios + [config.FERIADOS_DESDE] + ([rango[0]] if rango else [])),
+                              hasta=max(anios + [date.today().year + config.FERIADOS_ANIOS_ADELANTE]))
 
 
 def _cer(fecha: date) -> float:
-    """CER publicado por el BCRA para una fecha exacta (variable id 30, diaria)."""
-    serie = bcra.obtener_serie(bcra.ID_CER, (fecha - timedelta(days=7)).isoformat(), fecha.isoformat())
-    exacto = [d for d in serie if d["fecha"][:10] == fecha.isoformat()]
-    if not exacto:
-        raise ErrorAPI(f"el BCRA no tiene el CER del {fecha}.")
-    return exacto[0]["valor"]
+    """CER de una fecha exacta, de la base propia (datos/series.db). Si falta, la actualiza desde el BCRA."""
+    valor = db_series.valor("CER", fecha)
+    if valor is None:
+        carga_series.actualizar("CER")
+        valor = db_series.valor("CER", fecha)
+    if valor is None:
+        raise ErrorAPI(f"no hay CER del {fecha}: no está en la base propia ni lo publicó el BCRA todavía.")
+    return valor
 
 
 def _ultima_inflacion() -> tuple[float, str]:
@@ -120,16 +126,15 @@ def calcular_bono(ticker: str, precio: float | None = None, fecha: str | None = 
 
 
 def _datos_cer(f: dict, liquidacion: date) -> tuple[str, dict, float]:
-    """CER corriente (10.º día hábil anterior a la liquidación) y CER inicial (de la ficha o del BCRA)."""
+    """CER corriente (10.º día hábil anterior a la liquidación) y CER inicial (10.º día hábil anterior a la
+    emisión), ambos de la base propia de series: las fichas no traen valores de CER."""
     fecha_cer_corriente = feriados.sumar_dias_habiles(liquidacion, -cer.REZAGO_HABILES, CALENDARIO_HABILES)
     cer_corriente = _cer(fecha_cer_corriente)
-    origen_base = ""
-    if f.get("cer_inicial") is None:              # la ficha no lo trae: se calcula según la norma
-        _asegurar_feriados(f["emision"])
-        fecha_base = feriados.sumar_dias_habiles(f["emision"], -cer.REZAGO_HABILES, CALENDARIO_HABILES)
-        f = dict(f, cer_inicial=_cer(fecha_base))
-        origen_base = f" (calculado: CER del BCRA del {fecha_base}, 10.º día hábil anterior a la emisión)"
-    texto = (f"Base (CER inicial): {f['cer_inicial']:,.4f}{origen_base} | CER corriente: {cer_corriente:,.5f} "
+    _asegurar_feriados(f["emision"])
+    fecha_base = feriados.sumar_dias_habiles(f["emision"], -cer.REZAGO_HABILES, CALENDARIO_HABILES)
+    f = dict(f, cer_inicial=_cer(fecha_base))
+    texto = (f"Base (CER inicial): {f['cer_inicial']:,.4f} (al {fecha_base}, 10.º día hábil anterior a la emisión "
+             f"del {f['emision']}) | CER corriente: {cer_corriente:,.5f} "
              f"(al {fecha_cer_corriente}, 10.º día hábil anterior a la liquidación)\n")
     return texto, f, cer_corriente
 

@@ -6,7 +6,8 @@ Uso:
 Hoy carga los feriados (datos/feriados.db) y el calendario de publicaciones
 (datos/publicaciones.db): las del INDEC desde sus PDF, las que siguen una regla de días
 hábiles (ISM, recaudación) y las de EE. UU. desde FRED. También suma los cierres nuevos
-de los activos seguidos a la base de precios (datos/precios.db).
+de los activos seguidos a la base de precios (datos/precios.db) y los valores nuevos del CER
+a la base de series (datos/series.db).
 Conviene correrlo después de actualizar la librería holidays, de editar
 calendarios/feriados_ajustes.toml o calendarios/publicaciones.toml, de agregar un PDF
 del INDEC en calendarios/indec/, y una vez por semana para traer las fechas nuevas de FRED.
@@ -14,7 +15,7 @@ del INDEC en calendarios/indec/, y una vez por semana para traer las fechas nuev
 import sys
 
 import config
-from carga_datos import catalogo, feriados, precios, publicaciones_fred, publicaciones_indec, publicaciones_regla
+from carga_datos import catalogo, feriados, precios, publicaciones_fred, publicaciones_indec, publicaciones_regla, series
 from admin_datos.feriados import NOMBRES_CALENDARIO
 from conexiones.http import ErrorAPI
 
@@ -50,6 +51,7 @@ def main():
         print(f"  {codigo:<18} próxima: {proxima or '(sin fecha)'}")
 
     _publicaciones_fred()
+    _series()
     _precios()
 
 
@@ -68,6 +70,16 @@ def _publicaciones_fred():
         print(f"  {codigo:<18} próxima: {datos['proxima'] or '(sin fecha)'}")
     for aviso in eeuu["avisos"]:
         print(f"  Aviso: {aviso}")
+
+
+def _series():
+    print("\nSeries diarias (BCRA):")
+    for variable, nuevos in series.actualizar_todas().items():
+        if isinstance(nuevos, str):
+            print(f"  {variable:<10} {nuevos}")
+            continue
+        primera, ultima, cantidad = series.db.rango(variable) or ("-", "-", 0)
+        print(f"  {variable:<10} {nuevos} valores nuevos ({cantidad} en la base, del {primera} al {ultima})")
 
 
 def _precios():

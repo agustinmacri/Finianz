@@ -13,6 +13,7 @@ from renta_fija.calculadoras import cer_cupon
 
 LIQUIDACION = date(2026, 11, 16)          # operación del 13/11/2026, T+1
 CER_CORRIENTE = 861.75259534429           # CER BCRA del 29/10/2026 (10.º día hábil anterior)
+CER_INICIAL = 22.543951089590315          # base que usó el Excel (la herramienta la toma de la base de series)
 PRECIO = 1820.0                           # 18,20 por 1 VN en el Excel = 1.820 por 100 VN
 
 EXCEL = {                                 # por 100 VN (el Excel trabaja por 1 VN)
@@ -39,7 +40,7 @@ def _ajustar(d: date) -> date:
 
 def _resultado():
     f = leer_fichas.ficha("TX28")
-    return cer_cupon.calcular(PRECIO, f["cer_inicial"], CER_CORRIENTE, LIQUIDACION, f["pagos"], f["cupon"],
+    return cer_cupon.calcular(PRECIO, CER_INICIAL, CER_CORRIENTE, LIQUIDACION, f["pagos"], f["cupon"],
                               f["frecuencia"], f["emision"], _ajustar)
 
 

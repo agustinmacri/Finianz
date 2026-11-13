@@ -51,7 +51,7 @@ Principios de diseño:
 ```
 Finianz/
 ├── main.py              # chat por terminal
-├── actualizar.py        # actualiza la base de datos local (hoy: feriados)
+├── actualizar.py        # actualiza las bases locales (feriados, publicaciones, CER, precios)
 ├── config.py            # configuración central (lee el .env)
 ├── graph/               # orquestación con LangGraph
 │   ├── builder.py       # grafo principal: router + agentes + responder
@@ -88,25 +88,28 @@ Finianz/
 │   ├── db.py            # tablas de cada base y conexión
 │   ├── feriados.py      # consultas de feriados y días hábiles
 │   ├── publicaciones.py # consultas del calendario de publicaciones
-│   └── precios.py       # consultas de la base de precios
+│   ├── precios.py       # consultas de la base de precios
+│   └── series.py        # consultas de la base de series (CER)
 ├── carga_datos/             # carga de datos en la base
 │   ├── feriados.py      # librería holidays + ajustes manuales
 │   ├── publicaciones_indec.py  # lector de los PDF del INDEC
 │   ├── publicaciones_fred.py   # fechas de EE. UU. desde FRED
 │   ├── publicaciones_regla.py  # fechas por regla de días hábiles (ISM, recaudación)
 │   ├── precios.py              # precios diarios desde PPI, solo los días que faltan
+│   ├── series.py               # CER diario desde el BCRA, toda la historia y después los días nuevos
 │   └── catalogo.py      # lectura del catálogo de publicaciones
 ├── datos/               # las bases (no se suben a git)
 │   ├── feriados.db
 │   ├── publicaciones.db
 │   ├── precios.db       # precios diarios de los activos consultados (respaldar)
+│   ├── series.db        # CER diario del BCRA desde 2002 (regenerable)
 │   └── cartera.db       # fase B
 ├── calendarios/
 │   ├── feriados_ajustes.toml   # correcciones manuales a los feriados
 │   ├── publicaciones.toml      # catálogo de publicaciones que se siguen, con su importancia
 │   └── indec/                  # calendarios semestrales del INDEC en PDF
 ├── prompts/             # instrucciones de cada agente
-├── tests/               # pruebas automáticas (python -m tests.test_renta_fija_cer, ..._cer_cupon, ..._tasa_fija)
+├── tests/               # pruebas automáticas (python -m tests.test_renta_fija_cer, ..._cer_cupon, ..._tasa_fija, tests.test_series)
 └── docs/
     ├── arquitectura-multiagente.md   # arquitectura completa y plan por fases
     └── convenciones-renta-fija.md    # cómo se calcula cada variable de cada bono
@@ -173,7 +176,7 @@ Comandos durante la conversación:
 | `reintentar` | Si hubo un error temporal del modelo, continúa desde el paso donde se cortó, sin repetir lo que ya se hizo |
 | `salir` | Termina |
 
-## Bases de datos locales: feriados, publicaciones y precios
+## Bases de datos locales: feriados, publicaciones, series y precios
 
 ```bash
 python actualizar.py
@@ -192,6 +195,8 @@ Las fechas de EE. UU. salen de la API de FRED, que ya tiene programadas las publ
 Las publicaciones con fecha fija por regla (por ejemplo, el ISM manufacturero sale el primer día hábil del mes) se calculan con la base de feriados. La regla de cada una está en el catálogo.
 
 Qué publicaciones se siguen y con qué importancia se define en `calendarios/publicaciones.toml`. Las del INDEC que no están en el catálogo también se guardan, con importancia baja.
+
+**Series (CER).** `datos/series.db` guarda el CER diario del BCRA desde 2002. La primera vez se baja toda la historia (tarda unos segundos) y después solo los días nuevos; como el BCRA publica el CER por adelantado, se piden también los próximos 60 días. Las calculadoras de bonos toman de acá el CER corriente y el CER inicial de cada bono (el del 10.º día hábil anterior a su emisión), así las fichas solo tienen condiciones de emisión. Se regenera en cualquier momento. Para comparar las bases con las de tus Excel: `python -m tests.verificar_cer_inicial`.
 
 **Precios.** Cada activo que consultás queda "seguido": la primera vez se baja todo su histórico de PPI a `datos/precios.db`, y después solo se piden los días que faltan. `python actualizar.py` suma los cierres nuevos de todos los seguidos (el cierre del día se guarda recién después de las 18 h). El precio del momento se consulta en vivo y no se guarda. A diferencia de las otras bases, esta no se puede regenerar del todo: hacele respaldos.
 
