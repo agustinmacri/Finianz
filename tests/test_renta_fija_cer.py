@@ -37,9 +37,11 @@ CASOS = [
     ("TXMJ0", "2030-06-28", "2030-06-14", 779.88639312623, 110.56430498064154, 82.79999999999794, 3.6246575342465754, 1323, 0.09251017229484271, 0.0830469951878412, 0.02609067952986636),
 ]
 
-# Diferencias de calendario a futuro (feriados de 2029 y 2030 que todavía no están decretados):
-# la fecha CER final es solo informativa y no entra en ningún cálculo.
-FECHA_CER_CONOCIDAS = {"TXMJ9", "TXMJ0"}
+# Diferencias de calendario conocidas (la fecha CER final es solo informativa, no entra en ningún cálculo):
+# - TXMJ9 y TXMJ0: feriados de 2029 y 2030 que todavía no están decretados.
+# - TZXD6: el Excel toma el 7/12/2026 (feriado turístico) como inhábil; en el calendario de BYMA es
+#   hábil hasta que se confirme si el mercado opera (se corrige en calendarios/feriados_ajustes.toml).
+FECHA_CER_CONOCIDAS = {"TXMJ9", "TXMJ0", "TZXD6"}
 
 
 def test_variables_como_el_excel():
@@ -80,20 +82,20 @@ def test_fecha_cer_final():
 
 
 def test_fecha_cer_corriente():
-    """Liquidación 13/11/2026: 10.º día hábil anterior con el calendario oficial (el 9/11 es feriado)."""
+    """Liquidación 13/11/2026: 10.º día hábil anterior con el calendario de BYMA (9/11 y 10/11 feriados)."""
     from tools.bonos import CALENDARIO_HABILES
     feriados = _feriados()
-    assert feriados.sumar_dias_habiles(LIQUIDACION, -cer.REZAGO_HABILES, CALENDARIO_HABILES) == date(2026, 10, 29)
+    assert feriados.sumar_dias_habiles(LIQUIDACION, -cer.REZAGO_HABILES, CALENDARIO_HABILES) == date(2026, 10, 28)
 
 
 def test_tzxo7_a_103_35():
     """Caso de Agustin: TZXO7 a 103,35. Con el CER del 30/10 (su Excel) la TIR es 5,65%;
-    con el del 29/10 (calendario oficial, que es lo que calcula la herramienta) es 5,58%."""
+    con el del 28/10 (calendario de BYMA, que es lo que calcula la herramienta) es 5,52%."""
     base, vto = 791.48970450621, date(2027, 10, 29)
     excel = cer.calcular(103.35, base, 862.27597, LIQUIDACION, vto)       # CER BCRA del 30/10/2026
-    oficial = cer.calcular(103.35, base, 861.7526, LIQUIDACION, vto)      # CER BCRA del 29/10/2026
+    oficial = cer.calcular(103.35, base, 861.22954, LIQUIDACION, vto)     # CER BCRA del 28/10/2026
     assert round(excel["tea_real"] * 100, 2) == 5.65, excel["tea_real"]
-    assert round(oficial["tea_real"] * 100, 2) == 5.58, oficial["tea_real"]
+    assert round(oficial["tea_real"] * 100, 2) == 5.52, oficial["tea_real"]
 
 
 if __name__ == "__main__":

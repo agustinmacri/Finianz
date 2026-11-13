@@ -1,0 +1,83 @@
+# Fichas técnicas de los bonos ajustados por CER que pagan cupón y amortizan.
+#
+# Cada [[bono]] tiene los datos de su norma de emisión:
+#   ticker       ticker en BYMA (en pesos)
+#   tipo         BONCER
+#   familia      cer_cupon
+#   emision      fecha de emisión (liquidación inicial)
+#   vencimiento  fecha del último pago
+#   cer_inicial  base: CER del décimo día hábil anterior a la liquidación inicial. Opcional: si falta,
+#                se calcula con la serie del BCRA (y la respuesta lo aclara)
+#   cupon        tasa anual (0.0225 = 2,25%)
+#   frecuencia   pagos por año (2 = semestral)
+#   base         base de cálculo del interés corrido (hoy: 30/360)
+#   pagos        cronograma completo: fecha de cada pago (sin correr por feriados) y amortización
+#                en % del valor nominal original (0 si ese pago es solo cupón). Tiene que sumar 100.
+#   revisado     true si Agustin lo validó
+#   fuente       de dónde salió el dato
+#
+# Las definiciones de cada variable están en docs/convenciones-renta-fija.md.
+
+[[bono]]
+ticker = "TX28"
+tipo = "BONCER"
+familia = "cer_cupon"
+emision = 2020-09-04
+vencimiento = 2028-11-09
+cer_inicial = 22.543951089590315
+cupon = 0.0225
+frecuencia = 2
+base = "30/360"
+revisado = true
+fuente = "Excel de Agustin (ejemplo_tx28.xlsx), 13/11/2026"
+pagos = [
+    { fecha = 2021-11-09, amortizacion = 0 },
+    { fecha = 2022-05-09, amortizacion = 0 },
+    { fecha = 2022-11-09, amortizacion = 0 },
+    { fecha = 2023-05-09, amortizacion = 0 },
+    { fecha = 2023-11-09, amortizacion = 0 },
+    { fecha = 2024-05-09, amortizacion = 10 },
+    { fecha = 2024-11-09, amortizacion = 10 },
+    { fecha = 2025-05-09, amortizacion = 10 },
+    { fecha = 2025-11-09, amortizacion = 10 },
+    { fecha = 2026-05-09, amortizacion = 10 },
+    { fecha = 2026-11-09, amortizacion = 10 },
+    { fecha = 2027-05-09, amortizacion = 10 },
+    { fecha = 2027-11-09, amortizacion = 10 },
+    { fecha = 2028-05-09, amortizacion = 10 },
+    { fecha = 2028-11-09, amortizacion = 10 },
+]
+
+[[bono]]
+ticker = "TX31"
+tipo = "BONCER"
+familia = "cer_cupon"
+emision = 2022-05-31
+vencimiento = 2031-11-30
+# cer_inicial: sin cargar. Se calcula con el CER del BCRA del 10.º día hábil anterior a la emisión (13/05/2022).
+cupon = 0.025
+frecuencia = 2
+base = "30/360"
+revisado = false
+fuente = "Condiciones de emisión (prospectos/TX31_condiciones_de_emision.png), enviadas por Agustin el 13/11/2026"
+pagos = [
+    { fecha = 2022-11-30, amortizacion = 0 },
+    { fecha = 2023-05-30, amortizacion = 0 },
+    { fecha = 2023-11-30, amortizacion = 0 },
+    { fecha = 2024-05-30, amortizacion = 0 },
+    { fecha = 2024-11-30, amortizacion = 0 },
+    { fecha = 2025-05-30, amortizacion = 0 },
+    { fecha = 2025-11-30, amortizacion = 0 },
+    { fecha = 2026-05-30, amortizacion = 0 },
+    { fecha = 2026-11-30, amortizacion = 0 },
+    { fecha = 2027-05-30, amortizacion = 10 },
+    { fecha = 2027-11-30, amortizacion = 10 },
+    { fecha = 2028-05-30, amortizacion = 10 },
+    { fecha = 2028-11-30, amortizacion = 10 },
+    { fecha = 2029-05-30, amortizacion = 10 },
+    { fecha = 2029-11-30, amortizacion = 10 },
+    { fecha = 2030-05-30, amortizacion = 10 },
+    { fecha = 2030-11-30, amortizacion = 10 },
+    { fecha = 2031-05-30, amortizacion = 10 },
+    { fecha = 2031-11-30, amortizacion = 10 },
+]

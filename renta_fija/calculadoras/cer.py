@@ -7,8 +7,8 @@ Definiciones de Agustin (docs/convenciones-renta-fija.md). Se implementan tal cu
 - CER final = CER del décimo día hábil anterior al vencimiento.
 - CER inicial (base) = CER del décimo día hábil anterior a la liquidación inicial del bono (dato de la ficha).
 - CER corriente = CER del décimo día hábil anterior a la liquidación de la operación
-  (operación del 12/11/26 → liquidación 13/11/26 → CER del 29/10/26, contando el 9/11 como feriado).
-- Días hábiles: calendario nacional oficial (feriados decretados incluidos).
+  (operación del 12/11/26 → liquidación 13/11/26 → CER del 28/10/26: el 9/11 y el 10/11 fueron feriados).
+- Días hábiles: calendario de BYMA.
 - Ratio = CER corriente / CER inicial (por 100 de valor nominal, como el precio).
 - TNA real = (ratio / precio − 1) × 365 / plazo residual.
 - TIR (TEA real) = capitalización de la TNA por el plazo remanente en base 365:

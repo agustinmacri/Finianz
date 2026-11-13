@@ -11,6 +11,7 @@ import config
 CARPETA = config.BASE_DIR / "renta_fija" / "fichas"
 CAMPOS = {
     "cer_cero_cupon": ("ticker", "tipo", "familia", "vencimiento", "cer_inicial"),
+    "cer_cupon": ("ticker", "tipo", "familia", "emision", "vencimiento", "cupon", "frecuencia", "pagos"),  # cer_inicial opcional
 }
 
 
@@ -36,11 +37,30 @@ def leer_todas() -> dict[str, dict]:
                     raise ErrorFicha(f"{donde}: falta el campo '{campo}'.")
             if not isinstance(bono["vencimiento"], date):
                 raise ErrorFicha(f"{donde}: 'vencimiento' tiene que ser una fecha AAAA-MM-DD sin comillas.")
+            if familia == "cer_cupon":
+                _validar_pagos(bono, donde)
             ticker = bono["ticker"].upper()
             if ticker in fichas:
                 raise ErrorFicha(f"{donde}: el ticker {ticker} está repetido.")
             fichas[ticker] = bono
     return fichas
+
+
+def _validar_pagos(bono: dict, donde: str):
+    """El cronograma tiene fechas válidas, en orden, que terminan en el vencimiento, y amortiza el 100%."""
+    pagos = bono["pagos"]
+    if not all(isinstance(p.get("fecha"), date) for p in pagos):
+        raise ErrorFicha(f"{donde}: cada pago necesita 'fecha' AAAA-MM-DD sin comillas.")
+    fechas = [p["fecha"] for p in pagos]
+    if fechas != sorted(fechas) or len(set(fechas)) != len(fechas):
+        raise ErrorFicha(f"{donde}: las fechas de 'pagos' tienen que estar en orden y sin repetirse.")
+    if fechas[-1] != bono["vencimiento"]:
+        raise ErrorFicha(f"{donde}: el último pago ({fechas[-1]}) no coincide con el vencimiento ({bono['vencimiento']}).")
+    total = sum(p.get("amortizacion", 0) for p in pagos)
+    if abs(total - 100) > 1e-9:
+        raise ErrorFicha(f"{donde}: las amortizaciones suman {total}, tienen que sumar 100.")
+    if bono.get("base", "30/360") != "30/360":
+        raise ErrorFicha(f"{donde}: base '{bono['base']}' todavía no implementada (hoy: 30/360).")
 
 
 def ficha(ticker: str) -> dict | None:

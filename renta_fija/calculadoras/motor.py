@@ -12,7 +12,7 @@ Convenciones (acordadas con Agustin):
 - Precio y flujos por cada 100 de valor nominal original.
 """
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, timedelta
 
 BASE = 365
 TOLERANCIA = 1e-12
@@ -125,3 +125,46 @@ def indicadores(flujos: list[Flujo], precio: float, liquidacion: date,
         "paridad": precio / tecnico if tecnico else None,
         "flujos_futuros": futuros(flujos, liquidacion),
     }
+
+
+# ---------------------------------------------------------------------------
+# Convenciones comunes a todas las familias
+# ---------------------------------------------------------------------------
+def dias_30_360(desde: date, hasta: date) -> int:
+    """Días entre dos fechas en base 30/360, método US (el DAYS360 de Excel por defecto)."""
+    def fin_de_febrero(d: date) -> bool:
+        return d.month == 2 and (d + timedelta(days=1)).month == 3
+
+    d1, d2 = desde.day, hasta.day
+    if fin_de_febrero(desde) and fin_de_febrero(hasta):
+        d2 = 30
+    if fin_de_febrero(desde):
+        d1 = 30
+    if d2 == 31 and d1 >= 30:
+        d2 = 30
+    if d1 == 31:
+        d1 = 30
+    return (hasta.year - desde.year) * 360 + (hasta.month - desde.month) * 30 + (d2 - d1)
+
+
+def interes_corrido(residual: float, tasa_anual: float, ultimo_cupon: date, liquidacion: date,
+                    base: str = "30/360") -> float:
+    """Interés devengado desde el último cupón hasta la liquidación (por 100 VN)."""
+    if base != "30/360":
+        raise ValueError(f"Base de cálculo '{base}' todavía no implementada.")
+    return residual * tasa_anual * dias_30_360(ultimo_cupon, liquidacion) / 360
+
+
+def tna_equivalente(tir_: float, dias: int) -> float:
+    """TNA con capitalización cada 'dias' días, equivalente a una TIR efectiva anual (base 365)."""
+    return ((1 + tir_) ** (dias / BASE) - 1) * BASE / dias
+
+
+def tem(tir_: float) -> float:
+    """Tasa efectiva mensual (30 días) equivalente a una TIR efectiva anual."""
+    return (1 + tir_) ** (30 / BASE) - 1
+
+
+def sensibilidad(precio: float, md: float, cvx: float, variacion: float) -> float:
+    """Cambio del precio ante una suba de la TIR de 'variacion' (0.0001 = 1 pb): −MD·Δ + CVX·Δ²/2."""
+    return precio * (-variacion * md + variacion ** 2 * cvx / 2)
