@@ -6,14 +6,16 @@ términos reales (sin el ajuste CER), salvo los precios nominales:
 
 - Ratio = CER corriente / CER inicial (CER corriente: 10.º día hábil anterior a la liquidación).
 - Residual = 100 − amortizaciones pagadas hasta la liquidación.
-- Cupón de cada pago = residual anterior × tasa / frecuencia (2,25% semestral → × 180/360).
+- Cupón de cada pago = residual anterior × tasa × días 30/360 del período / 360 (en un semestre completo,
+  × 180/360). El primer período empieza en la emisión.
 - Interés corrido = residual × tasa × días 30/360 desde el último cupón / 360.
 - Valor técnico = residual + interés corrido.
 - Precio dirty real = precio de mercado (nominal, con cupón corrido) / ratio.
 - Precio clean = dirty − interés corrido (real), y × ratio en pesos.
 - Paridad = dirty real / valor técnico.
 - TIR real = la tasa que iguala los flujos futuros (en las fechas de pago corridas al día
-  hábil siguiente) al dirty real. TNA 180 d, TNA 30 d y TEM: equivalentes de la TIR.
+  hábil siguiente) al dirty real. TNA semestral ((1+TIR)^(1/2) − 1) × 2, TNA 30 d y TEM:
+  equivalentes de la TIR.
 - Duration (Macaulay), duration modificada = duration / (1 + TIR), convexidad, PV01 (1 pb) y
   DD (100 pb): con el motor común.
 - Current yield = tasa × residual / precio clean real.
@@ -29,17 +31,19 @@ from renta_fija.calculadoras.motor import Flujo
 VN = 100.0
 
 
-def cronograma(pagos: list[dict], tasa: float, frecuencia: int) -> list[dict]:
+def cronograma(pagos: list[dict], tasa: float, emision: date) -> list[dict]:
     """Agrega a cada pago su residual anterior, su renta y su amortización (por 100 VN).
 
     pagos: [{'fecha': date, 'amortizacion': % del VN original}], en orden.
+    La renta se devenga en base 30/360 entre la fecha de pago anterior (o la emisión) y la del pago.
     """
-    residual, filas = VN, []
+    residual, filas, anterior = VN, [], emision
     for p in sorted(pagos, key=lambda p: p["fecha"]):
-        renta = residual * tasa / frecuencia
+        renta = residual * tasa * motor.dias_30_360(anterior, p["fecha"]) / 360
         amort = p.get("amortizacion", 0.0)
         filas.append({"fecha": p["fecha"], "residual_previo": residual, "renta": renta, "amortizacion": amort})
         residual -= amort
+        anterior = p["fecha"]
     return filas
 
 
@@ -51,7 +55,7 @@ def calcular(precio: float, cer_inicial: float, cer_corriente: float, liquidacio
     ajustar_fecha: función que corre una fecha de pago al día hábil siguiente si no es hábil.
     """
     ratio = cer_corriente / cer_inicial
-    filas = cronograma(pagos, tasa, frecuencia)
+    filas = cronograma(pagos, tasa, emision)
     pasados = [f for f in filas if f["fecha"] <= liquidacion]
     futuros = [f for f in filas if f["fecha"] > liquidacion]
     if not futuros:
@@ -83,7 +87,7 @@ def calcular(precio: float, cer_inicial: float, cer_corriente: float, liquidacio
         "precio_clean_nominal": clean_real * ratio,
         "paridad": dirty_real / tecnico,
         "tir_real": tir,
-        "tna_180": motor.tna_equivalente(tir, 180),
+        "tna_semestral": motor.tna_semestral(tir),
         "tna_30": motor.tna_equivalente(tir, 30),
         "tem": motor.tem(tir),
         "duration": dur,

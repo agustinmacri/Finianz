@@ -39,9 +39,7 @@ CASOS = [
 
 # Diferencias de calendario conocidas (la fecha CER final es solo informativa, no entra en ningún cálculo):
 # - TXMJ9 y TXMJ0: feriados de 2029 y 2030 que todavía no están decretados.
-# - TZXD6: el Excel toma el 7/12/2026 (feriado turístico) como inhábil; en el calendario de BYMA es
-#   hábil hasta que se confirme si el mercado opera (se corrige en calendarios/feriados_ajustes.toml).
-FECHA_CER_CONOCIDAS = {"TXMJ9", "TXMJ0", "TZXD6"}
+FECHA_CER_CONOCIDAS = {"TXMJ9", "TXMJ0"}
 
 
 def test_variables_como_el_excel():
@@ -66,8 +64,7 @@ def test_el_motor_da_la_misma_tir():
 def _feriados():
     from admin_datos import feriados
     from carga_datos import feriados as carga
-    if not feriados.rango_cargado() or feriados.rango_cargado()[1] < 2030:
-        carga.cargar()
+    carga.cargar()          # recarga con los ajustes vigentes (ej.: el 7/12/2026 en BYMA)
     return feriados
 
 

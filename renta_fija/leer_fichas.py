@@ -12,6 +12,8 @@ CARPETA = config.BASE_DIR / "renta_fija" / "fichas"
 CAMPOS = {
     "cer_cero_cupon": ("ticker", "tipo", "familia", "vencimiento", "cer_inicial"),
     "cer_cupon": ("ticker", "tipo", "familia", "emision", "vencimiento", "cupon", "frecuencia", "pagos"),  # cer_inicial opcional
+    "tasa_fija_capitalizable": ("ticker", "tipo", "familia", "emision", "vencimiento", "tem"),
+    "tasa_fija_cupon": ("ticker", "tipo", "familia", "emision", "vencimiento", "cupon", "frecuencia", "pagos"),
 }
 
 
@@ -37,7 +39,7 @@ def leer_todas() -> dict[str, dict]:
                     raise ErrorFicha(f"{donde}: falta el campo '{campo}'.")
             if not isinstance(bono["vencimiento"], date):
                 raise ErrorFicha(f"{donde}: 'vencimiento' tiene que ser una fecha AAAA-MM-DD sin comillas.")
-            if familia == "cer_cupon":
+            if familia in ("cer_cupon", "tasa_fija_cupon"):
                 _validar_pagos(bono, donde)
             ticker = bono["ticker"].upper()
             if ticker in fichas:

@@ -1,0 +1,97 @@
+# Fichas técnicas de los bonos y letras a tasa fija en pesos.
+#
+# Capitalizables (familia tasa_fija_capitalizable: Lecap "S", Boncap "T"):
+#   emision, vencimiento, tem (TEM de emisión / tasa de corte). El pago final se calcula:
+#   100 × (1 + tem) ^ (días 30/360 entre emisión y vencimiento / 30).
+#
+# Con cupón (familia tasa_fija_cupon: Bonte): como los CER con cupón, sin cer_inicial
+#   (cupon, frecuencia, base y el cronograma de pagos, que tiene que sumar 100 de amortización).
+#
+# Hoy los datos vienen de la planilla de Agustin; más adelante van a salir de los prospectos.
+# Las definiciones de cada variable están en docs/convenciones-renta-fija.md.
+
+[[bono]]
+ticker = "S30N6"
+tipo = "LECAP"
+familia = "tasa_fija_capitalizable"
+emision = 2025-12-15
+vencimiento = 2026-11-30
+tem = 0.023
+revisado = true
+fuente = "Planilla de tasa fija de Agustin (tasa_fija.xlsx), 13/11/2026"
+
+[[bono]]
+ticker = "T15E7"
+tipo = "BONCAP"
+familia = "tasa_fija_capitalizable"
+emision = 2025-01-31
+vencimiento = 2027-01-15
+tem = 0.0205
+revisado = false
+fuente = "Planilla de tasa fija de Agustin (tasa_fija.xlsx), 13/11/2026"
+nota = "El Excel del 13/11/2026 tenía vencimiento 17/01/2027; corregido al 15/01 (ticker y pago final publicado)."
+
+[[bono]]
+ticker = "S29E7"
+tipo = "LECAP"
+familia = "tasa_fija_capitalizable"
+emision = 2026-08-31
+vencimiento = 2027-01-29
+tem = 0.0225
+revisado = true
+fuente = "Planilla de tasa fija de Agustin (tasa_fija.xlsx), 13/11/2026"
+
+[[bono]]
+ticker = "T30A7"
+tipo = "BONCAP"
+familia = "tasa_fija_capitalizable"
+emision = 2025-10-31
+vencimiento = 2027-04-30
+tem = 0.0255
+revisado = true
+fuente = "Planilla de tasa fija de Agustin (tasa_fija.xlsx), 13/11/2026"
+
+[[bono]]
+ticker = "T31Y7"
+tipo = "BONCAP"
+familia = "tasa_fija_capitalizable"
+emision = 2025-12-15
+vencimiento = 2027-05-31
+tem = 0.024
+revisado = false
+fuente = "Planilla de tasa fija de Agustin (tasa_fija.xlsx), 13/11/2026"
+nota = "El Excel del 13/11/2026 tenía vencimiento 30/05/2027; corregido al 31/05 (ticker y pago final publicado)."
+
+[[bono]]
+ticker = "T30J7"
+tipo = "BONCAP"
+familia = "tasa_fija_capitalizable"
+emision = 2026-01-16
+vencimiento = 2027-06-30
+tem = 0.0258
+revisado = true
+fuente = "Planilla de tasa fija de Agustin (tasa_fija.xlsx), 13/11/2026"
+
+[[bono]]
+ticker = "TY30P"
+tipo = "BONTE"
+familia = "tasa_fija_cupon"
+emision = 2025-06-04
+vencimiento = 2030-05-30
+cupon = 0.295
+frecuencia = 2
+base = "30/360"
+revisado = true
+fuente = "Planilla de tasa fija de Agustin (tasa_fija.xlsx, solapa TY30P), 13/11/2026"
+pagos = [
+    { fecha = 2025-11-30, amortizacion = 0 },
+    { fecha = 2026-05-30, amortizacion = 0 },
+    { fecha = 2026-11-30, amortizacion = 0 },
+    { fecha = 2027-05-30, amortizacion = 0 },
+    { fecha = 2027-11-30, amortizacion = 0 },
+    { fecha = 2028-05-30, amortizacion = 0 },
+    { fecha = 2028-11-30, amortizacion = 0 },
+    { fecha = 2029-05-30, amortizacion = 0 },
+    { fecha = 2029-11-30, amortizacion = 0 },
+    { fecha = 2030-05-30, amortizacion = 100 },
+]

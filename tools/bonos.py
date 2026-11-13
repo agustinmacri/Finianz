@@ -1,4 +1,4 @@
-"""Calculadora de bonos propia, con las definiciones de Agustin (docs/convenciones-renta-fija.md).
+"""Calculadora de bonos propia (CER y tasa fija), con las definiciones de Agustin (docs/convenciones-renta-fija.md).
 
 Arma el cálculo con piezas de cada capa:
 - la ficha técnica del bono (renta_fija/fichas/*.toml, vía renta_fija/leer_fichas.py);
@@ -17,7 +17,7 @@ from carga_datos import precios as carga_precios
 from conexiones import bcra, ppi
 from conexiones.http import ErrorAPI
 from renta_fija import leer_fichas as fichas
-from renta_fija.calculadoras import cer, cer_cupon
+from renta_fija.calculadoras import cer, cer_cupon, tasa_fija
 
 PLAZO_LIQUIDACION = 1          # T+1: precios y cálculos a la fecha de liquidación, salvo que se indique otra cosa
 CALENDARIO_HABILES = "BYMA"    # días hábiles del rezago del CER y de las fechas de pago (decisión de Agustin, 13/11/2026)
@@ -76,7 +76,7 @@ def calcular_bono(ticker: str, precio: float | None = None, fecha: str | None = 
         disponibles = ", ".join(sorted(fichas.leer_todas()))
         return f"No hay ficha técnica de {ticker.upper()}. Bonos con ficha: {disponibles}."
 
-    # Datos comunes a todos los CER: liquidación, precio y CER corriente
+    # Datos comunes a todos los bonos: liquidación y precio
     try:
         operacion = date.fromisoformat(fecha) if fecha else date.today()
         _asegurar_feriados(operacion, f["vencimiento"])
@@ -87,22 +87,12 @@ def calcular_bono(ticker: str, precio: float | None = None, fecha: str | None = 
             precio, origen = _precio(ticker, date.fromisoformat(fecha) if fecha else None)
         else:
             origen = "precio indicado"
-        fecha_cer_corriente = feriados.sumar_dias_habiles(liquidacion, -cer.REZAGO_HABILES, CALENDARIO_HABILES)
-        cer_corriente = _cer(fecha_cer_corriente)
-        origen_base = ""
-        if f.get("cer_inicial") is None:              # la ficha no lo trae: se calcula según la norma
-            _asegurar_feriados(f["emision"])
-            fecha_base = feriados.sumar_dias_habiles(f["emision"], -cer.REZAGO_HABILES, CALENDARIO_HABILES)
-            f = dict(f, cer_inicial=_cer(fecha_base))
-            origen_base = f" (calculado: CER del BCRA del {fecha_base}, 10.º día hábil anterior a la emisión)"
     except (ErrorAPI, ValueError) as e:
         return f"Error: {e}"
 
     encabezado = (
         f"{ticker.upper()} ({f['tipo']}, vence {f['vencimiento']}) – calculadora de Finianz\n"
         f"Precio: {precio:,.2f} por 100 VN ({origen}) | liquidación {liquidacion} (T+{PLAZO_LIQUIDACION})\n"
-        f"Base (CER inicial): {f['cer_inicial']:,.4f}{origen_base} | CER corriente: {cer_corriente:,.5f} "
-        f"(al {fecha_cer_corriente}, 10.º día hábil anterior a la liquidación)\n"
     )
     avisos = ""
     if not f.get("revisado"):
@@ -111,15 +101,65 @@ def calcular_bono(ticker: str, precio: float | None = None, fecha: str | None = 
         avisos += f"\nNOTA: {f['nota']}"
 
     try:
-        if f["familia"] == "cer_cupon":
-            cuerpo = _cer_cupon(f, precio, cer_corriente, liquidacion)
+        if f["familia"].startswith("cer"):
+            texto_cer, f, cer_corriente = _datos_cer(f, liquidacion)
+            encabezado += texto_cer
+            if f["familia"] == "cer_cupon":
+                cuerpo = _cer_cupon(f, precio, cer_corriente, liquidacion)
+            else:
+                cuerpo = _cer_cero_cupon(f, precio, cer_corriente, liquidacion, inflacion_mensual)
+        elif f["familia"] == "tasa_fija_capitalizable":
+            cuerpo = _tasa_fija_capitalizable(f, precio, liquidacion)
         else:
-            cuerpo = _cer_cero_cupon(f, precio, cer_corriente, liquidacion, inflacion_mensual)
+            cuerpo = _tasa_fija_cupon(f, precio, liquidacion)
     except ErrorAPI as e:
         return f"Error: {e}"
     except ValueError as e:
         return f"Error en el cálculo: {e}"
     return encabezado + cuerpo + avisos
+
+
+def _datos_cer(f: dict, liquidacion: date) -> tuple[str, dict, float]:
+    """CER corriente (10.º día hábil anterior a la liquidación) y CER inicial (de la ficha o del BCRA)."""
+    fecha_cer_corriente = feriados.sumar_dias_habiles(liquidacion, -cer.REZAGO_HABILES, CALENDARIO_HABILES)
+    cer_corriente = _cer(fecha_cer_corriente)
+    origen_base = ""
+    if f.get("cer_inicial") is None:              # la ficha no lo trae: se calcula según la norma
+        _asegurar_feriados(f["emision"])
+        fecha_base = feriados.sumar_dias_habiles(f["emision"], -cer.REZAGO_HABILES, CALENDARIO_HABILES)
+        f = dict(f, cer_inicial=_cer(fecha_base))
+        origen_base = f" (calculado: CER del BCRA del {fecha_base}, 10.º día hábil anterior a la emisión)"
+    texto = (f"Base (CER inicial): {f['cer_inicial']:,.4f}{origen_base} | CER corriente: {cer_corriente:,.5f} "
+             f"(al {fecha_cer_corriente}, 10.º día hábil anterior a la liquidación)\n")
+    return texto, f, cer_corriente
+
+
+def _tasa_fija_capitalizable(f: dict, precio: float, liquidacion: date) -> str:
+    pf = tasa_fija.pago_final(f["tem"], f["emision"], f["vencimiento"])
+    r = tasa_fija.calcular_capitalizable(precio, pf, liquidacion, f["vencimiento"])
+    return (
+        f"Pago final: {r['pago_final']:.4f} por 100 VN (TEM de emisión {_pct(f['tem'])}, emitida el {f['emision']})\n"
+        f"Plazo residual: {r['plazo_residual']} días ({r['meses_al_vencimiento']:.2f} meses 30/360) | "
+        f"duration: {r['duration']:.4f}\n"
+        f"TNA: {_pct(r['tna'])} | TEA (TIR): {_pct(r['tea'])} | TEM (30 días): {_pct(r['tem'])}"
+    )
+
+
+def _tasa_fija_cupon(f: dict, precio: float, liquidacion: date) -> str:
+    r = tasa_fija.calcular_cupon(precio, liquidacion, f["pagos"], f["cupon"], f["frecuencia"], f["emision"],
+                                 lambda d: feriados.proximo_dia_habil(d, CALENDARIO_HABILES))
+    proximos = "; ".join(f"{fl.fecha}: {fl.renta:.4f} + {fl.amortizacion:g} = {fl.total:.4f}" for fl in r["flujos"][:4])
+    return (
+        f"Residual: {r['residual']:g} | interés corrido: {r['interes_corrido']:.4f} | "
+        f"valor técnico: {r['valor_tecnico']:.4f}\n"
+        f"Precio clean: {r['precio_clean']:.4f} | paridad: {_pct(r['paridad'])}\n"
+        f"TIR: {_pct(r['tir_real'])} | TNA semestral: {_pct(r['tna_semestral'])} | TNA 30 d: {_pct(r['tna_30'])} | "
+        f"TEM: {_pct(r['tem'])}\n"
+        f"Duration: {r['duration']:.4f} | duration modificada: {r['duration_modificada']:.4f} | "
+        f"convexidad: {r['convexidad']:.4f} | PV01: {r['pv01']:.6f} | DD (100 pb): {r['dd']:.4f}\n"
+        f"Current yield: {_pct(r['current_yield'])} | cash yield (12 meses): {_pct(r['cash_yield'])}\n"
+        f"Próximos flujos por 100 VN (renta + amortización, fechas corridas): {proximos}"
+    )
 
 
 def _cer_cero_cupon(f: dict, precio: float, cer_corriente: float, liquidacion: date,
@@ -149,7 +189,7 @@ def _cer_cupon(f: dict, precio: float, cer_corriente: float, liquidacion: date) 
         f"valor técnico: {r['valor_tecnico']:.4f}\n"
         f"Precio dirty real: {r['precio_dirty_real']:.4f} | clean real: {r['precio_clean_real']:.4f} | "
         f"clean nominal: {r['precio_clean_nominal']:,.2f} | paridad: {_pct(r['paridad'])}\n"
-        f"TIR real: {_pct(r['tir_real'])} | TNA 180 d: {_pct(r['tna_180'])} | TNA 30 d: {_pct(r['tna_30'])} | "
+        f"TIR real: {_pct(r['tir_real'])} | TNA semestral: {_pct(r['tna_semestral'])} | TNA 30 d: {_pct(r['tna_30'])} | "
         f"TEM: {_pct(r['tem'])}\n"
         f"Duration: {r['duration']:.4f} | duration modificada: {r['duration_modificada']:.4f} | "
         f"convexidad: {r['convexidad']:.4f} | PV01: {r['pv01']:.6f} | DD (100 pb): {r['dd']:.4f}\n"
@@ -163,8 +203,10 @@ CALCULAR_BONO = {
     "description": (
         "Calculadora propia de bonos CER. Cero cupón (Boncer TZX, LeCER X y la parte CER de los duales TXM): plazo "
         "residual, duration, ratio, TNA real, TEA real (TIR) y carry mensual. Con cupón (TX28, TX31): valor técnico, "
-        "paridad, TIR real, TNA 180 d y 30 d, TEM, duration, duration modificada, convexidad, PV01, current yield "
-        "y cash yield. Sin precio, usa el precio de mercado: en vivo, o el cierre de 'fecha' si se indica. Cálculos en T+1."
+        "paridad, TIR real, TNA semestral y 30 d, TEM, duration, duration modificada, convexidad, PV01, current yield "
+        "y cash yield. Tasa fija: Lecap/Boncap capitalizables (S30N6, T15E7, S29E7, T30A7, T31Y7, T30J7: pago final, "
+        "TNA, TEA, TEM, duration) y Bonte con cupón (TY30P: como los CER con cupón, en pesos). Sin precio, usa el precio "
+        "de mercado: en vivo, o el cierre de 'fecha' si se indica. Cálculos en T+1."
     ),
     "parameters": {
         "type": "object",

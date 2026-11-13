@@ -24,7 +24,7 @@ EXCEL = {                                 # por 100 VN (el Excel trabaja por 1 V
     "precio_clean_nominal": 1819.3310546870396,
     "paridad": 1.1897860370115256,
     "tir_real": -0.1112061519175768,
-    "tna_180": -0.11452850416327429,
+    "tna_semestral": ((1 - 0.1112061519175768) ** 0.5 - 1) * 2,   # TNA semestral exacta (decisión del 13/11/2026)
     "tna_30": -0.11732065010313024,
     "tem": -0.009642793159161389,
 }
@@ -46,7 +46,7 @@ def _resultado():
 def test_como_el_excel():
     r = _resultado()
     for clave, esperado in EXCEL.items():
-        tolerancia = 1e-8 if clave in ("tir_real", "tna_180", "tna_30", "tem") else 1e-9   # precisión del XIRR
+        tolerancia = 1e-8 if clave in ("tir_real", "tna_semestral", "tna_30", "tem") else 1e-9   # precisión del XIRR
         assert abs(r[clave] - esperado) <= tolerancia * max(1, abs(esperado)), (clave, r[clave], esperado)
 
 

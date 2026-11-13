@@ -160,6 +160,11 @@ def tna_equivalente(tir_: float, dias: int) -> float:
     return ((1 + tir_) ** (dias / BASE) - 1) * BASE / dias
 
 
+def tna_semestral(tir_: float) -> float:
+    """TNA con capitalización semestral exacta (medio año), equivalente a la TIR: ((1 + TIR)^(1/2) − 1) × 2."""
+    return ((1 + tir_) ** 0.5 - 1) * 2
+
+
 def tem(tir_: float) -> float:
     """Tasa efectiva mensual (30 días) equivalente a una TIR efectiva anual."""
     return (1 + tir_) ** (30 / BASE) - 1
