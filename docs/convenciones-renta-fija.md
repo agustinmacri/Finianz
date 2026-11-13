@@ -129,6 +129,24 @@ Valor nominal en dólares; se suscriben, cotizan y pagan en pesos al tipo de cam
 | TIR | (1 + TNA × plazo / 365) ^ (365 / plazo) − 1 |
 | Duration, TEM | Plazo / 365; TEM de 30 días corridos |
 
+## Breakevens entre curvas
+
+Código: `renta_fija/calculadoras/breakeven.py` (cuentas) y `tools/breakevens.py` (herramienta `calcular_breakevens`). Decisiones de Agustin, 13/11/2026.
+
+- **Emparejamiento:** cada bono de la curva indexada se compara con la otra curva interpolada linealmente a su duration en días (en los bonos sin cupón, el plazo residual). Fuera del rango de la otra curva no se extrapola.
+- **Tasas:** TEA contra TEA (la TIR de los hard dollar pasada a TEA). Breakeven anual, mensual = (1 + anual)^(1/12) − 1, y acumulado hasta el vencimiento.
+- **Rezagos:** plazo tal cual, sin ajustar por el rezago del CER ni por el tipo de cambio de pago de los dollar linked.
+- **Forwards:** entre vencimientos consecutivos, (1 + acumulado del más largo) / (1 + acumulado del más corto) − 1.
+- **Curvas:** tasa fija = Lecap/Boncap y TY30P; CER = cero cupón y TX28/TX31; dollar linked del Tesoro; Bonos TAMAR (TMF27, TML27, TMG27, TMF28, TMG28); Bonares en MEP. Se excluyen los duales (tienen opcionalidad).
+
+| Breakeven | Fórmula | Nivel implícito |
+|---|---|---|
+| Inflación (CER vs tasa fija) | (1 + TEA tasa fija) / (1 + TEA real CER) − 1 | Inflación acumulada al vencimiento |
+| Devaluación (dollar linked vs tasa fija) | (1 + TEA tasa fija) / (1 + TEA en USD del DL) − 1 | A3500 implícito = A3500 de hoy × (1 + acumulado) |
+| Tipo de cambio real (dollar linked vs CER) | (1 + TEA real CER) / (1 + TEA en USD del DL) − 1 (positivo = depreciación real) | Acumulado |
+| Brecha (dollar linked vs Bonares en MEP) | (1 + TEA del DL) / (1 + TEA del Bonar en MEP) − 1 | Brecha implícita = brecha de hoy (MEP implícito AL30/AL30D / A3500) × (1 + acumulado). Incluye el riesgo de crédito en dólares del Bonar |
+| TAMAR (Bonos TAMAR vs tasa fija) | TAMAR promedio de los días por publicar que hace rendir al bono TAMAR la TEA de la tasa fija a su plazo | Contra la TAMAR actual (últimos 5 días) |
+
 ## Puntos abiertos (para decidir con Agustin)
 
 1. **Para más adelante (decisión de Agustin, 13/11/2026):** duration modificada, convexidad, valor técnico y paridad de los CER cero cupón. Por ahora no hacen falta.
@@ -136,7 +154,7 @@ Valor nominal en dólares; se suscriben, cotizan y pagan en pesos al tipo de cam
 3. **Para más adelante:** curva teórica de tasa fija (regresión de la TEA contra el logaritmo de la duration, con cada letra por encima o por debajo de la curva).
 4. **Para más adelante:** calculadora de letras a descuento (hoy todas las letras vigentes son capitalizables).
 5. **Para más adelante:** la pata tasa fija del dual TTD26 (hoy se calcula solo como TAMAR).
-6. **Para más adelante:** breakeven (devaluación o inflación implícita) entre curvas, para todas las curvas (decisión de Agustin, 13/11/2026).
+6. **Pendiente:** comparar los breakevens de inflación y de tipo de cambio con el REM del BCRA (falta identificar las variables).
 7. **Para más adelante:** dollar linked corporativos con cupones y amortizaciones, con el tipo de cambio de pago de cada prospecto.
 8. **Objetivo:** que las condiciones de emisión de cada bono salgan del análisis de los prospectos, sin carga manual.
 
@@ -154,3 +172,4 @@ Valor nominal en dólares; se suscriben, cotizan y pagan en pesos al tipo de cam
 - **13/11/2026:** hard dollar: AL30 y GD30, con TIR semestral 30/360 (convención de mercado, solo para esta familia), precio MEP y cable, spread contra Treasuries a la duration, spread entre leyes y dólar implícito. Cronogramas del canje 2020, a validar con la planilla de Agustin.
 - **13/11/2026:** AL30 y GD30 validados por Agustin. Se suman AL29/GD29, AL35/GD35, AE38/GD38, AL41/GD41 y GD46 desde el Anexo II del Decreto 676/2020 (Bonares iguales a los Globales), a validar.
 - **13/11/2026:** dollar linked del Tesoro (bullet), actual/365, con el A3500 del día de concertación (estimado con el del día hábil anterior hasta que se publica). A3500 (BCRA id 5) en la base de series.
+- **13/11/2026:** breakevens entre curvas (inflación, devaluación, tipo de cambio real, brecha y TAMAR implícita), interpolando al plazo (duration en días), TEA contra TEA, sin ajustar rezagos, con forwards y niveles implícitos.

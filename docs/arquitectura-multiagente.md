@@ -134,6 +134,7 @@ pedido → router → (macro ∥ noticias) → escenarios → (renta fija ∥ eq
 - **13/11/2026:** hard dollar (`renta_fija/calculadoras/hard_dollar.py`, fichas en `hard_dollar.toml` con `tramos` step-up): AL30 y GD30. Motor: funciones `*_30_360` (TIR nominal periódica 30/360, duration, modificada, convexidad). La herramienta toma precios D, C y en pesos de PPI y la curva de Treasuries constant maturity de FRED (en vivo, con caché).
 - **13/11/2026:** hard dollar completo: AL29/GD29, AL35/GD35, AE38/GD38, AL41/GD41 y GD46 (sin par; `par` pasa a ser opcional). AL30/GD30 validados.
 - **13/11/2026:** dollar linked del Tesoro (`renta_fija/calculadoras/dolar_linked.py`, fichas en `dolar_linked.toml`, familia `dolar_linked_bullet`): precio en dólares con el A3500 del día de concertación (`_a3500` en tools/bonos.py estima con el día hábil anterior si no se publicó), luego como una Lecap con pago final 100. A3500 (BCRA id 5) en la base de series. Pendientes: breakeven entre curvas y DL corporativos con cupones.
+- **13/11/2026:** breakevens: `renta_fija/calculadoras/breakeven.py` (puro: interpolar sin extrapolar, cruzar curvas, forwards, TAMAR implícita despejando la cuenta del bono) y herramienta `calcular_breakevens` en `tools/breakevens.py` (arma las curvas a precio de mercado con las calculadoras; excluye duales). Pendiente: comparación con el REM.
 
 ## Estructura del código (fase A)
 
