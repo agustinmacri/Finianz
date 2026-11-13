@@ -94,8 +94,8 @@ familia = "tamar_capitalizable"
 emision = 2026-06-12
 vencimiento = 2028-12-15
 margen = 0.03
-revisado = false
-fuente = "Ficha CER (cer.toml): no está en la planilla de TAMAR. Margen 3% como los demás TXM"
+revisado = true
+fuente = "Ficha CER (cer.toml); margen TAMAR + 3% confirmado por Agustin el 13/11/2026"
 nota = "Dual: paga el mayor entre el ajuste CER y TAMAR + 3%. Se muestra calculado de las dos formas."
 
 [[bono]]
