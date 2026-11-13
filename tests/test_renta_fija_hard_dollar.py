@@ -30,6 +30,23 @@ def test_cronograma_al30():
     assert leer_fichas.ficha("GD30")["pagos"] == f["pagos"] and leer_fichas.ficha("GD30")["tramos"] == f["tramos"]
 
 
+def test_cronogramas_de_todos():
+    """Cupones de enero y julio de 2026 (conocidos) y amortización total de cada bono."""
+    esperados = {   # ticker: (cupón 9/1/2026, cupón 9/7/2026, último pago)
+        "AL29": (0.40, 0.35, "2029-07-09"), "AL35": (2.0625, 2.0625, "2035-07-09"), "AE38": (2.5, 2.5, "2038-01-09"),
+        "AL41": (1.75, 1.75, "2041-07-09"), "GD46": (1.96875, 1.921875, "2046-07-09"),
+    }
+    for ticker, (ene, jul, ultimo) in esperados.items():
+        f = leer_fichas.ficha(ticker)
+        filas = {r["fecha"].isoformat(): r for r in hard_dollar.cronograma(f["pagos"], f["tramos"], f["emision"])}
+        assert abs(filas["2026-01-09"]["renta"] - ene) < 1e-9 and abs(filas["2026-07-09"]["renta"] - jul) < 1e-9, ticker
+        assert f["vencimiento"].isoformat() == ultimo and abs(sum(r["amortizacion"] for r in filas.values()) - 100) < 1e-9
+        if f.get("par"):                                   # el Bonar y el Global del mismo año son iguales
+            otro = leer_fichas.ficha(f["par"])
+            assert otro["pagos"] == f["pagos"] and otro["tramos"] == f["tramos"] and otro["par"] == ticker
+    assert "par" not in leer_fichas.ficha("GD46")
+
+
 def test_indicadores():
     f = leer_fichas.ficha("GD30")
     r = hard_dollar.calcular(PRECIO, LIQUIDACION, f["pagos"], f["tramos"], f["emision"], _sin_ajuste)
@@ -72,7 +89,10 @@ def test_herramienta():
         assert "Con precio MEP (AL30D)" in texto and "Con precio cable (AL30C)" in texto
         assert "Spread contra Treasuries" in texto and "Spread ley NY − ley AR" in texto
         assert "MEP: 1,450.00" in texto and "CCL: 1,438.02" in texto
-        assert "AVISO" in texto
+        assert "AVISO" not in texto                                   # AL30 y GD30 ya validados
+        precios.update({"GD46D": 70.0, "GD46C": 70.3, "GD46": 101000.0})
+        gd46 = bonos.calcular_bono("GD46")
+        assert "Spread ley" not in gd46 and "AVISO" in gd46           # sin par de ley argentina; ficha por revisar
         solo = bonos.calcular_bono("GD30", precio=62.0)
         assert "Con precio MEP (indicado)" in solo and "cable" not in solo
     finally:
@@ -80,7 +100,7 @@ def test_herramienta():
 
 
 if __name__ == "__main__":
-    for prueba in (test_cronograma_al30, test_indicadores, test_interpolar, test_herramienta):
+    for prueba in (test_cronograma_al30, test_cronogramas_de_todos, test_indicadores, test_interpolar, test_herramienta):
         prueba()
         print(f"OK  {prueba.__name__}")
     print("Todas las pruebas de hard dollar pasaron.")

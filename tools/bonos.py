@@ -202,7 +202,7 @@ def _hard_dollar(f: dict, precio: float | None, fecha: date | None, liquidacion:
         curva, fecha_ust = _treasuries(fecha or date.today())
     except ErrorAPI as e:
         curva, fecha_ust = None, str(e)
-    par = fichas.ficha(f["par"], "hard_dollar")
+    par = fichas.ficha(f["par"], "hard_dollar") if f.get("par") else None
 
     r0 = next(iter(resultados.values()))
     proximos = "; ".join(f"{fl.fecha}: {fl.renta:.4f} + {fl.amortizacion:g} = {fl.total:.4f}" for fl in r0["flujos"][:4])
@@ -371,7 +371,8 @@ CALCULAR_BONO = {
         "de mercado: en vivo, o el cierre de 'fecha' si se indica. Cálculos en T+1. TAMAR capitalizables (TMF27, TML27, TMG27, "
         "TMF28, TMG28 y el dual TTD26): TAMAR proyectada, TEM, pago final teórico, TNA, TEA, TNA 30 d y spread sobre TAMAR. "
         "Los duales CER/TAMAR (TXMJ8, TXMD8, TXMJ9, TXMD9, TXMJ0) se devuelven calculados como CER y como TAMAR. "
-        "Hard dollar (AL30, GD30, o AL30D/GD30C): TIR semestral 30/360 con precio MEP y cable, duration, paridad, "
+        "Hard dollar (Bonares AL29, AL30, AL35, AE38, AL41 y Globales GD29, GD30, GD35, GD38, GD41, GD46; también "
+        "con el ticker en dólares, ej.: AL30D, GD35C): TIR semestral 30/360 con precio MEP y cable, duration, paridad, "
         "spread contra Treasuries, spread ley NY − ley AR y dólar implícito MEP y CCL; 'precio' es en dólares."
     ),
     "parameters": {

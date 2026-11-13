@@ -5,12 +5,13 @@
 #   tipo         BONAR (ley argentina) o GLOBAL (ley Nueva York)
 #   familia      hard_dollar
 #   ley          AR o NY
-#   par          el bono del mismo vencimiento con la otra ley, para el spread de ley
+#   par          opcional: el bono del mismo vencimiento con la otra ley, para el spread de ley (GD46 no tiene)
 #   emision      fecha de emisión (desde ahí devenga el primer cupón)
 #   vencimiento  último pago
 #   base         30/360
 #   tramos       cupón step-up: [{desde = fecha, tasa = anual}]; cada período devenga la tasa vigente al inicio
-#   pagos        cronograma: cada fecha de pago y la amortización de ese día (% del VN original)
+#   pagos        cronograma: cada fecha de pago y la amortización de ese día (% del VN original;
+#                las cuotas iguales de 1/22, 1/28 o 1/44 van con todos sus decimales)
 #   revisado     true si Agustin lo validó
 #   fuente       de dónde salió el dato
 #
@@ -42,8 +43,8 @@ pagos = [
     { fecha = 2029-01-09, amortizacion = 8 }, { fecha = 2029-07-09, amortizacion = 8 },
     { fecha = 2030-01-09, amortizacion = 8 }, { fecha = 2030-07-09, amortizacion = 8 },
 ]
-revisado = false
-fuente = "Condiciones del canje 2020 (iguales a las del GD30 según el Anexo II del Decreto 676/2020); a validar con la planilla de Agustin"
+revisado = true
+fuente = "Condiciones del canje 2020 (iguales a las del GD30 según el Anexo II del Decreto 676/2020); resultados validados por Agustin el 13/11/2026"
 
 [[bono]]
 ticker = "GD30"
@@ -71,5 +72,482 @@ pagos = [
     { fecha = 2029-01-09, amortizacion = 8 }, { fecha = 2029-07-09, amortizacion = 8 },
     { fecha = 2030-01-09, amortizacion = 8 }, { fecha = 2030-07-09, amortizacion = 8 },
 ]
+revisado = true
+fuente = "Anexo II del Decreto 676/2020 (Bonos Globales Step Up 2030); resultados validados por Agustin el 13/11/2026"
+
+[[bono]]
+ticker = "AL29"
+tipo = "BONAR"
+familia = "hard_dollar"
+ley = "AR"
+par = "GD29"
+emision = 2020-09-04
+vencimiento = 2029-07-09
+base = "30/360"
+tramos = [
+    { desde = 2020-09-04, tasa = 0.01 },
+]
+pagos = [
+    { fecha = 2021-07-09 },
+    { fecha = 2022-01-09 },
+    { fecha = 2022-07-09 },
+    { fecha = 2023-01-09 },
+    { fecha = 2023-07-09 },
+    { fecha = 2024-01-09 },
+    { fecha = 2024-07-09 },
+    { fecha = 2025-01-09, amortizacion = 10.0 },
+    { fecha = 2025-07-09, amortizacion = 10.0 },
+    { fecha = 2026-01-09, amortizacion = 10.0 },
+    { fecha = 2026-07-09, amortizacion = 10.0 },
+    { fecha = 2027-01-09, amortizacion = 10.0 },
+    { fecha = 2027-07-09, amortizacion = 10.0 },
+    { fecha = 2028-01-09, amortizacion = 10.0 },
+    { fecha = 2028-07-09, amortizacion = 10.0 },
+    { fecha = 2029-01-09, amortizacion = 10.0 },
+    { fecha = 2029-07-09, amortizacion = 10.0 },
+]
 revisado = false
-fuente = "Anexo II del Decreto 676/2020 (Bonos Globales Step Up 2030); a validar con la planilla de Agustin"
+fuente = "Mismas condiciones que el Global Bonos USD 1% 2029 (Anexo II del Decreto 676/2020); a validar por Agustin"
+
+[[bono]]
+ticker = "GD29"
+tipo = "GLOBAL"
+familia = "hard_dollar"
+ley = "NY"
+par = "AL29"
+emision = 2020-09-04
+vencimiento = 2029-07-09
+base = "30/360"
+tramos = [
+    { desde = 2020-09-04, tasa = 0.01 },
+]
+pagos = [
+    { fecha = 2021-07-09 },
+    { fecha = 2022-01-09 },
+    { fecha = 2022-07-09 },
+    { fecha = 2023-01-09 },
+    { fecha = 2023-07-09 },
+    { fecha = 2024-01-09 },
+    { fecha = 2024-07-09 },
+    { fecha = 2025-01-09, amortizacion = 10.0 },
+    { fecha = 2025-07-09, amortizacion = 10.0 },
+    { fecha = 2026-01-09, amortizacion = 10.0 },
+    { fecha = 2026-07-09, amortizacion = 10.0 },
+    { fecha = 2027-01-09, amortizacion = 10.0 },
+    { fecha = 2027-07-09, amortizacion = 10.0 },
+    { fecha = 2028-01-09, amortizacion = 10.0 },
+    { fecha = 2028-07-09, amortizacion = 10.0 },
+    { fecha = 2029-01-09, amortizacion = 10.0 },
+    { fecha = 2029-07-09, amortizacion = 10.0 },
+]
+revisado = false
+fuente = "Anexo II del Decreto 676/2020 (Bonos Globales Bonos USD 1% 2029); a validar por Agustin"
+
+[[bono]]
+ticker = "AL35"
+tipo = "BONAR"
+familia = "hard_dollar"
+ley = "AR"
+par = "GD35"
+emision = 2020-09-04
+vencimiento = 2035-07-09
+base = "30/360"
+tramos = [
+    { desde = 2020-09-04, tasa = 0.00125 },
+    { desde = 2021-07-09, tasa = 0.01125 },
+    { desde = 2022-07-09, tasa = 0.015 },
+    { desde = 2023-07-09, tasa = 0.03625 },
+    { desde = 2024-07-09, tasa = 0.04125 },
+    { desde = 2027-07-09, tasa = 0.0475 },
+    { desde = 2028-07-09, tasa = 0.05 },
+]
+pagos = [
+    { fecha = 2021-07-09 },
+    { fecha = 2022-01-09 },
+    { fecha = 2022-07-09 },
+    { fecha = 2023-01-09 },
+    { fecha = 2023-07-09 },
+    { fecha = 2024-01-09 },
+    { fecha = 2024-07-09 },
+    { fecha = 2025-01-09 },
+    { fecha = 2025-07-09 },
+    { fecha = 2026-01-09 },
+    { fecha = 2026-07-09 },
+    { fecha = 2027-01-09 },
+    { fecha = 2027-07-09 },
+    { fecha = 2028-01-09 },
+    { fecha = 2028-07-09 },
+    { fecha = 2029-01-09 },
+    { fecha = 2029-07-09 },
+    { fecha = 2030-01-09 },
+    { fecha = 2030-07-09 },
+    { fecha = 2031-01-09, amortizacion = 10.0 },
+    { fecha = 2031-07-09, amortizacion = 10.0 },
+    { fecha = 2032-01-09, amortizacion = 10.0 },
+    { fecha = 2032-07-09, amortizacion = 10.0 },
+    { fecha = 2033-01-09, amortizacion = 10.0 },
+    { fecha = 2033-07-09, amortizacion = 10.0 },
+    { fecha = 2034-01-09, amortizacion = 10.0 },
+    { fecha = 2034-07-09, amortizacion = 10.0 },
+    { fecha = 2035-01-09, amortizacion = 10.0 },
+    { fecha = 2035-07-09, amortizacion = 10.0 },
+]
+revisado = false
+fuente = "Mismas condiciones que el Global Step Up 2035 (Anexo II del Decreto 676/2020); a validar por Agustin"
+
+[[bono]]
+ticker = "GD35"
+tipo = "GLOBAL"
+familia = "hard_dollar"
+ley = "NY"
+par = "AL35"
+emision = 2020-09-04
+vencimiento = 2035-07-09
+base = "30/360"
+tramos = [
+    { desde = 2020-09-04, tasa = 0.00125 },
+    { desde = 2021-07-09, tasa = 0.01125 },
+    { desde = 2022-07-09, tasa = 0.015 },
+    { desde = 2023-07-09, tasa = 0.03625 },
+    { desde = 2024-07-09, tasa = 0.04125 },
+    { desde = 2027-07-09, tasa = 0.0475 },
+    { desde = 2028-07-09, tasa = 0.05 },
+]
+pagos = [
+    { fecha = 2021-07-09 },
+    { fecha = 2022-01-09 },
+    { fecha = 2022-07-09 },
+    { fecha = 2023-01-09 },
+    { fecha = 2023-07-09 },
+    { fecha = 2024-01-09 },
+    { fecha = 2024-07-09 },
+    { fecha = 2025-01-09 },
+    { fecha = 2025-07-09 },
+    { fecha = 2026-01-09 },
+    { fecha = 2026-07-09 },
+    { fecha = 2027-01-09 },
+    { fecha = 2027-07-09 },
+    { fecha = 2028-01-09 },
+    { fecha = 2028-07-09 },
+    { fecha = 2029-01-09 },
+    { fecha = 2029-07-09 },
+    { fecha = 2030-01-09 },
+    { fecha = 2030-07-09 },
+    { fecha = 2031-01-09, amortizacion = 10.0 },
+    { fecha = 2031-07-09, amortizacion = 10.0 },
+    { fecha = 2032-01-09, amortizacion = 10.0 },
+    { fecha = 2032-07-09, amortizacion = 10.0 },
+    { fecha = 2033-01-09, amortizacion = 10.0 },
+    { fecha = 2033-07-09, amortizacion = 10.0 },
+    { fecha = 2034-01-09, amortizacion = 10.0 },
+    { fecha = 2034-07-09, amortizacion = 10.0 },
+    { fecha = 2035-01-09, amortizacion = 10.0 },
+    { fecha = 2035-07-09, amortizacion = 10.0 },
+]
+revisado = false
+fuente = "Anexo II del Decreto 676/2020 (Bonos Globales Step Up 2035); a validar por Agustin"
+
+[[bono]]
+ticker = "AE38"
+tipo = "BONAR"
+familia = "hard_dollar"
+ley = "AR"
+par = "GD38"
+emision = 2020-09-04
+vencimiento = 2038-01-09
+base = "30/360"
+tramos = [
+    { desde = 2020-09-04, tasa = 0.00125 },
+    { desde = 2021-07-09, tasa = 0.02 },
+    { desde = 2022-07-09, tasa = 0.03875 },
+    { desde = 2023-07-09, tasa = 0.0425 },
+    { desde = 2024-07-09, tasa = 0.05 },
+]
+pagos = [
+    { fecha = 2021-07-09 },
+    { fecha = 2022-01-09 },
+    { fecha = 2022-07-09 },
+    { fecha = 2023-01-09 },
+    { fecha = 2023-07-09 },
+    { fecha = 2024-01-09 },
+    { fecha = 2024-07-09 },
+    { fecha = 2025-01-09 },
+    { fecha = 2025-07-09 },
+    { fecha = 2026-01-09 },
+    { fecha = 2026-07-09 },
+    { fecha = 2027-01-09 },
+    { fecha = 2027-07-09, amortizacion = 4.545454545454546 },
+    { fecha = 2028-01-09, amortizacion = 4.545454545454546 },
+    { fecha = 2028-07-09, amortizacion = 4.545454545454546 },
+    { fecha = 2029-01-09, amortizacion = 4.545454545454546 },
+    { fecha = 2029-07-09, amortizacion = 4.545454545454546 },
+    { fecha = 2030-01-09, amortizacion = 4.545454545454546 },
+    { fecha = 2030-07-09, amortizacion = 4.545454545454546 },
+    { fecha = 2031-01-09, amortizacion = 4.545454545454546 },
+    { fecha = 2031-07-09, amortizacion = 4.545454545454546 },
+    { fecha = 2032-01-09, amortizacion = 4.545454545454546 },
+    { fecha = 2032-07-09, amortizacion = 4.545454545454546 },
+    { fecha = 2033-01-09, amortizacion = 4.545454545454546 },
+    { fecha = 2033-07-09, amortizacion = 4.545454545454546 },
+    { fecha = 2034-01-09, amortizacion = 4.545454545454546 },
+    { fecha = 2034-07-09, amortizacion = 4.545454545454546 },
+    { fecha = 2035-01-09, amortizacion = 4.545454545454546 },
+    { fecha = 2035-07-09, amortizacion = 4.545454545454546 },
+    { fecha = 2036-01-09, amortizacion = 4.545454545454546 },
+    { fecha = 2036-07-09, amortizacion = 4.545454545454546 },
+    { fecha = 2037-01-09, amortizacion = 4.545454545454546 },
+    { fecha = 2037-07-09, amortizacion = 4.545454545454546 },
+    { fecha = 2038-01-09, amortizacion = 4.545454545454546 },
+]
+revisado = false
+fuente = "Mismas condiciones que el Global Step Up 2038 (Anexo II del Decreto 676/2020); a validar por Agustin"
+
+[[bono]]
+ticker = "GD38"
+tipo = "GLOBAL"
+familia = "hard_dollar"
+ley = "NY"
+par = "AE38"
+emision = 2020-09-04
+vencimiento = 2038-01-09
+base = "30/360"
+tramos = [
+    { desde = 2020-09-04, tasa = 0.00125 },
+    { desde = 2021-07-09, tasa = 0.02 },
+    { desde = 2022-07-09, tasa = 0.03875 },
+    { desde = 2023-07-09, tasa = 0.0425 },
+    { desde = 2024-07-09, tasa = 0.05 },
+]
+pagos = [
+    { fecha = 2021-07-09 },
+    { fecha = 2022-01-09 },
+    { fecha = 2022-07-09 },
+    { fecha = 2023-01-09 },
+    { fecha = 2023-07-09 },
+    { fecha = 2024-01-09 },
+    { fecha = 2024-07-09 },
+    { fecha = 2025-01-09 },
+    { fecha = 2025-07-09 },
+    { fecha = 2026-01-09 },
+    { fecha = 2026-07-09 },
+    { fecha = 2027-01-09 },
+    { fecha = 2027-07-09, amortizacion = 4.545454545454546 },
+    { fecha = 2028-01-09, amortizacion = 4.545454545454546 },
+    { fecha = 2028-07-09, amortizacion = 4.545454545454546 },
+    { fecha = 2029-01-09, amortizacion = 4.545454545454546 },
+    { fecha = 2029-07-09, amortizacion = 4.545454545454546 },
+    { fecha = 2030-01-09, amortizacion = 4.545454545454546 },
+    { fecha = 2030-07-09, amortizacion = 4.545454545454546 },
+    { fecha = 2031-01-09, amortizacion = 4.545454545454546 },
+    { fecha = 2031-07-09, amortizacion = 4.545454545454546 },
+    { fecha = 2032-01-09, amortizacion = 4.545454545454546 },
+    { fecha = 2032-07-09, amortizacion = 4.545454545454546 },
+    { fecha = 2033-01-09, amortizacion = 4.545454545454546 },
+    { fecha = 2033-07-09, amortizacion = 4.545454545454546 },
+    { fecha = 2034-01-09, amortizacion = 4.545454545454546 },
+    { fecha = 2034-07-09, amortizacion = 4.545454545454546 },
+    { fecha = 2035-01-09, amortizacion = 4.545454545454546 },
+    { fecha = 2035-07-09, amortizacion = 4.545454545454546 },
+    { fecha = 2036-01-09, amortizacion = 4.545454545454546 },
+    { fecha = 2036-07-09, amortizacion = 4.545454545454546 },
+    { fecha = 2037-01-09, amortizacion = 4.545454545454546 },
+    { fecha = 2037-07-09, amortizacion = 4.545454545454546 },
+    { fecha = 2038-01-09, amortizacion = 4.545454545454546 },
+]
+revisado = false
+fuente = "Anexo II del Decreto 676/2020 (Bonos Globales Step Up 2038); a validar por Agustin"
+
+[[bono]]
+ticker = "AL41"
+tipo = "BONAR"
+familia = "hard_dollar"
+ley = "AR"
+par = "GD41"
+emision = 2020-09-04
+vencimiento = 2041-07-09
+base = "30/360"
+tramos = [
+    { desde = 2020-09-04, tasa = 0.00125 },
+    { desde = 2021-07-09, tasa = 0.025 },
+    { desde = 2022-07-09, tasa = 0.035 },
+    { desde = 2029-07-09, tasa = 0.04875 },
+]
+pagos = [
+    { fecha = 2021-07-09 },
+    { fecha = 2022-01-09 },
+    { fecha = 2022-07-09 },
+    { fecha = 2023-01-09 },
+    { fecha = 2023-07-09 },
+    { fecha = 2024-01-09 },
+    { fecha = 2024-07-09 },
+    { fecha = 2025-01-09 },
+    { fecha = 2025-07-09 },
+    { fecha = 2026-01-09 },
+    { fecha = 2026-07-09 },
+    { fecha = 2027-01-09 },
+    { fecha = 2027-07-09 },
+    { fecha = 2028-01-09, amortizacion = 3.5714285714285716 },
+    { fecha = 2028-07-09, amortizacion = 3.5714285714285716 },
+    { fecha = 2029-01-09, amortizacion = 3.5714285714285716 },
+    { fecha = 2029-07-09, amortizacion = 3.5714285714285716 },
+    { fecha = 2030-01-09, amortizacion = 3.5714285714285716 },
+    { fecha = 2030-07-09, amortizacion = 3.5714285714285716 },
+    { fecha = 2031-01-09, amortizacion = 3.5714285714285716 },
+    { fecha = 2031-07-09, amortizacion = 3.5714285714285716 },
+    { fecha = 2032-01-09, amortizacion = 3.5714285714285716 },
+    { fecha = 2032-07-09, amortizacion = 3.5714285714285716 },
+    { fecha = 2033-01-09, amortizacion = 3.5714285714285716 },
+    { fecha = 2033-07-09, amortizacion = 3.5714285714285716 },
+    { fecha = 2034-01-09, amortizacion = 3.5714285714285716 },
+    { fecha = 2034-07-09, amortizacion = 3.5714285714285716 },
+    { fecha = 2035-01-09, amortizacion = 3.5714285714285716 },
+    { fecha = 2035-07-09, amortizacion = 3.5714285714285716 },
+    { fecha = 2036-01-09, amortizacion = 3.5714285714285716 },
+    { fecha = 2036-07-09, amortizacion = 3.5714285714285716 },
+    { fecha = 2037-01-09, amortizacion = 3.5714285714285716 },
+    { fecha = 2037-07-09, amortizacion = 3.5714285714285716 },
+    { fecha = 2038-01-09, amortizacion = 3.5714285714285716 },
+    { fecha = 2038-07-09, amortizacion = 3.5714285714285716 },
+    { fecha = 2039-01-09, amortizacion = 3.5714285714285716 },
+    { fecha = 2039-07-09, amortizacion = 3.5714285714285716 },
+    { fecha = 2040-01-09, amortizacion = 3.5714285714285716 },
+    { fecha = 2040-07-09, amortizacion = 3.5714285714285716 },
+    { fecha = 2041-01-09, amortizacion = 3.5714285714285716 },
+    { fecha = 2041-07-09, amortizacion = 3.5714285714285716 },
+]
+revisado = false
+fuente = "Mismas condiciones que el Global Step Up 2041 (Anexo II del Decreto 676/2020); a validar por Agustin"
+
+[[bono]]
+ticker = "GD41"
+tipo = "GLOBAL"
+familia = "hard_dollar"
+ley = "NY"
+par = "AL41"
+emision = 2020-09-04
+vencimiento = 2041-07-09
+base = "30/360"
+tramos = [
+    { desde = 2020-09-04, tasa = 0.00125 },
+    { desde = 2021-07-09, tasa = 0.025 },
+    { desde = 2022-07-09, tasa = 0.035 },
+    { desde = 2029-07-09, tasa = 0.04875 },
+]
+pagos = [
+    { fecha = 2021-07-09 },
+    { fecha = 2022-01-09 },
+    { fecha = 2022-07-09 },
+    { fecha = 2023-01-09 },
+    { fecha = 2023-07-09 },
+    { fecha = 2024-01-09 },
+    { fecha = 2024-07-09 },
+    { fecha = 2025-01-09 },
+    { fecha = 2025-07-09 },
+    { fecha = 2026-01-09 },
+    { fecha = 2026-07-09 },
+    { fecha = 2027-01-09 },
+    { fecha = 2027-07-09 },
+    { fecha = 2028-01-09, amortizacion = 3.5714285714285716 },
+    { fecha = 2028-07-09, amortizacion = 3.5714285714285716 },
+    { fecha = 2029-01-09, amortizacion = 3.5714285714285716 },
+    { fecha = 2029-07-09, amortizacion = 3.5714285714285716 },
+    { fecha = 2030-01-09, amortizacion = 3.5714285714285716 },
+    { fecha = 2030-07-09, amortizacion = 3.5714285714285716 },
+    { fecha = 2031-01-09, amortizacion = 3.5714285714285716 },
+    { fecha = 2031-07-09, amortizacion = 3.5714285714285716 },
+    { fecha = 2032-01-09, amortizacion = 3.5714285714285716 },
+    { fecha = 2032-07-09, amortizacion = 3.5714285714285716 },
+    { fecha = 2033-01-09, amortizacion = 3.5714285714285716 },
+    { fecha = 2033-07-09, amortizacion = 3.5714285714285716 },
+    { fecha = 2034-01-09, amortizacion = 3.5714285714285716 },
+    { fecha = 2034-07-09, amortizacion = 3.5714285714285716 },
+    { fecha = 2035-01-09, amortizacion = 3.5714285714285716 },
+    { fecha = 2035-07-09, amortizacion = 3.5714285714285716 },
+    { fecha = 2036-01-09, amortizacion = 3.5714285714285716 },
+    { fecha = 2036-07-09, amortizacion = 3.5714285714285716 },
+    { fecha = 2037-01-09, amortizacion = 3.5714285714285716 },
+    { fecha = 2037-07-09, amortizacion = 3.5714285714285716 },
+    { fecha = 2038-01-09, amortizacion = 3.5714285714285716 },
+    { fecha = 2038-07-09, amortizacion = 3.5714285714285716 },
+    { fecha = 2039-01-09, amortizacion = 3.5714285714285716 },
+    { fecha = 2039-07-09, amortizacion = 3.5714285714285716 },
+    { fecha = 2040-01-09, amortizacion = 3.5714285714285716 },
+    { fecha = 2040-07-09, amortizacion = 3.5714285714285716 },
+    { fecha = 2041-01-09, amortizacion = 3.5714285714285716 },
+    { fecha = 2041-07-09, amortizacion = 3.5714285714285716 },
+]
+revisado = false
+fuente = "Anexo II del Decreto 676/2020 (Bonos Globales Step Up 2041); a validar por Agustin"
+
+[[bono]]
+ticker = "GD46"
+tipo = "GLOBAL"
+familia = "hard_dollar"
+ley = "NY"
+emision = 2020-09-04
+vencimiento = 2046-07-09
+base = "30/360"
+tramos = [
+    { desde = 2020-09-04, tasa = 0.00125 },
+    { desde = 2021-07-09, tasa = 0.01125 },
+    { desde = 2022-07-09, tasa = 0.015 },
+    { desde = 2023-07-09, tasa = 0.03625 },
+    { desde = 2024-07-09, tasa = 0.04125 },
+    { desde = 2027-07-09, tasa = 0.04375 },
+    { desde = 2028-07-09, tasa = 0.05 },
+]
+pagos = [
+    { fecha = 2021-07-09 },
+    { fecha = 2022-01-09 },
+    { fecha = 2022-07-09 },
+    { fecha = 2023-01-09 },
+    { fecha = 2023-07-09 },
+    { fecha = 2024-01-09 },
+    { fecha = 2024-07-09 },
+    { fecha = 2025-01-09, amortizacion = 2.272727272727273 },
+    { fecha = 2025-07-09, amortizacion = 2.272727272727273 },
+    { fecha = 2026-01-09, amortizacion = 2.272727272727273 },
+    { fecha = 2026-07-09, amortizacion = 2.272727272727273 },
+    { fecha = 2027-01-09, amortizacion = 2.272727272727273 },
+    { fecha = 2027-07-09, amortizacion = 2.272727272727273 },
+    { fecha = 2028-01-09, amortizacion = 2.272727272727273 },
+    { fecha = 2028-07-09, amortizacion = 2.272727272727273 },
+    { fecha = 2029-01-09, amortizacion = 2.272727272727273 },
+    { fecha = 2029-07-09, amortizacion = 2.272727272727273 },
+    { fecha = 2030-01-09, amortizacion = 2.272727272727273 },
+    { fecha = 2030-07-09, amortizacion = 2.272727272727273 },
+    { fecha = 2031-01-09, amortizacion = 2.272727272727273 },
+    { fecha = 2031-07-09, amortizacion = 2.272727272727273 },
+    { fecha = 2032-01-09, amortizacion = 2.272727272727273 },
+    { fecha = 2032-07-09, amortizacion = 2.272727272727273 },
+    { fecha = 2033-01-09, amortizacion = 2.272727272727273 },
+    { fecha = 2033-07-09, amortizacion = 2.272727272727273 },
+    { fecha = 2034-01-09, amortizacion = 2.272727272727273 },
+    { fecha = 2034-07-09, amortizacion = 2.272727272727273 },
+    { fecha = 2035-01-09, amortizacion = 2.272727272727273 },
+    { fecha = 2035-07-09, amortizacion = 2.272727272727273 },
+    { fecha = 2036-01-09, amortizacion = 2.272727272727273 },
+    { fecha = 2036-07-09, amortizacion = 2.272727272727273 },
+    { fecha = 2037-01-09, amortizacion = 2.272727272727273 },
+    { fecha = 2037-07-09, amortizacion = 2.272727272727273 },
+    { fecha = 2038-01-09, amortizacion = 2.272727272727273 },
+    { fecha = 2038-07-09, amortizacion = 2.272727272727273 },
+    { fecha = 2039-01-09, amortizacion = 2.272727272727273 },
+    { fecha = 2039-07-09, amortizacion = 2.272727272727273 },
+    { fecha = 2040-01-09, amortizacion = 2.272727272727273 },
+    { fecha = 2040-07-09, amortizacion = 2.272727272727273 },
+    { fecha = 2041-01-09, amortizacion = 2.272727272727273 },
+    { fecha = 2041-07-09, amortizacion = 2.272727272727273 },
+    { fecha = 2042-01-09, amortizacion = 2.272727272727273 },
+    { fecha = 2042-07-09, amortizacion = 2.272727272727273 },
+    { fecha = 2043-01-09, amortizacion = 2.272727272727273 },
+    { fecha = 2043-07-09, amortizacion = 2.272727272727273 },
+    { fecha = 2044-01-09, amortizacion = 2.272727272727273 },
+    { fecha = 2044-07-09, amortizacion = 2.272727272727273 },
+    { fecha = 2045-01-09, amortizacion = 2.272727272727273 },
+    { fecha = 2045-07-09, amortizacion = 2.272727272727273 },
+    { fecha = 2046-01-09, amortizacion = 2.272727272727273 },
+    { fecha = 2046-07-09, amortizacion = 2.272727272727273 },
+]
+revisado = false
+fuente = "Anexo II del Decreto 676/2020 (Bonos Globales Step Up 2046); a validar por Agustin"

@@ -99,7 +99,7 @@ Correcciones a la planilla del 13/11/2026: la serie proyectada terminaba el 10/0
 
 ## Hard dollar
 
-Bonares (ley argentina, AL) y Globales (ley Nueva York, GD). Por ahora AL30 y GD30 (decisión de Agustin, 13/11/2026). Código: `renta_fija/calculadoras/hard_dollar.py`. Fichas: `renta_fija/fichas/hard_dollar.toml` (cupón step-up en `tramos`, cronograma en `pagos`).
+Bonares (ley argentina, AL) y Globales (ley Nueva York, GD). Bonares AL29, AL30, AL35, AE38, AL41 y Globales GD29, GD30, GD35, GD38, GD41, GD46 (el GD46 no tiene par de ley argentina). Cronogramas del Anexo II del Decreto 676/2020; los Bonares con las mismas condiciones que el Global del mismo año. Código: `renta_fija/calculadoras/hard_dollar.py`. Fichas: `renta_fija/fichas/hard_dollar.toml` (cupón step-up en `tramos`, cronograma en `pagos`).
 
 | Variable | Definición |
 |---|---|
@@ -138,3 +138,4 @@ Fechas de pago corridas al día hábil siguiente, como en el resto de los bonos 
 - **13/11/2026:** verificación de las bases contra los Excel: coinciden todas salvo las emitidas el 31/03/2026 (TZXM8, TZXM9, TZXS7, TZXS8), por el feriado puente del 23/03/2026, que la librería no tenía en el calendario de BYMA. Se agrega como ajuste (como el 10/07 y el 7/12): la base pasa a ser el CER del 13/03/2026. TXMJ8 y TXMJ9 difieren en el 7.º decimal porque el Excel tenía la base redondeada.
 - **13/11/2026:** calculadora TAMAR (Bonos TAMAR capitalizables y pata TAMAR de los duales), con la TAMAR de bancos privados en TNA (BCRA 44) de la base de series. TEM con base 32 días (condiciones de emisión). Spread sobre la TNA de 30 días. Los duales CER/TAMAR se calculan de las dos formas.
 - **13/11/2026:** hard dollar: AL30 y GD30, con TIR semestral 30/360 (convención de mercado, solo para esta familia), precio MEP y cable, spread contra Treasuries a la duration, spread entre leyes y dólar implícito. Cronogramas del canje 2020, a validar con la planilla de Agustin.
+- **13/11/2026:** AL30 y GD30 validados por Agustin. Se suman AL29/GD29, AL35/GD35, AE38/GD38, AL41/GD41 y GD46 desde el Anexo II del Decreto 676/2020 (Bonares iguales a los Globales), a validar.

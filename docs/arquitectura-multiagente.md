@@ -132,6 +132,7 @@ pedido → router → (macro ∥ noticias) → escenarios → (renta fija ∥ eq
 - **13/11/2026:** calculadora TAMAR (`renta_fija/calculadoras/tamar.py`, fichas en `tamar.toml`): ventana de 10 días hábiles, proyección con el promedio de los últimos 5 publicados, TEM base 32 días, pago final 30/360 y luego como Lecap; spread = TNA 30 d − TAMAR de referencia. `leer_fichas` admite varias fichas por ticker si son de familias distintas (duales): `fichas_de()`, `todas()`, `ficha(ticker, familia)`. `calcular_bono` muestra una sección por ficha. `admin_datos/feriados.dias_habiles_entre()`.
 - **13/11/2026:** error 400 del BCRA: la carga de series pide solo fechas entre la primera y la última publicadas (listado oficial). El prompt macro pide informar los errores de `calcular_bono` sin rellenar.
 - **13/11/2026:** hard dollar (`renta_fija/calculadoras/hard_dollar.py`, fichas en `hard_dollar.toml` con `tramos` step-up): AL30 y GD30. Motor: funciones `*_30_360` (TIR nominal periódica 30/360, duration, modificada, convexidad). La herramienta toma precios D, C y en pesos de PPI y la curva de Treasuries constant maturity de FRED (en vivo, con caché).
+- **13/11/2026:** hard dollar completo: AL29/GD29, AL35/GD35, AE38/GD38, AL41/GD41 y GD46 (sin par; `par` pasa a ser opcional). AL30/GD30 validados.
 
 ## Estructura del código (fase A)
 
