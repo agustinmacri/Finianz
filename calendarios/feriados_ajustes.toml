@@ -24,6 +24,13 @@
 # motivo = "Comunicado de BYMA del dd/mm/aaaa"
 
 [[ajuste]]
+fecha = 2026-03-23
+calendario = "BYMA"
+accion = "agregar"
+nombre = "Feriado con fines turísticos"
+motivo = "BYMA no operó. La librería holidays no lo incluye en BYMA (sí en el calendario nacional). Detectado el 13/11/2026: sin este ajuste, la base de los CER emitidos el 31/03/2026 daba el CER del 16/03 en lugar del 13/03 del Excel."
+
+[[ajuste]]
 fecha = 2026-07-10
 calendario = "BYMA"
 accion = "agregar"

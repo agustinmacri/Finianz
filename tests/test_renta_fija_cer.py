@@ -85,6 +85,14 @@ def test_fecha_cer_corriente():
     assert feriados.sumar_dias_habiles(LIQUIDACION, -cer.REZAGO_HABILES, CALENDARIO_HABILES) == date(2026, 10, 28)
 
 
+def test_fecha_base_con_feriados_puente():
+    """Emisión del 31/03/2026 (TZXM8, TZXM9, TZXS7, TZXS8): con el 23/03 (puente) y el 24/03 inhábiles,
+    el 10.º día hábil anterior es el 13/03/2026, como en el Excel."""
+    from tools.bonos import CALENDARIO_HABILES
+    feriados = _feriados()
+    assert feriados.sumar_dias_habiles(date(2026, 3, 31), -cer.REZAGO_HABILES, CALENDARIO_HABILES) == date(2026, 3, 13)
+
+
 def test_tzxo7_a_103_35():
     """Caso de Agustin: TZXO7 a 103,35. Con el CER del 30/10 (su Excel) la TIR es 5,65%;
     con el del 28/10 (calendario de BYMA, que es lo que calcula la herramienta) es 5,52%."""
@@ -97,7 +105,7 @@ def test_tzxo7_a_103_35():
 
 if __name__ == "__main__":
     for prueba in (test_variables_como_el_excel, test_el_motor_da_la_misma_tir, test_fecha_cer_final,
-                   test_fecha_cer_corriente, test_tzxo7_a_103_35):
+                   test_fecha_cer_corriente, test_fecha_base_con_feriados_puente, test_tzxo7_a_103_35):
         prueba()
         print(f"OK  {prueba.__name__}")
     print(f"Todas las pruebas pasaron ({len(CASOS)} bonos del Excel).")
