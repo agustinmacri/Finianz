@@ -27,9 +27,8 @@ familia = "tasa_fija_capitalizable"
 emision = 2025-01-31
 vencimiento = 2027-01-15
 tem = 0.0205
-revisado = false
-fuente = "Planilla de tasa fija de Agustin (tasa_fija.xlsx), 13/11/2026"
-nota = "El Excel del 13/11/2026 tenía vencimiento 17/01/2027; corregido al 15/01 (ticker y pago final publicado)."
+revisado = true
+fuente = "Planilla de tasa fija de Agustin (tasa_fija.xlsx), 13/11/2026; vencimiento 15/01/2027 confirmado por Agustin (el Excel decía 17/01)"
 
 [[bono]]
 ticker = "S29E7"
@@ -58,9 +57,8 @@ familia = "tasa_fija_capitalizable"
 emision = 2025-12-15
 vencimiento = 2027-05-31
 tem = 0.024
-revisado = false
-fuente = "Planilla de tasa fija de Agustin (tasa_fija.xlsx), 13/11/2026"
-nota = "El Excel del 13/11/2026 tenía vencimiento 30/05/2027; corregido al 31/05 (ticker y pago final publicado)."
+revisado = true
+fuente = "Planilla de tasa fija de Agustin (tasa_fija.xlsx), 13/11/2026; vencimiento 31/05/2027 confirmado por Agustin (el Excel decía 30/05)"
 
 [[bono]]
 ticker = "T30J7"
