@@ -19,13 +19,16 @@ NOMBRES = {"inflacion": "Inflación implícita (CER vs tasa fija)",
            "tamar": "TAMAR implícita (Bonos TAMAR vs tasa fija)"}
 
 
-def _curvas(operacion: date, liquidacion: date, fecha_precios: date | None) -> tuple[dict, dict, list[str]]:
-    """TEA y duration (en días) de cada bono a precio de mercado, por curva."""
+def _curvas(operacion: date, liquidacion: date, fecha_precios: date | None,
+            familias: set[str] | None = None) -> tuple[dict, dict, list[str]]:
+    """TEA y duration (en días) de cada bono a precio de mercado, por curva (solo 'familias', si se indica)."""
     curvas = {"tasa_fija": [], "cer": [], "dl": [], "tamar": [], "hd": []}
     contexto, errores = {}, []
     ajustar = lambda d: bonos.feriados.proximo_dia_habil(d, bonos.CALENDARIO_HABILES)
     for f in fichas.todas():
         familia, ticker = f["familia"], f["ticker"].upper()
+        if familias is not None and familia not in familias:
+            continue
         if liquidacion >= f["vencimiento"] or "DUAL" in f.get("tipo", "").upper():
             continue                                         # vencidos, y duales (tienen opcionalidad)
         if familia == "hard_dollar" and f["ley"] != "AR":

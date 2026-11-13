@@ -1,0 +1,16 @@
+# Escenarios de inflación para proyectar el CER (herramienta proyectar_cer, fuente "escenario:<nombre>").
+#
+# Cada [[escenario]] tiene:
+#   nombre       una palabra, sin espacios (se usa en la consulta)
+#   descripcion  qué supone
+#   mensual      opcional: inflación de meses puntuales, { "AAAA-MM" = fracción } (0.02 = 2%)
+#   anual        opcional: inflación anual diciembre contra diciembre, { "AAAA" = fracción }. Los meses del año sin
+#                dato mensual se completan con una misma tasa para que el año cierre en ese valor
+#
+# Los años sin dato usan la última inflación anual cargada. Ejemplo (borrá el # para usarlo):
+#
+# [[escenario]]
+# nombre = "desinflacion"
+# descripcion = "Baja gradual: 2% mensual hasta marzo, después 18% en 2027 y 12% anual desde 2028"
+# mensual = { "2026-11" = 0.02, "2026-12" = 0.02, "2027-01" = 0.02, "2027-02" = 0.02, "2027-03" = 0.02 }
+# anual = { "2027" = 0.18, "2028" = 0.12 }

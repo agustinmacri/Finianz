@@ -8,7 +8,7 @@ import functools
 
 from langchain_core.tools import StructuredTool
 
-from . import bonos, breakevens, calendario, datos_macro, noticias, precios, python_exec
+from . import bonos, breakevens, calendario, datos_macro, noticias, precios, proyeccion_cer, python_exec
 
 
 def _segura(nombre: str, funcion):
@@ -34,6 +34,6 @@ def _convertir(pares: list) -> list[StructuredTool]:
     ]
 
 
-HERRAMIENTAS_MACRO = _convertir([*datos_macro.HERRAMIENTAS, *precios.HERRAMIENTAS, *bonos.HERRAMIENTAS, *breakevens.HERRAMIENTAS, *calendario.HERRAMIENTAS,
+HERRAMIENTAS_MACRO = _convertir([*datos_macro.HERRAMIENTAS, *precios.HERRAMIENTAS, *bonos.HERRAMIENTAS, *breakevens.HERRAMIENTAS, *proyeccion_cer.HERRAMIENTAS, *calendario.HERRAMIENTAS,
                                  (python_exec.DEFINICION, python_exec.ejecutar)])
 HERRAMIENTAS_NOTICIAS = _convertir([*noticias.HERRAMIENTAS, *calendario.HERRAMIENTAS])

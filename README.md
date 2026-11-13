@@ -75,6 +75,7 @@ Finianz/
 │   └── series.py        # variaciones de series (mensual, interanual, anualizada, acumulada)
 ├── renta_fija/          # todo lo propio de bonos y letras
 │   ├── fichas/          # fichas técnicas (cer.toml, cer_cupon.toml, tasa_fija.toml, tamar.toml, hard_dollar.toml, dolar_linked.toml) y prospectos/
+│   ├── escenarios/      # escenarios de inflación para proyectar el CER (inflacion.toml)
 │   ├── calculadoras/    # cuentas puras: motor.py (TIR, duration...) y una por familia (cer.py, cer_cupon.py, tasa_fija.py, tamar.py, hard_dollar.py, dolar_linked.py)
 │   └── leer_fichas.py   # lee y valida las fichas
 ├── conexiones/             # acceso a fuentes externas, sin IA
@@ -109,7 +110,7 @@ Finianz/
 │   ├── publicaciones.toml      # catálogo de publicaciones que se siguen, con su importancia
 │   └── indec/                  # calendarios semestrales del INDEC en PDF
 ├── prompts/             # instrucciones de cada agente
-├── tests/               # pruebas automáticas (python -m tests.test_renta_fija_cer, ..._cer_cupon, ..._tasa_fija, ..._tamar, ..._hard_dollar, ..._dolar_linked, tests.test_breakevens, tests.test_series)
+├── tests/               # pruebas automáticas (python -m tests.test_renta_fija_cer, ..._cer_cupon, ..._tasa_fija, ..._tamar, ..._hard_dollar, ..._dolar_linked, tests.test_breakevens, tests.test_proyeccion_cer, tests.test_series)
 └── docs/
     ├── arquitectura-multiagente.md   # arquitectura completa y plan por fases
     └── convenciones-renta-fija.md    # cómo se calcula cada variable de cada bono
@@ -217,7 +218,7 @@ El sistema se construye por fases. El detalle está en [`docs/arquitectura-multi
 
 - [ ] **Fase A** (en curso): router + agentes macro y noticias ✓; calendario de publicaciones del INDEC ✓, de EE. UU. (FRED) ✓ y por regla (ISM, recaudación) ✓; faltan las manuales (BCRA, Tesoro, FOMC).
 - [ ] **Fase B** (en curso): bases de datos locales (✓ feriados, ✓ publicaciones), precios de mercado (✓ consulta en vivo vía PPI; falta la base de precios), cartera y registro de pronósticos.
-- [ ] **Fase C** (en curso): calculadoras de bonos (✓ motor, ✓ CER cupón cero, ✓ CER con cupón: TX28 y TX31, ✓ tasa fija: Lecap/Boncap y TY30P, ✓ TAMAR: Bonos TAMAR y duales TTD26 y TXM, ✓ hard dollar: Bonares y Globales del canje 2020, ✓ dollar linked del Tesoro, ✓ breakevens entre curvas; faltan REM y corporativos) y agente de renta fija.
+- [ ] **Fase C** (en curso): calculadoras de bonos (✓ motor, ✓ CER cupón cero, ✓ CER con cupón: TX28 y TX31, ✓ tasa fija: Lecap/Boncap y TY30P, ✓ TAMAR: Bonos TAMAR y duales TTD26 y TXM, ✓ hard dollar: Bonares y Globales del canje 2020, ✓ dollar linked del Tesoro, ✓ breakevens entre curvas, ✓ proyección del CER y rendimiento nominal; faltan REM y corporativos) y agente de renta fija.
 - [ ] **Fase D:** agente de escenarios y estratega (retornos esperados, estrés, límites regulatorios).
 - [ ] **Fase E:** redactor de informes y revisión humana.
 - [ ] **Fase F:** agente de equity (balances, DCF, comparables).

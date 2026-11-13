@@ -147,10 +147,29 @@ Código: `renta_fija/calculadoras/breakeven.py` (cuentas) y `tools/breakevens.py
 | Brecha (dollar linked vs Bonares en MEP) | (1 + TEA del DL) / (1 + TEA del Bonar en MEP) − 1 | Brecha implícita = brecha de hoy (MEP implícito AL30/AL30D / A3500) × (1 + acumulado). Incluye el riesgo de crédito en dólares del Bonar |
 | TAMAR (Bonos TAMAR vs tasa fija) | TAMAR promedio de los días por publicar que hace rendir al bono TAMAR la TEA de la tasa fija a su plazo | Contra la TAMAR actual (últimos 5 días) |
 
+## Proyección del CER y rendimiento nominal de los CER
+
+Código: `renta_fija/calculadoras/proyeccion_cer.py` y herramienta `proyectar_cer` (`tools/proyeccion_cer.py`). Escenarios: `renta_fija/escenarios/inflacion.toml`.
+
+**Regla del CER** (verificada con la serie del BCRA el 13/11/2026: factor diario 1,0006073377 del 16/10 al 15/11 = 1,9% de septiembre en 31 días; 1,0007256462 del 16/11 al 15/12 = 2,2% de octubre en 30 días):
+- La inflación del mes m se aplica del 16 del mes m+1 al 15 del mes m+2, inclusive.
+- Factor diario = (1 + inflación) ^ (1 / días corridos del período). El CER crece todos los días, hábiles o no.
+- CER del 15 de m+2 = CER del 15 de m+1 × (1 + inflación de m). La inflación publicada de cada mes se lee de la propia serie.
+
+**Camino de inflación** (decisión de Agustin): mes a mes donde la fuente lo trae (el año corriente y parte del próximo); para los años siguientes, inflación anual (diciembre contra diciembre) pasada a mensual. Los meses de un año sin dato mensual se completan con una misma tasa para que el año cierre en la inflación anual. Los años sin dato usan la última inflación anual disponible.
+
+**Fuentes:**
+- `breakeven`: CER implícito en la fecha del CER final de cada CER cero cupón = precio × (1 + TEA de la tasa fija a su plazo) ^ (plazo/365) × CER inicial / 100. Entre esos puntos, inflación mensual constante (interpolación del logaritmo del CER en meses de CER). Después del último bono, se repite la última inflación mensual.
+- `escenario:<nombre>`: los escenarios del archivo, con inflaciones mensuales y anuales.
+- `mensual:<tasa>`: inflación mensual plana.
+- REM: pendiente de la carga del Excel del BCRA.
+
+**Rendimiento nominal:** CER de cada pago = el proyectado (o publicado) 10 días hábiles antes. Cero cupón: pago final = 100 × CER final / CER inicial; TNA = (pago / precio − 1) × 365 / plazo; TIR = (pago / precio) ^ (365 / plazo) − 1. Con cupón: flujos reales × CER del pago / CER inicial y TIR efectiva (base 365) con el motor; TNA semestral exacta. Se contrasta con la TEA de la tasa fija interpolada al plazo.
+
 ## Puntos abiertos (para decidir con Agustin)
 
 1. **Para más adelante (decisión de Agustin, 13/11/2026):** duration modificada, convexidad, valor técnico y paridad de los CER cero cupón. Por ahora no hacen falta.
-2. **Para más adelante:** proyección del CER (función y base de datos) para la TIR y la duration nominales de los CER con cupón.
+2. **Pendiente:** cargar el REM (mensual de los próximos meses y anual de los próximos años) como fuente de la proyección del CER.
 3. **Para más adelante:** curva teórica de tasa fija (regresión de la TEA contra el logaritmo de la duration, con cada letra por encima o por debajo de la curva).
 4. **Para más adelante:** calculadora de letras a descuento (hoy todas las letras vigentes son capitalizables).
 5. **Para más adelante:** la pata tasa fija del dual TTD26 (hoy se calcula solo como TAMAR).
@@ -173,3 +192,4 @@ Código: `renta_fija/calculadoras/breakeven.py` (cuentas) y `tools/breakevens.py
 - **13/11/2026:** AL30 y GD30 validados por Agustin. Se suman AL29/GD29, AL35/GD35, AE38/GD38, AL41/GD41 y GD46 desde el Anexo II del Decreto 676/2020 (Bonares iguales a los Globales), a validar.
 - **13/11/2026:** dollar linked del Tesoro (bullet), actual/365, con el A3500 del día de concertación (estimado con el del día hábil anterior hasta que se publica). A3500 (BCRA id 5) en la base de series.
 - **13/11/2026:** breakevens entre curvas (inflación, devaluación, tipo de cambio real, brecha y TAMAR implícita), interpolando al plazo (duration en días), TEA contra TEA, sin ajustar rezagos, con forwards y niveles implícitos.
+- **13/11/2026:** regla del CER verificada (días corridos, período del 16 al 15). Proyección del CER con breakeven, escenarios o inflación plana, y rendimiento nominal de todos los CER.
