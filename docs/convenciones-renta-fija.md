@@ -80,13 +80,31 @@ Código: `renta_fija/calculadoras/tasa_fija.py`. Fichas: `renta_fija/fichas/tasa
 
 Correcciones a la planilla del 13/11/2026: vencimientos del T15E7 (15/01/2027, no 17/01) y del T31Y7 (31/05/2027, no 30/05), confirmados por Agustin el 13/11/2026. En el TY30P, la duration, la convexidad y el PV01 se calculaban con la tasa fija del "rate mover" (28,5974% TNA) en lugar de la TIR de mercado, y en base 360; ahora con la TIR de mercado y base 365. Emisión del TY30P: 04/06/2025.
 
+## TAMAR
+
+Bonos TAMAR capitalizables del Tesoro (TMF27, TML27, TMG27, TMF28, TMG28) y la pata TAMAR de los duales: TTD26 (contra tasa fija) y TXM (contra CER). Código: `renta_fija/calculadoras/tamar.py`. Fichas: `renta_fija/fichas/tamar.toml`. Los duales CER/TAMAR tienen una ficha en `cer.toml` y otra en `tamar.toml`, y la herramienta los muestra calculados de las dos formas (decisión de Agustin, 13/11/2026).
+
+| Variable | Definición |
+|---|---|
+| TAMAR | TAMAR de bancos privados en % TNA (BCRA, variable 44), de la base de series |
+| Ventana | Del 10.º día hábil anterior a la emisión al 10.º día hábil anterior al vencimiento (calendario de BYMA) |
+| TAMAR del bono | Promedio simple de la TAMAR de los días hábiles de la ventana. Los días hábiles todavía no publicados se estiman con el promedio simple de los últimos 5 días hábiles publicados |
+| TEM del bono | ((1 + (TAMAR del bono + margen) × 32/365) ^ (365/32)) ^ (1/12) − 1 (base 32 días, según las condiciones de emisión) |
+| Pago final teórico | 100 × (1 + TEM) ^ (días 30/360 entre emisión y vencimiento / 30) |
+| Plazo residual, duration, TNA, TEA (TIR), TEM 30 d | Como las Lecap/Boncap |
+| TNA 30 d | ((1 + TIR) ^ (30/365) − 1) × 365/30 |
+| Spread sobre TAMAR | TNA 30 d − promedio de la TAMAR de los últimos 5 días hábiles publicados. Se usa la TNA de 30 días y no la del plazo porque la TAMAR es una tasa a 30 días |
+
+Correcciones a la planilla del 13/11/2026: la serie proyectada terminaba el 10/01/2029, así que en TXMJ9, TXMD9 y TXMJ0 el promedio dejaba afuera el resto de la ventana (TXMD9 y TXMJ0 daban la misma TEM); ahora se proyecta hasta el final de la ventana. La proyección usaba valores fijos (24,22% y 24%) y el spread restaba un 24,19% cargado a mano; ahora ambos usan el promedio de los últimos 5 días hábiles publicados. La TNA 30 d pasa de NOMINAL(TEA; 12) a la de 30 días corridos (menos de 3 pb de diferencia).
+
 ## Puntos abiertos (para decidir con Agustin)
 
 1. **Para más adelante (decisión de Agustin, 13/11/2026):** duration modificada, convexidad, valor técnico y paridad de los CER cero cupón. Por ahora no hacen falta.
 2. **Para más adelante:** proyección del CER (función y base de datos) para la TIR y la duration nominales de los CER con cupón.
 3. **Para más adelante:** curva teórica de tasa fija (regresión de la TEA contra el logaritmo de la duration, con cada letra por encima o por debajo de la curva).
 4. **Para más adelante:** calculadora de letras a descuento (hoy todas las letras vigentes son capitalizables).
-5. **Objetivo:** que las condiciones de emisión de cada bono salgan del análisis de los prospectos, sin carga manual.
+5. **Para más adelante:** la pata tasa fija del dual TTD26 (hoy se calcula solo como TAMAR).
+6. **Objetivo:** que las condiciones de emisión de cada bono salgan del análisis de los prospectos, sin carga manual.
 
 ## Historial de cambios de definición
 
@@ -96,5 +114,6 @@ Correcciones a la planilla del 13/11/2026: vencimientos del T15E7 (15/01/2027, n
 - **13/11/2026:** se suma el TX31 desde sus condiciones de emisión (cupón 2,5% semestral 30/360, 10 amortizaciones de 10% desde mayo 2027). Su CER inicial se calcula con la serie del BCRA (13/05/2022); Agustin lo da por bueno sin compararlo (bono ilíquido, hoy no lo usa).
 - **13/11/2026:** el 7/12/2026 (feriado turístico) es feriado en BYMA (confirmado por Agustin): cargado en `calendarios/feriados_ajustes.toml`. La fecha del CER final del TZXD6 coincide con el Excel.
 - **13/11/2026:** tasa fija: Lecap/Boncap capitalizables (pago final calculado con la TEM de emisión) y Bonte con cupón (TY30P). Para todos los bonos: TNA semestral exacta ((1+TIR)^(1/2) − 1) × 2 en lugar de la de 180 días; el cupón de cada período se devenga en 30/360 desde el pago anterior (o la emisión); la TEM que se muestra es la de 30 días corridos.
-- **13/11/2026:** el CER inicial deja de cargarse en las fichas: se toma de la nueva base de series (`datos/series.db`, CER diario del BCRA desde 2002) con la fecha de emisión, igual que el CER corriente. Las bases de los Excel quedan solo en las pruebas, como contraste (`python -m tests.verificar_cer_inicial`). TZXD8: emisión supuesta 30/06/2026, a confirmar.
+- **13/11/2026:** el CER inicial deja de cargarse en las fichas: se toma de la nueva base de series (`datos/series.db`, CER diario del BCRA desde 2002) con la fecha de emisión, igual que el CER corriente. Las bases de los Excel quedan solo en las pruebas, como contraste (`python -m tests.verificar_cer_inicial`). TZXD8: emisión 30/06/2026, validada por Agustin contra su Excel.
 - **13/11/2026:** verificación de las bases contra los Excel: coinciden todas salvo las emitidas el 31/03/2026 (TZXM8, TZXM9, TZXS7, TZXS8), por el feriado puente del 23/03/2026, que la librería no tenía en el calendario de BYMA. Se agrega como ajuste (como el 10/07 y el 7/12): la base pasa a ser el CER del 13/03/2026. TXMJ8 y TXMJ9 difieren en el 7.º decimal porque el Excel tenía la base redondeada.
+- **13/11/2026:** calculadora TAMAR (Bonos TAMAR capitalizables y pata TAMAR de los duales), con la TAMAR de bancos privados en TNA (BCRA 44) de la base de series. TEM con base 32 días (condiciones de emisión). Spread sobre la TNA de 30 días. Los duales CER/TAMAR se calculan de las dos formas.

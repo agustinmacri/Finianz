@@ -2,7 +2,8 @@
 
 Cada archivo .toml de renta_fija/fichas/ tiene una lista [[bono]]. El formato de cada familia está
 explicado al principio de su archivo (por ejemplo, renta_fija/fichas/cer.toml).
-Las fichas tienen solo condiciones de emisión: ningún valor de mercado ni de índices (el CER
+Un mismo ticker puede tener varias fichas de familias distintas (los duales: los TXM se calculan
+como CER y como TAMAR). Las fichas tienen solo condiciones de emisión: ningún valor de mercado ni de índices (el CER
 inicial, por ejemplo, se toma de la base de series a partir de la fecha de emisión).
 """
 import tomllib
@@ -16,6 +17,7 @@ CAMPOS = {
     "cer_cupon": ("ticker", "tipo", "familia", "emision", "vencimiento", "cupon", "frecuencia", "pagos"),
     "tasa_fija_capitalizable": ("ticker", "tipo", "familia", "emision", "vencimiento", "tem"),
     "tasa_fija_cupon": ("ticker", "tipo", "familia", "emision", "vencimiento", "cupon", "frecuencia", "pagos"),
+    "tamar_capitalizable": ("ticker", "tipo", "familia", "emision", "vencimiento", "margen"),
 }
 
 
@@ -23,8 +25,8 @@ class ErrorFicha(Exception):
     """Error en una ficha técnica, con un mensaje que indica qué corregir."""
 
 
-def leer_todas() -> dict[str, dict]:
-    """Todas las fichas, por ticker (en mayúsculas)."""
+def leer_todas() -> dict[str, list[dict]]:
+    """Todas las fichas, por ticker (en mayúsculas). Cada ticker tiene una ficha, o varias si es dual."""
     fichas = {}
     for archivo in sorted(CARPETA.glob("*.toml")):
         try:
@@ -48,10 +50,15 @@ def leer_todas() -> dict[str, dict]:
             if familia in ("cer_cupon", "tasa_fija_cupon"):
                 _validar_pagos(bono, donde)
             ticker = bono["ticker"].upper()
-            if ticker in fichas:
-                raise ErrorFicha(f"{donde}: el ticker {ticker} está repetido.")
-            fichas[ticker] = bono
+            if any(otra["familia"] == familia for otra in fichas.get(ticker, [])):
+                raise ErrorFicha(f"{donde}: el ticker {ticker} está repetido en la familia {familia}.")
+            fichas.setdefault(ticker, []).append(bono)
     return fichas
+
+
+def todas() -> list[dict]:
+    """Todas las fichas en una lista (un dual aparece una vez por familia)."""
+    return [f for lista in leer_todas().values() for f in lista]
 
 
 def _validar_pagos(bono: dict, donde: str):
@@ -71,5 +78,12 @@ def _validar_pagos(bono: dict, donde: str):
         raise ErrorFicha(f"{donde}: base '{bono['base']}' todavía no implementada (hoy: 30/360).")
 
 
-def ficha(ticker: str) -> dict | None:
-    return leer_todas().get(ticker.upper())
+def fichas_de(ticker: str) -> list[dict]:
+    """Las fichas de un ticker: una, o varias si es dual. Lista vacía si no tiene."""
+    return leer_todas().get(ticker.upper(), [])
+
+
+def ficha(ticker: str, familia: str | None = None) -> dict | None:
+    """La ficha de un ticker (de una familia, si se indica; si no, la primera)."""
+    candidatas = [f for f in fichas_de(ticker) if familia is None or f["familia"] == familia]
+    return candidatas[0] if candidatas else None

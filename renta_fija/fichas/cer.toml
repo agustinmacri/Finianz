@@ -130,7 +130,7 @@ emision = 2026-05-15
 vencimiento = 2028-06-30
 revisado = true
 fuente = "Excel de Agustin (ejemplo_Cer.xlsx), 12/11/2026"
-nota = "Dual: paga el mayor entre el ajuste CER y TAMAR TEM + 3%. Se calcula solo la parte CER."
+nota = "Dual: paga el mayor entre el ajuste CER y TAMAR + 3%. Se muestra calculado de las dos formas."
 
 [[bono]]
 ticker = "TZXS8"
@@ -149,7 +149,7 @@ emision = 2026-06-12
 vencimiento = 2028-12-15
 revisado = true
 fuente = "Excel de Agustin (ejemplo_Cer.xlsx), 12/11/2026"
-nota = "Dual: paga el mayor entre el ajuste CER y TAMAR TEM + 3%. Se calcula solo la parte CER."
+nota = "Dual: paga el mayor entre el ajuste CER y TAMAR + 3%. Se muestra calculado de las dos formas."
 
 [[bono]]
 ticker = "TZXM9"
@@ -168,7 +168,7 @@ emision = 2026-04-30
 vencimiento = 2029-06-29
 revisado = true
 fuente = "Excel de Agustin (ejemplo_Cer.xlsx), 12/11/2026"
-nota = "Dual: paga el mayor entre el ajuste CER y TAMAR TEM + 3%. Se calcula solo la parte CER."
+nota = "Dual: paga el mayor entre el ajuste CER y TAMAR + 3%. Se muestra calculado de las dos formas."
 
 [[bono]]
 ticker = "TXMD9"
@@ -178,7 +178,7 @@ emision = 2026-06-12
 vencimiento = 2029-12-14
 revisado = true
 fuente = "Excel de Agustin (ejemplo_Cer.xlsx), 12/11/2026"
-nota = "Dual: paga el mayor entre el ajuste CER y TAMAR TEM + 3%. Se calcula solo la parte CER."
+nota = "Dual: paga el mayor entre el ajuste CER y TAMAR + 3%. Se muestra calculado de las dos formas."
 
 [[bono]]
 ticker = "TXMJ0"
@@ -188,7 +188,7 @@ emision = 2026-06-12
 vencimiento = 2030-06-28
 revisado = true
 fuente = "Excel de Agustin (ejemplo_Cer.xlsx), 12/11/2026"
-nota = "Dual: paga el mayor entre el ajuste CER y TAMAR TEM + 3%. Se calcula solo la parte CER."
+nota = "Dual: paga el mayor entre el ajuste CER y TAMAR + 3%. Se muestra calculado de las dos formas."
 
 [[bono]]
 ticker = "TZXD8"
@@ -196,6 +196,5 @@ tipo = "BONCER"
 familia = "cer_cero_cupon"
 emision = 2026-06-30
 vencimiento = 2028-12-15
-revisado = false
-fuente = "sinelefantesblancos.com.ar (calculador de BONCER), 12/11/2026"
-nota = "No está en el Excel de Agustin. Emisión a confirmar: se supone el 30/06/2026 porque la base publicada era igual a la del TZXO7, emitido ese día."
+revisado = true
+fuente = "sinelefantesblancos.com.ar (calculador de BONCER), 12/11/2026; emisión 30/06/2026 validada por Agustin contra su Excel el 13/11/2026"

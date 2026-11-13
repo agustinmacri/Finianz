@@ -1,7 +1,8 @@
-"""Carga de series diarias oficiales en datos/series.db (hoy: el CER del BCRA).
+"""Carga de series diarias oficiales en datos/series.db: el CER y la TAMAR del BCRA.
 
 Cómo funciona:
-- La primera vez se baja toda la historia de la serie (el CER, desde el 2/2/2002), de a un año
+- La primera vez se baja toda la historia de la serie (el CER desde el 2/2/2002; la TAMAR desde donde
+  la tenga el BCRA: los años sin datos se saltean), de a un año
   por consulta porque el BCRA limita la cantidad de datos que devuelve cada vez.
 - Después, solo se piden los días posteriores al último guardado. El CER se publica por
   adelantado (hasta el día 6 del mes siguiente), así que se pide hasta DIAS_ADELANTE días después de hoy.
@@ -17,7 +18,8 @@ from conexiones.http import ErrorAPI
 
 FUENTE = "bcra"
 SERIES = {                      # nombre en la base -> (id de la variable en el BCRA, primera fecha)
-    "CER": (bcra.ID_CER, date(2002, 2, 2)),
+    "CER": (bcra.ID_CER, date(2002, 2, 2)),         # índice, todos los días
+    "TAMAR": (bcra.ID_TAMAR, date(2010, 1, 1)),     # % TNA tal como se publica (24.4375 = 24,4375%), días hábiles
 }
 DIAS_ADELANTE = 60
 

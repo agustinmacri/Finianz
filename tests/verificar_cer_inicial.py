@@ -12,14 +12,18 @@ from tests.test_renta_fija_cer import CASOS
 from tests.test_renta_fija_cer_cupon import CER_INICIAL as BASE_TX28
 from tools import bonos
 
-EXCEL = {t: base for t, _vto, _fecha, base, *_ in CASOS} | {"TX28": BASE_TX28}
+EXCEL = {t: base for t, _vto, _fecha, base, *_ in CASOS} | {
+    "TX28": BASE_TX28,
+    "TZXD8": 791.48970450621,      # emitido el 30/06/2026, como el TZXO7 (Excel de Agustin, 13/11/2026)
+}
 
 
 def main():
     print(f"{'Bono':<7} {'Emisión':<11} {'Fecha base':<11} {'Base propia':>16} {'Excel':>16} {'Dif. %':>9}")
-    for ticker, f in sorted(leer_fichas.leer_todas().items()):
+    for f in sorted(leer_fichas.todas(), key=lambda f: f["ticker"]):
         if not f["familia"].startswith("cer"):
             continue
+        ticker = f["ticker"].upper()
         bonos._asegurar_feriados(f["emision"])
         fecha = bonos.feriados.sumar_dias_habiles(f["emision"], -bonos.cer.REZAGO_HABILES, bonos.CALENDARIO_HABILES)
         propia = bonos._cer(fecha)

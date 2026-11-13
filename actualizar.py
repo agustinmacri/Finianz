@@ -7,7 +7,7 @@ Hoy carga los feriados (datos/feriados.db) y el calendario de publicaciones
 (datos/publicaciones.db): las del INDEC desde sus PDF, las que siguen una regla de días
 hábiles (ISM, recaudación) y las de EE. UU. desde FRED. También suma los cierres nuevos
 de los activos seguidos a la base de precios (datos/precios.db) y los valores nuevos del CER
-a la base de series (datos/series.db).
+y la TAMAR a la base de series (datos/series.db).
 Conviene correrlo después de actualizar la librería holidays, de editar
 calendarios/feriados_ajustes.toml o calendarios/publicaciones.toml, de agregar un PDF
 del INDEC en calendarios/indec/, y una vez por semana para traer las fechas nuevas de FRED.

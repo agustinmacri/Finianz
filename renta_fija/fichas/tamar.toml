@@ -1,0 +1,132 @@
+# Fichas técnicas de los bonos a tasa TAMAR capitalizables y de la pata TAMAR de los duales.
+#
+# Cada [[bono]] tiene los datos de su norma de emisión:
+#   ticker       ticker en BYMA (en pesos)
+#   tipo         BONO TAMAR, DUAL TAMAR/TASA FIJA o DUAL CER/TAMAR
+#   familia      tamar_capitalizable: capitaliza la TEM y paga todo al vencimiento
+#   emision      fecha de emisión (liquidación inicial). La ventana de la TAMAR empieza 10 días hábiles antes
+#   vencimiento  fecha de pago. La ventana de la TAMAR termina 10 días hábiles antes
+#   margen       margen anual sobre la TAMAR (0.065 = 6,5%); 0 si no tiene
+#   revisado     true si Agustin lo validó
+#   fuente       de dónde salió el dato
+#   nota         opcional: aclaraciones
+#
+# Un dual puede tener ficha acá y en otro archivo (ej.: los TXM también están en cer.toml):
+# la calculadora muestra el bono calculado de las dos formas.
+# Las definiciones de cada variable están en docs/convenciones-renta-fija.md.
+
+[[bono]]
+ticker = "TTD26"
+tipo = "DUAL TAMAR/TASA FIJA"
+familia = "tamar_capitalizable"
+emision = 2025-01-29
+vencimiento = 2026-12-15
+margen = 0.0
+revisado = true
+fuente = "Planilla de TAMAR de Agustin (ejemplo_tamar.xlsx), 13/11/2026"
+nota = "Dual: paga el mayor entre la tasa fija y TAMAR. Se calcula solo la pata TAMAR."
+
+[[bono]]
+ticker = "TMF27"
+tipo = "BONO TAMAR"
+familia = "tamar_capitalizable"
+emision = 2026-02-13
+vencimiento = 2027-02-26
+margen = 0.065
+revisado = true
+fuente = "Planilla de TAMAR de Agustin (ejemplo_tamar.xlsx), 13/11/2026"
+
+[[bono]]
+ticker = "TML27"
+tipo = "BONO TAMAR"
+familia = "tamar_capitalizable"
+emision = 2026-06-30
+vencimiento = 2027-07-30
+margen = 0.054
+revisado = true
+fuente = "Planilla de TAMAR de Agustin (ejemplo_tamar.xlsx), 13/11/2026"
+
+[[bono]]
+ticker = "TMG27"
+tipo = "BONO TAMAR"
+familia = "tamar_capitalizable"
+emision = 2026-04-01
+vencimiento = 2027-08-31
+margen = 0.06
+revisado = true
+fuente = "Planilla de TAMAR de Agustin (ejemplo_tamar.xlsx), 13/11/2026"
+
+[[bono]]
+ticker = "TMF28"
+tipo = "BONO TAMAR"
+familia = "tamar_capitalizable"
+emision = 2026-04-20
+vencimiento = 2028-02-25
+margen = 0.065
+revisado = true
+fuente = "Planilla de TAMAR de Agustin (ejemplo_tamar.xlsx), 13/11/2026; emisión y vencimiento según el llamado a licitación del Tesoro"
+
+[[bono]]
+ticker = "TMG28"
+tipo = "BONO TAMAR"
+familia = "tamar_capitalizable"
+emision = 2026-04-30
+vencimiento = 2028-08-31
+margen = 0.069
+revisado = true
+fuente = "Planilla de TAMAR de Agustin (ejemplo_tamar.xlsx), 13/11/2026"
+
+[[bono]]
+ticker = "TXMJ8"
+tipo = "DUAL CER/TAMAR"
+familia = "tamar_capitalizable"
+emision = 2026-05-15
+vencimiento = 2028-06-30
+margen = 0.03
+revisado = true
+fuente = "Planilla de TAMAR de Agustin (ejemplo_tamar.xlsx), 13/11/2026"
+nota = "Dual: paga el mayor entre el ajuste CER y TAMAR + 3%. Se muestra calculado de las dos formas."
+
+[[bono]]
+ticker = "TXMD8"
+tipo = "DUAL CER/TAMAR"
+familia = "tamar_capitalizable"
+emision = 2026-06-12
+vencimiento = 2028-12-15
+margen = 0.03
+revisado = false
+fuente = "Ficha CER (cer.toml): no está en la planilla de TAMAR. Margen 3% como los demás TXM"
+nota = "Dual: paga el mayor entre el ajuste CER y TAMAR + 3%. Se muestra calculado de las dos formas."
+
+[[bono]]
+ticker = "TXMJ9"
+tipo = "DUAL CER/TAMAR"
+familia = "tamar_capitalizable"
+emision = 2026-04-30
+vencimiento = 2029-06-29
+margen = 0.03
+revisado = true
+fuente = "Planilla de TAMAR de Agustin (ejemplo_tamar.xlsx), 13/11/2026"
+nota = "Dual: paga el mayor entre el ajuste CER y TAMAR + 3%. Se muestra calculado de las dos formas."
+
+[[bono]]
+ticker = "TXMD9"
+tipo = "DUAL CER/TAMAR"
+familia = "tamar_capitalizable"
+emision = 2026-06-12
+vencimiento = 2029-12-14
+margen = 0.03
+revisado = true
+fuente = "Planilla de TAMAR de Agustin (ejemplo_tamar.xlsx), 13/11/2026"
+nota = "Dual: paga el mayor entre el ajuste CER y TAMAR + 3%. Se muestra calculado de las dos formas."
+
+[[bono]]
+ticker = "TXMJ0"
+tipo = "DUAL CER/TAMAR"
+familia = "tamar_capitalizable"
+emision = 2026-06-12
+vencimiento = 2030-06-28
+margen = 0.03
+revisado = true
+fuente = "Planilla de TAMAR de Agustin (ejemplo_tamar.xlsx), 13/11/2026"
+nota = "Dual: paga el mayor entre el ajuste CER y TAMAR + 3%. Se muestra calculado de las dos formas."

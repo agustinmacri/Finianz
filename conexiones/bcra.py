@@ -36,6 +36,7 @@ _CER = ("estabilizacion", "cer")  # el CER no figura con su sigla: "coeficiente 
 
 # Variables que el proyecto usa por su id fijo (no dependen de cómo esté escrita la descripción)
 ID_CER = 30                        # Coeficiente de estabilización de referencia (base 2.2.02=1), diario
+ID_TAMAR = 44                      # TAMAR de bancos privados, en % TNA, días hábiles (la 45 es la misma en % TEA)
 
 SINONIMOS = {
     "inflacion": _INFLACION, "ipc": _INFLACION, "precios": _INFLACION,

@@ -1,13 +1,13 @@
-"""Calculadora de bonos propia (CER y tasa fija), con las definiciones de Agustin (docs/convenciones-renta-fija.md).
+"""Calculadora de bonos propia (CER, tasa fija y TAMAR), con las definiciones de Agustin (docs/convenciones-renta-fija.md).
 
 Arma el cálculo con piezas de cada capa:
 - la ficha técnica del bono (renta_fija/fichas/*.toml, vía renta_fija/leer_fichas.py);
 - el precio (PPI en vivo, o el cierre guardado en la base propia para una fecha pasada);
-- el CER (base propia de series, cargada desde el BCRA), la inflación del BCRA y los días hábiles (base de feriados);
+- el CER y la TAMAR (base propia de series, cargada desde el BCRA), la inflación del BCRA y los días hábiles (base de feriados);
 - la calculadora de la familia (renta_fija/calculadoras/).
 Ningún número sale de cálculos externos: de afuera vienen solo datos.
 """
-from datetime import date
+from datetime import date, timedelta
 
 import config
 from admin_datos import feriados
@@ -19,7 +19,7 @@ from carga_datos import series as carga_series
 from conexiones import bcra, ppi
 from conexiones.http import ErrorAPI
 from renta_fija import leer_fichas as fichas
-from renta_fija.calculadoras import cer, cer_cupon, tasa_fija
+from renta_fija.calculadoras import cer, cer_cupon, tamar, tasa_fija
 
 PLAZO_LIQUIDACION = 1          # T+1: precios y cálculos a la fecha de liquidación, salvo que se indique otra cosa
 CALENDARIO_HABILES = "BYMA"    # días hábiles del rezago del CER y de las fechas de pago (decisión de Agustin, 13/11/2026)
@@ -75,12 +75,13 @@ def _pct(x: float) -> str:
 def calcular_bono(ticker: str, precio: float | None = None, fecha: str | None = None,
                   inflacion_mensual: float | None = None) -> str:
     try:
-        f = fichas.ficha(ticker)
+        lista = fichas.fichas_de(ticker)
+        if not lista:
+            disponibles = ", ".join(sorted(fichas.leer_todas()))
+            return f"No hay ficha técnica de {ticker.upper()}. Bonos con ficha: {disponibles}."
     except fichas.ErrorFicha as e:
         return f"Error en las fichas técnicas: {e}"
-    if not f:
-        disponibles = ", ".join(sorted(fichas.leer_todas()))
-        return f"No hay ficha técnica de {ticker.upper()}. Bonos con ficha: {disponibles}."
+    f = lista[0]
 
     # Datos comunes a todos los bonos: liquidación y precio
     try:
@@ -100,29 +101,43 @@ def calcular_bono(ticker: str, precio: float | None = None, fecha: str | None = 
         f"{ticker.upper()} ({f['tipo']}, vence {f['vencimiento']}) – calculadora de Finianz\n"
         f"Precio: {precio:,.2f} por 100 VN ({origen}) | liquidación {liquidacion} (T+{PLAZO_LIQUIDACION})\n"
     )
-    avisos = ""
-    if not f.get("revisado"):
-        avisos += "\nAVISO: la ficha técnica todavía no fue revisada por Agustin; tomá el resultado como preliminar."
-    if f.get("nota"):
-        avisos += f"\nNOTA: {f['nota']}"
+    secciones, avisos = [], ""
+    for f in lista:                       # un dual tiene una ficha por cada forma de calcularlo
+        try:
+            texto = _calcular_ficha(f, precio, liquidacion, operacion, inflacion_mensual)
+        except ErrorAPI as e:
+            texto = f"Error: {e}"
+        except ValueError as e:
+            texto = f"Error en el cálculo: {e}"
+        if len(lista) > 1:
+            texto = f"\n— Calculado como {NOMBRE_FAMILIA[f['familia']]} —\n" + texto
+        secciones.append(texto)
+        if not f.get("revisado"):
+            avisos += (f"\nAVISO: la ficha {NOMBRE_FAMILIA[f['familia']]} todavía no fue revisada por Agustin; "
+                       "tomá ese resultado como preliminar.")
+        if f.get("nota") and f["nota"] not in avisos:
+            avisos += f"\nNOTA: {f['nota']}"
+    return encabezado + "\n".join(secciones) + avisos
 
-    try:
-        if f["familia"].startswith("cer"):
-            texto_cer, f, cer_corriente = _datos_cer(f, liquidacion)
-            encabezado += texto_cer
-            if f["familia"] == "cer_cupon":
-                cuerpo = _cer_cupon(f, precio, cer_corriente, liquidacion)
-            else:
-                cuerpo = _cer_cero_cupon(f, precio, cer_corriente, liquidacion, inflacion_mensual)
-        elif f["familia"] == "tasa_fija_capitalizable":
-            cuerpo = _tasa_fija_capitalizable(f, precio, liquidacion)
-        else:
-            cuerpo = _tasa_fija_cupon(f, precio, liquidacion)
-    except ErrorAPI as e:
-        return f"Error: {e}"
-    except ValueError as e:
-        return f"Error en el cálculo: {e}"
-    return encabezado + cuerpo + avisos
+
+NOMBRE_FAMILIA = {
+    "cer_cero_cupon": "CER", "cer_cupon": "CER", "tasa_fija_capitalizable": "tasa fija",
+    "tasa_fija_cupon": "tasa fija", "tamar_capitalizable": "TAMAR",
+}
+
+
+def _calcular_ficha(f: dict, precio: float, liquidacion: date, operacion: date,
+                    inflacion_mensual: float | None) -> str:
+    if f["familia"].startswith("cer"):
+        texto_cer, f, cer_corriente = _datos_cer(f, liquidacion)
+        if f["familia"] == "cer_cupon":
+            return texto_cer + _cer_cupon(f, precio, cer_corriente, liquidacion)
+        return texto_cer + _cer_cero_cupon(f, precio, cer_corriente, liquidacion, inflacion_mensual)
+    if f["familia"] == "tasa_fija_capitalizable":
+        return _tasa_fija_capitalizable(f, precio, liquidacion)
+    if f["familia"] == "tamar_capitalizable":
+        return _tamar_capitalizable(f, precio, liquidacion, operacion)
+    return _tasa_fija_cupon(f, precio, liquidacion)
 
 
 def _datos_cer(f: dict, liquidacion: date) -> tuple[str, dict, float]:
@@ -137,6 +152,49 @@ def _datos_cer(f: dict, liquidacion: date) -> tuple[str, dict, float]:
              f"del {f['emision']}) | CER corriente: {cer_corriente:,.5f} "
              f"(al {fecha_cer_corriente}, 10.º día hábil anterior a la liquidación)\n")
     return texto, f, cer_corriente
+
+
+def _datos_tamar(f: dict, corte: date) -> dict:
+    """TAMAR del bono (ventana con la parte estimada) y TAMAR de referencia, con lo publicado hasta 'corte'.
+
+    Ventana: del 10.º día hábil anterior a la emisión al 10.º anterior al vencimiento. Los días hábiles
+    de la ventana posteriores al último dato publicado se estiman con el promedio de los últimos 5.
+    """
+    _asegurar_feriados(f["emision"], f["vencimiento"], corte)
+    rango = db_series.rango("TAMAR")
+    if not rango or date.fromisoformat(rango[1]) < feriados.sumar_dias_habiles(corte, -2, CALENDARIO_HABILES):
+        carga_series.actualizar("TAMAR")           # faltan datos recientes: se piden al BCRA
+    publicadas = db_series.entre("TAMAR", None, corte.isoformat())
+    if len(publicadas) < tamar.DIAS_ESTIMACION:
+        raise ErrorAPI("no hay suficientes datos de TAMAR en la base propia ni en el BCRA.")
+    inicio = feriados.sumar_dias_habiles(f["emision"], -tamar.REZAGO_HABILES, CALENDARIO_HABILES)
+    fin = feriados.sumar_dias_habiles(f["vencimiento"], -tamar.REZAGO_HABILES, CALENDARIO_HABILES)
+    ultimas = publicadas[-tamar.DIAS_ESTIMACION:]
+    referencia = sum(p["valor"] for p in ultimas) / len(ultimas) / 100
+    ultima_fecha = date.fromisoformat(publicadas[-1]["fecha"])
+    conocidas = [p["valor"] / 100 for p in publicadas if inicio.isoformat() <= p["fecha"] <= fin.isoformat()]
+    desde_estimar = max(inicio, ultima_fecha + timedelta(days=1))
+    a_estimar = len(feriados.dias_habiles_entre(desde_estimar, fin, CALENDARIO_HABILES))
+    return {"inicio": inicio, "fin": fin, "conocidas": conocidas, "a_estimar": a_estimar, "referencia": referencia,
+            "tamar_bono": tamar.tamar_del_bono(conocidas, a_estimar, referencia),
+            "ultimas": (ultimas[0]["fecha"], ultimas[-1]["fecha"])}
+
+
+def _tamar_capitalizable(f: dict, precio: float, liquidacion: date, operacion: date) -> str:
+    d = _datos_tamar(f, operacion)
+    r = tamar.calcular(precio, d["tamar_bono"], f["margen"], f["emision"], f["vencimiento"], liquidacion, d["referencia"])
+    return (
+        f"TAMAR del bono: {_pct(r['tamar_bono'])} (promedio del {d['inicio']} al {d['fin']}: "
+        f"{len(d['conocidas'])} días publicados y {d['a_estimar']} estimados) + margen {_pct(f['margen'])} → "
+        f"TEM {_pct(r['tem_bono'])} (base 32 días)\n"
+        f"Pago final teórico: {r['pago_final']:.4f} por 100 VN | plazo residual: {r['plazo_residual']} días | "
+        f"duration: {r['duration']:.4f}\n"
+        f"TNA: {_pct(r['tna'])} | TEA (TIR): {_pct(r['tea'])} | TEM (30 días): {_pct(r['tem_30'])} | "
+        f"TNA semestral: {_pct(r['tna_semestral'])}\n"
+        f"TNA 30 d: {_pct(r['tna_30'])} | TAMAR de referencia: {_pct(r['tamar_referencia'])} (últimos 5 días hábiles "
+        f"publicados, {d['ultimas'][0]} a {d['ultimas'][1]}; estima los días que faltan) | "
+        f"spread sobre TAMAR (TNA 30 d − referencia): {_pct(r['spread'])}"
+    )
 
 
 def _tasa_fija_capitalizable(f: dict, precio: float, liquidacion: date) -> str:
@@ -206,12 +264,14 @@ def _cer_cupon(f: dict, precio: float, cer_corriente: float, liquidacion: date) 
 CALCULAR_BONO = {
     "name": "calcular_bono",
     "description": (
-        "Calculadora propia de bonos CER. Cero cupón (Boncer TZX, LeCER X y la parte CER de los duales TXM): plazo "
+        "Calculadora propia de bonos CER, tasa fija y TAMAR. CER cero cupón (Boncer TZX, LeCER X y la parte CER de los duales TXM): plazo "
         "residual, duration, ratio, TNA real, TEA real (TIR) y carry mensual. Con cupón (TX28, TX31): valor técnico, "
         "paridad, TIR real, TNA semestral y 30 d, TEM, duration, duration modificada, convexidad, PV01, current yield "
         "y cash yield. Tasa fija: Lecap/Boncap capitalizables (S30N6, T15E7, S29E7, T30A7, T31Y7, T30J7: pago final, "
         "TNA, TEA, TEM, duration) y Bonte con cupón (TY30P: como los CER con cupón, en pesos). Sin precio, usa el precio "
-        "de mercado: en vivo, o el cierre de 'fecha' si se indica. Cálculos en T+1."
+        "de mercado: en vivo, o el cierre de 'fecha' si se indica. Cálculos en T+1. TAMAR capitalizables (TMF27, TML27, TMG27, "
+        "TMF28, TMG28 y el dual TTD26): TAMAR proyectada, TEM, pago final teórico, TNA, TEA, TNA 30 d y spread sobre TAMAR. "
+        "Los duales CER/TAMAR (TXMJ8, TXMD8, TXMJ9, TXMD9, TXMJ0) se devuelven calculados como CER y como TAMAR."
     ),
     "parameters": {
         "type": "object",

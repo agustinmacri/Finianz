@@ -51,15 +51,20 @@ def test_carga_completa_e_incremental():
             config.DATOS_DIR, bcra.obtener_serie = original_dir, original_api
 
 
+def test_series_definidas():
+    """CER (id 30) y TAMAR de bancos privados en TNA (id 44, no la 45 que es la TEA)."""
+    assert carga.SERIES["CER"][0] == 30 and carga.SERIES["TAMAR"][0] == 44
+
+
 def test_fichas_sin_cer_inicial():
     """Las fichas CER tienen fecha de emisión y no traen el CER inicial."""
     from renta_fija import leer_fichas
-    cer = [f for f in leer_fichas.leer_todas().values() if f["familia"].startswith("cer")]
+    cer = [f for f in leer_fichas.todas() if f["familia"].startswith("cer")]
     assert cer and all(isinstance(f["emision"], date) and "cer_inicial" not in f for f in cer)
 
 
 if __name__ == "__main__":
-    for prueba in (test_carga_completa_e_incremental, test_fichas_sin_cer_inicial):
+    for prueba in (test_carga_completa_e_incremental, test_series_definidas, test_fichas_sin_cer_inicial):
         prueba()
         print(f"OK  {prueba.__name__}")
     print("Todas las pruebas de la base de series pasaron.")

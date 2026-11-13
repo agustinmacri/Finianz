@@ -65,6 +65,15 @@ def sumar_dias_habiles(fecha: date, dias: int, mercado: str = "BYMA") -> date:
     return actual
 
 
+def dias_habiles_entre(desde: date, hasta: date, mercado: str = "BYMA") -> list[date]:
+    """Días hábiles entre dos fechas, inclusive."""
+    if hasta < desde:
+        return []
+    cerrados = _dias_cerrados(desde, hasta, mercado)
+    return [desde + timedelta(days=i) for i in range((hasta - desde).days + 1)
+            if (desde + timedelta(days=i)).weekday() < 5 and desde + timedelta(days=i) not in cerrados]
+
+
 def proximo_dia_habil(fecha: date, mercado: str = "BYMA") -> date:
     """La misma fecha si es hábil; si no, el siguiente día hábil."""
     return fecha if es_dia_habil(fecha, mercado) else sumar_dias_habiles(fecha, 1, mercado)

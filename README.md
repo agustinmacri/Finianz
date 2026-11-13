@@ -74,8 +74,8 @@ Finianz/
 ├── calculos/            # cálculos propios, sin acceso externo
 │   └── series.py        # variaciones de series (mensual, interanual, anualizada, acumulada)
 ├── renta_fija/          # todo lo propio de bonos y letras
-│   ├── fichas/          # fichas técnicas (cer.toml, cer_cupon.toml, tasa_fija.toml) y prospectos/
-│   ├── calculadoras/    # cuentas puras: motor.py (TIR, duration...) y una por familia (cer.py, cer_cupon.py, tasa_fija.py)
+│   ├── fichas/          # fichas técnicas (cer.toml, cer_cupon.toml, tasa_fija.toml, tamar.toml) y prospectos/
+│   ├── calculadoras/    # cuentas puras: motor.py (TIR, duration...) y una por familia (cer.py, cer_cupon.py, tasa_fija.py, tamar.py)
 │   └── leer_fichas.py   # lee y valida las fichas
 ├── conexiones/             # acceso a fuentes externas, sin IA
 │   ├── http.py          # timeouts, reintentos y caché comunes
@@ -96,20 +96,20 @@ Finianz/
 │   ├── publicaciones_fred.py   # fechas de EE. UU. desde FRED
 │   ├── publicaciones_regla.py  # fechas por regla de días hábiles (ISM, recaudación)
 │   ├── precios.py              # precios diarios desde PPI, solo los días que faltan
-│   ├── series.py               # CER diario desde el BCRA, toda la historia y después los días nuevos
+│   ├── series.py               # CER y TAMAR desde el BCRA, toda la historia y después los días nuevos
 │   └── catalogo.py      # lectura del catálogo de publicaciones
 ├── datos/               # las bases (no se suben a git)
 │   ├── feriados.db
 │   ├── publicaciones.db
 │   ├── precios.db       # precios diarios de los activos consultados (respaldar)
-│   ├── series.db        # CER diario del BCRA desde 2002 (regenerable)
+│   ├── series.db        # CER y TAMAR del BCRA (regenerable)
 │   └── cartera.db       # fase B
 ├── calendarios/
 │   ├── feriados_ajustes.toml   # correcciones manuales a los feriados
 │   ├── publicaciones.toml      # catálogo de publicaciones que se siguen, con su importancia
 │   └── indec/                  # calendarios semestrales del INDEC en PDF
 ├── prompts/             # instrucciones de cada agente
-├── tests/               # pruebas automáticas (python -m tests.test_renta_fija_cer, ..._cer_cupon, ..._tasa_fija, tests.test_series)
+├── tests/               # pruebas automáticas (python -m tests.test_renta_fija_cer, ..._cer_cupon, ..._tasa_fija, ..._tamar, tests.test_series)
 └── docs/
     ├── arquitectura-multiagente.md   # arquitectura completa y plan por fases
     └── convenciones-renta-fija.md    # cómo se calcula cada variable de cada bono
@@ -196,7 +196,7 @@ Las publicaciones con fecha fija por regla (por ejemplo, el ISM manufacturero sa
 
 Qué publicaciones se siguen y con qué importancia se define en `calendarios/publicaciones.toml`. Las del INDEC que no están en el catálogo también se guardan, con importancia baja.
 
-**Series (CER).** `datos/series.db` guarda el CER diario del BCRA desde 2002. La primera vez se baja toda la historia (tarda unos segundos) y después solo los días nuevos; como el BCRA publica el CER por adelantado, se piden también los próximos 60 días. Las calculadoras de bonos toman de acá el CER corriente y el CER inicial de cada bono (el del 10.º día hábil anterior a su emisión), así las fichas solo tienen condiciones de emisión. Se regenera en cualquier momento. Para comparar las bases con las de tus Excel: `python -m tests.verificar_cer_inicial`.
+**Series (CER y TAMAR).** `datos/series.db` guarda el CER diario del BCRA desde 2002 y la TAMAR de bancos privados (variable 44, % TNA, días hábiles). La primera vez se baja toda la historia (tarda unos segundos) y después solo los días nuevos; como el BCRA publica el CER por adelantado, se piden también los próximos 60 días. Las calculadoras de bonos toman de acá el CER corriente y el CER inicial de cada bono (el del 10.º día hábil anterior a su emisión), así las fichas solo tienen condiciones de emisión. Se regenera en cualquier momento. Para comparar las bases con las de tus Excel: `python -m tests.verificar_cer_inicial`.
 
 **Precios.** Cada activo que consultás queda "seguido": la primera vez se baja todo su histórico de PPI a `datos/precios.db`, y después solo se piden los días que faltan. `python actualizar.py` suma los cierres nuevos de todos los seguidos (el cierre del día se guarda recién después de las 18 h). El precio del momento se consulta en vivo y no se guarda. A diferencia de las otras bases, esta no se puede regenerar del todo: hacele respaldos.
 
@@ -217,7 +217,7 @@ El sistema se construye por fases. El detalle está en [`docs/arquitectura-multi
 
 - [ ] **Fase A** (en curso): router + agentes macro y noticias ✓; calendario de publicaciones del INDEC ✓, de EE. UU. (FRED) ✓ y por regla (ISM, recaudación) ✓; faltan las manuales (BCRA, Tesoro, FOMC).
 - [ ] **Fase B** (en curso): bases de datos locales (✓ feriados, ✓ publicaciones), precios de mercado (✓ consulta en vivo vía PPI; falta la base de precios), cartera y registro de pronósticos.
-- [ ] **Fase C** (en curso): calculadoras de bonos (✓ motor, ✓ CER cupón cero, ✓ CER con cupón: TX28 y TX31, ✓ tasa fija: Lecap/Boncap y TY30P; faltan duales, TAMAR, hard dollar) y agente de renta fija.
+- [ ] **Fase C** (en curso): calculadoras de bonos (✓ motor, ✓ CER cupón cero, ✓ CER con cupón: TX28 y TX31, ✓ tasa fija: Lecap/Boncap y TY30P, ✓ TAMAR: Bonos TAMAR y duales TTD26 y TXM; falta hard dollar) y agente de renta fija.
 - [ ] **Fase D:** agente de escenarios y estratega (retornos esperados, estrés, límites regulatorios).
 - [ ] **Fase E:** redactor de informes y revisión humana.
 - [ ] **Fase F:** agente de equity (balances, DCF, comparables).
