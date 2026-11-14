@@ -172,7 +172,8 @@ def calcular_breakevens(tipo: str = "todos", fecha: str | None = None) -> str:
             tc = contexto.get("a3500")
             extras = [("A3500 implícito", lambda f: f"{tc[0] * (1 + f['acumulado']):,.2f}")] if tc else []
             if tc and rem and rem["tipo_cambio"]:
-                puntos_rem = [(operacion, tc[0]), *rem["tipo_cambio"]]
+                puntos_rem = [(operacion, tc[0]), *[(d, v) for d, v in rem["tipo_cambio"]
+                                                     if (d.year, d.month) > (operacion.year, operacion.month)]]
                 def tc_rem(f):
                     v = be.interpolar_log(puntos_rem, fin(f))
                     if v is None:
@@ -183,7 +184,7 @@ def calcular_breakevens(tipo: str = "todos", fecha: str | None = None) -> str:
             texto.append(_tabla(be.cruzar(curvas["dl"], curvas["tasa_fija"], be.devaluacion), "DL (USD)", "tasa fija", extras))
             if len(extras) > 1:
                 texto.append("Tipo de cambio REM: interpolado entre hoy y los promedios mensuales que espera el REM (ubicados a mitad "
-                             "de mes). Implícito por encima del REM: el mercado se cubre de más devaluación que la esperada "
+                             "de mes; el mes en curso no se usa, porque hoy ya está el dato real). Implícito por encima del REM: el mercado se cubre de más devaluación que la esperada "
                              "(si se cumple el REM, conviene la tasa fija); por debajo, conviene el dollar linked.")
             if tc:
                 texto.append(f"A3500 de partida: {tc[0]:,.4f} ({tc[1]}{', estimado' if tc[2] else ''})")

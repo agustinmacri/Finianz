@@ -93,6 +93,74 @@ def _nombre_mes(mes: pc.Mes) -> str:
     return f"{MESES[mes[1] - 1]}-{mes[0] % 100:02d}"
 
 
+def camino_inflacion(fuente: str, liquidacion: date, hasta_mes: pc.Mes, curvas: dict | None = None,
+                     operacion: date | None = None, fecha_precios: date | None = None):
+    """Inflación de cada mes sin publicar según la fuente: (caminos {mes: (inflación, origen)}, descripción,
+    serie del CER, inflación publicada). Para "breakeven" usa las curvas (las arma si no se pasan)."""
+    serie = _serie_cer()
+    publicadas = pc.inflacion_publicada(serie)
+    ultimo = max(serie)
+    desde = pc.sumar_meses(max(publicadas), 1)
+    hasta_mes = max(hasta_mes, desde)
+    if fuente == "breakeven" and curvas is None:
+        curvas, _, _ = breakevens._curvas(operacion or date.today(), liquidacion, fecha_precios,
+                                          {"tasa_fija_capitalizable", "tasa_fija_cupon", "cer_cero_cupon"})
+    puntos_tf = [(p["x"], p["tea"]) for p in curvas["tasa_fija"]] if curvas else []
+    # Camino de inflación según la fuente
+    if fuente == "rem" and db_rem.ultimo():
+        relevamiento, mensuales, anuales = rem_inflacion()
+        caminos = pc.camino(publicadas, mensuales, anuales, desde, hasta_mes)
+        meses_rem = sorted(m for m in mensuales if m >= desde)
+        descripcion = (f"REM del BCRA, relevamiento {relevamiento} (mediana). Mes a mes"
+                       + (f" de {_nombre_mes(meses_rem[0])} a {_nombre_mes(meses_rem[-1])}" if meses_rem else ": ninguno pendiente")
+                       + "; inflación anual " + ", ".join(f"{a} {bonos._pct(v)}" for a, v in sorted(anuales.items()))
+                       + ". Los meses sin dato mensual completan cada año para cerrar en esa anual; después de "
+                       + f"{max(anuales)} se repite la última anual. Los meses ya publicados usan el dato del INDEC")
+    elif fuente.startswith("mensual:") or fuente == "rem":
+        if fuente == "rem":
+            anual, fecha_rem = _rem_12_meses()
+            tasa = (1 + anual) ** (1 / 12) - 1
+            descripcion = (f"REM (relevamiento al {fecha_rem}): mediana de la inflación esperada a 12 meses "
+                           f"{bonos._pct(anual)}, pasada a mensual ({bonos._pct(tasa)}) y aplicada plana. Aproximación: "
+                           "no hay ningún Excel del REM en fuentes/rem/")
+        else:
+            tasa = tasa_mensual(fuente.split(":", 1)[1])
+            descripcion = f"inflación mensual plana de {bonos._pct(tasa)}"
+        mes, caminos = desde, {}
+        while mes <= hasta_mes:
+            caminos[mes] = (tasa, "plana")
+            mes = pc.sumar_meses(mes, 1)
+    elif fuente.startswith("escenario:"):
+        nombre = fuente.split(":", 1)[1]
+        todos = escenarios()
+        if nombre not in todos:
+            raise ValueError(f"No existe el escenario '{nombre}'. Cargados: {', '.join(todos) or 'ninguno'} (renta_fija/escenarios/inflacion.toml).")
+        e = todos[nombre]
+        caminos = pc.camino(publicadas, e["mensual"], e["anual"], desde, hasta_mes)
+        descripcion = f"escenario '{nombre}': {e['descripcion']}"
+    elif fuente == "breakeven":
+        nodos = []
+        for p in curvas["cer"]:
+            f = fichas.ficha(p["ticker"], "cer_cero_cupon")
+            tf = be.interpolar(puntos_tf, p["x"])
+            if f is None or tf is None:
+                continue
+            _, f2, _ = bonos._datos_cer(f, liquidacion)
+            plazo = (f["vencimiento"] - liquidacion).days
+            cer_final = p["precio"] * (1 + tf) ** (plazo / 365) * f2["cer_inicial"] / 100
+            fecha_final = bonos.feriados.sumar_dias_habiles(f["vencimiento"], -cer.REZAGO_HABILES, bonos.CALENDARIO_HABILES)
+            if fecha_final > ultimo:
+                nodos.append((fecha_final, cer_final))
+        if not nodos:
+            raise ValueError("No alcanzan los bonos CER y de tasa fija con precio para armar el breakeven.")
+        caminos = pc.inflacion_desde_cer((ultimo, serie[ultimo]), nodos, desde, hasta_mes)
+        descripcion = "breakeven: la inflación que iguala cada CER cero cupón con la tasa fija a su plazo"
+    else:
+        raise ValueError("Fuente desconocida. Opciones: breakeven, rem, escenario:<nombre>, mensual:<tasa> (ej.: mensual:2%).")
+
+    return caminos, descripcion, serie, publicadas
+
+
 def proyectar_cer(fuente: str = "breakeven", ticker: str | None = None, fecha: str | None = None) -> str:
     try:
         operacion = date.fromisoformat(fecha) if fecha else date.today()
@@ -120,58 +188,7 @@ def proyectar_cer(fuente: str = "breakeven", ticker: str | None = None, fecha: s
                                                 {"tasa_fija_capitalizable", "tasa_fija_cupon", "cer_cero_cupon"})
         puntos_tf = [(p["x"], p["tea"]) for p in curvas["tasa_fija"]]
 
-        # Camino de inflación según la fuente
-        if fuente == "rem" and db_rem.ultimo():
-            relevamiento, mensuales, anuales = rem_inflacion()
-            caminos = pc.camino(publicadas, mensuales, anuales, desde, hasta_mes)
-            meses_rem = sorted(m for m in mensuales if m >= desde)
-            descripcion = (f"REM del BCRA, relevamiento {relevamiento} (mediana). Mes a mes"
-                           + (f" de {_nombre_mes(meses_rem[0])} a {_nombre_mes(meses_rem[-1])}" if meses_rem else ": ninguno pendiente")
-                           + "; inflación anual " + ", ".join(f"{a} {bonos._pct(v)}" for a, v in sorted(anuales.items()))
-                           + ". Los meses sin dato mensual completan cada año para cerrar en esa anual; después de "
-                           + f"{max(anuales)} se repite la última anual. Los meses ya publicados usan el dato del INDEC")
-        elif fuente.startswith("mensual:") or fuente == "rem":
-            if fuente == "rem":
-                anual, fecha_rem = _rem_12_meses()
-                tasa = (1 + anual) ** (1 / 12) - 1
-                descripcion = (f"REM (relevamiento al {fecha_rem}): mediana de la inflación esperada a 12 meses "
-                               f"{bonos._pct(anual)}, pasada a mensual ({bonos._pct(tasa)}) y aplicada plana. Aproximación: "
-                               "no hay ningún Excel del REM en fuentes/rem/")
-            else:
-                tasa = tasa_mensual(fuente.split(":", 1)[1])
-                descripcion = f"inflación mensual plana de {bonos._pct(tasa)}"
-            mes, caminos = desde, {}
-            while mes <= hasta_mes:
-                caminos[mes] = (tasa, "plana")
-                mes = pc.sumar_meses(mes, 1)
-        elif fuente.startswith("escenario:"):
-            nombre = fuente.split(":", 1)[1]
-            todos = escenarios()
-            if nombre not in todos:
-                return f"No existe el escenario '{nombre}'. Cargados: {', '.join(todos) or 'ninguno'} (renta_fija/escenarios/inflacion.toml)."
-            e = todos[nombre]
-            caminos = pc.camino(publicadas, e["mensual"], e["anual"], desde, hasta_mes)
-            descripcion = f"escenario '{nombre}': {e['descripcion']}"
-        elif fuente == "breakeven":
-            nodos = []
-            for p in curvas["cer"]:
-                f = fichas.ficha(p["ticker"], "cer_cero_cupon")
-                tf = be.interpolar(puntos_tf, p["x"])
-                if f is None or tf is None:
-                    continue
-                _, f2, _ = bonos._datos_cer(f, liquidacion)
-                plazo = (f["vencimiento"] - liquidacion).days
-                cer_final = p["precio"] * (1 + tf) ** (plazo / 365) * f2["cer_inicial"] / 100
-                fecha_final = bonos.feriados.sumar_dias_habiles(f["vencimiento"], -cer.REZAGO_HABILES, bonos.CALENDARIO_HABILES)
-                if fecha_final > ultimo:
-                    nodos.append((fecha_final, cer_final))
-            if not nodos:
-                return "No alcanzan los bonos CER y de tasa fija con precio para armar el breakeven."
-            caminos = pc.inflacion_desde_cer((ultimo, serie[ultimo]), nodos, desde, hasta_mes)
-            descripcion = "breakeven: la inflación que iguala cada CER cero cupón con la tasa fija a su plazo"
-        else:
-            return "Fuente desconocida. Opciones: breakeven, rem, escenario:<nombre>, mensual:<tasa> (ej.: mensual:2%)."
-
+        caminos, descripcion, serie, publicadas = camino_inflacion(fuente, liquidacion, hasta_mes, curvas, operacion, fecha_precios)
         proyectado = pc.proyectar(serie, {m: v for m, (v, _) in caminos.items()}, max(hasta, ultimo))
         cer_en = lambda d: serie.get(d) or proyectado[d]
     except (ErrorAPI, ValueError) as e:

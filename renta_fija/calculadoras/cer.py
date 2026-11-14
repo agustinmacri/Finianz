@@ -5,7 +5,7 @@ Definiciones de Agustin (docs/convenciones-renta-fija.md). Se implementan tal cu
 - Plazo residual = días corridos entre la liquidación y el vencimiento.
 - Duration = plazo residual / 365.
 - CER final = CER del décimo día hábil anterior al vencimiento.
-- CER inicial (base) = CER del décimo día hábil anterior a la liquidación inicial del bono (dato de la ficha).
+- CER inicial (base) = CER del décimo día hábil anterior a la liquidación inicial del bono (de la base de series).
 - CER corriente = CER del décimo día hábil anterior a la liquidación de la operación
   (operación del 12/11/26 → liquidación 13/11/26 → CER del 28/10/26: el 9/11 y el 10/11 fueron feriados).
 - Días hábiles: calendario de BYMA.
@@ -14,6 +14,10 @@ Definiciones de Agustin (docs/convenciones-renta-fija.md). Se implementan tal cu
 - TIR (TEA real) = capitalización de la TNA por el plazo remanente en base 365:
       (1 + TNA × plazo / 365) ^ (365 / plazo) − 1
 - Carry mensual = último dato de inflación mensual conocido + TNA / 12.
+- Valor técnico = 100 × CER corriente / CER inicial = el ratio (en pesos, por 100 VN; en términos reales, 100).
+- Paridad = precio / valor técnico.
+- Duration modificada = duration / (1 + TIR); convexidad = duration × (duration + 1) / (1 + TIR)² (un solo
+  flujo; es lo mismo que da el motor común).
 
 Funciones puras: el CER, la inflación y las fechas hábiles los recibe el que llama (tools/bonos.py).
 """
@@ -66,5 +70,9 @@ def calcular(precio: float, cer_inicial: float, cer_corriente: float, liquidacio
         "ratio": r,
         "tna_real": tna,
         "tea_real": tea_real(tna, plazo),
+        "valor_tecnico": r,
+        "paridad": precio / r,
+        "duration_modificada": duration(plazo) / (1 + tea_real(tna, plazo)),
+        "convexidad": duration(plazo) * (duration(plazo) + 1) / (1 + tea_real(tna, plazo)) ** 2,
         "carry_mensual": carry_mensual(inflacion_mensual, tna) if inflacion_mensual is not None else None,
     }

@@ -28,6 +28,10 @@ Código: `renta_fija/calculadoras/cer.py`. Fichas: `renta_fija/fichas/cer.toml`.
 | TNA real | (ratio actual / precio − 1) × 365 / plazo residual |
 | TIR (TEA real) | Capitalización de la TNA por el plazo remanente, base 365: (1 + TNA × plazo / 365) ^ (365 / plazo) − 1 |
 | Carry mensual | Inflación corriente (último dato de inflación mensual publicado, INDEC vía BCRA) + TNA del bono mensualizada (TNA / 12). Suma simple |
+| Valor técnico | 100 × CER corriente / CER inicial (el ratio, en pesos por 100 VN) |
+| Paridad | Precio / valor técnico |
+| Duration modificada | Duration / (1 + TIR) |
+| Convexidad | Duration × (duration + 1) / (1 + TIR)² |
 
 Notas de implementación:
 - La TEA real coincide con la TIR del motor común (`renta_fija/calculadoras/motor.py`) para un flujo único: lo verifica una prueba.
@@ -171,14 +175,29 @@ Código: `renta_fija/calculadoras/proyeccion_cer.py` y herramienta `proyectar_ce
 
 **Rendimiento nominal:** CER de cada pago = el proyectado (o publicado) 10 días hábiles antes. Cero cupón: pago final = 100 × CER final / CER inicial; TNA = (pago / precio − 1) × 365 / plazo; TIR = (pago / precio) ^ (365 / plazo) − 1. Con cupón: flujos reales × CER del pago / CER inicial y TIR efectiva (base 365) con el motor; TNA semestral exacta. Se contrasta con la TEA de la tasa fija interpolada al plazo.
 
+## Duales: qué pata paga
+
+Al vencimiento, un dual paga la pata de mayor pago final (decisión de Agustin, 14/11/2026). La herramienta muestra siempre las dos:
+- **Tasa fija / TAMAR (TTD26):** pago final de la pata fija (cupón de licitación) contra el de la TAMAR proyectada; TAMAR de los días por publicar con la que las dos patas pagan lo mismo.
+- **CER / TAMAR (TXM):** pata CER = 100 × CER final proyectado / CER inicial, con la fuente de inflación elegida (por defecto el REM; también breakeven, escenario o mensual); pata TAMAR con la fuente de TAMAR (por defecto la actual: últimos 5 días). Inflación mensual plana, en los meses sin publicar, con la que las dos patas pagan lo mismo.
+- Rendimiento de cada pata y del dual: TNA = (pago / precio − 1) × 365 / plazo; TEA = (pago / precio)^(365 / plazo) − 1.
+
+## Escenarios de TAMAR y tipo de cambio
+
+Código: `tools/proyecciones.py` (herramientas `proyectar_tamar` y `proyectar_dolar`). Escenarios en `renta_fija/escenarios/` (`tamar.toml`, `dolar_oficial.toml`, `dolar_mep.toml`, `dolar_ccl.toml`).
+
+- **TAMAR** (TNA): `actual` (últimos 5 días, plana), `rem` (mensual del REM y después su valor a 12 meses), `tna:<tasa>` o `escenario:<nombre>` (TNA por mes y `resto`). Bonos TAMAR: TAMAR del bono = publicada + camino en los días por publicar; después, la cuenta de siempre.
+- **Dólar oficial (A3500):** `rem` (promedios mensuales a mitad de mes, a 12 meses y diciembre; sin el mes en curso), `breakeven` (A3500 implícito de los dollar linked), `mensual:<variación>` o `escenario:<nombre>`. Dollar linked en pesos: pago = 100 × A3500 proyectado al vencimiento (aproxima el tipo de cambio de pago del prospecto).
+- **MEP y CCL:** `mensual:<variación>` o `escenario:<nombre>`, desde el implícito de hoy del AL30 (precio en pesos / precio D o C). Hard dollar en pesos: cada flujo en dólares × dólar proyectado en su fecha, contra el precio en pesos; TIR efectiva (base 365).
+- Escenarios de dólar: `nivel` (pesos por dólar de algunos meses, a mitad de mes), `mensual` (variación de algunos meses) y `resto` (variación mensual después). Entre puntos, crecimiento geométrico; después del último, `resto` o la variación del último tramo.
+
 ## Puntos abiertos (para decidir con Agustin)
 
-1. **Para más adelante (decisión de Agustin, 13/11/2026):** duration modificada, convexidad, valor técnico y paridad de los CER cero cupón. Por ahora no hacen falta.
-2. **Para más adelante:** proyectar los bonos TAMAR y los dollar linked con escenarios propios, como el CER.
-3. **Para más adelante:** curva teórica de tasa fija (regresión de la TEA contra el logaritmo de la duration, con cada letra por encima o por debajo de la curva).
-4. **Para más adelante:** calculadora de letras a descuento (hoy todas las letras vigentes son capitalizables).
-7. **Para más adelante:** dollar linked corporativos con cupones y amortizaciones, con el tipo de cambio de pago de cada prospecto.
-8. **Objetivo:** que las condiciones de emisión de cada bono salgan del análisis de los prospectos, sin carga manual.
+1. **Para más adelante:** curva teórica de tasa fija (regresión de la TEA contra el logaritmo de la duration, con cada letra por encima o por debajo de la curva).
+2. **Para más adelante:** calculadora de letras a descuento (hoy todas las letras vigentes son capitalizables).
+3. **Para más adelante:** dollar linked corporativos con cupones y amortizaciones, con el tipo de cambio de pago de cada prospecto.
+4. **Para más adelante (decisión de Agustin, 14/11/2026):** base propia de la curva de Treasuries (hoy se baja de FRED en cada consulta).
+5. **Objetivo:** que las condiciones de emisión de cada bono salgan del análisis de los prospectos, sin carga manual.
 
 ## Historial de cambios de definición
 
@@ -202,3 +221,4 @@ Código: `renta_fija/calculadoras/proyeccion_cer.py` y herramienta `proyectar_ce
 - **14/11/2026:** clean y dirty solo en los hard dollar. En los bonos en pesos (TX28, TX31, TY30P) se muestra el precio (y en los CER el precio real = precio / ratio); el precio sin el interés corrido sigue en el current yield y el cash yield, sin nombrarlo.
 - **14/11/2026:** hard dollar validados por Agustin (todos los Bonares y Globales). TTD26: pata tasa fija con cupón 2,14% y pago final como las Lecap; al vencimiento paga la pata de mayor pago final. La herramienta muestra las dos patas, cuál paga con la TAMAR estimada y la TAMAR de los días por publicar que iguala las dos.
 - **14/11/2026:** en las Lecap/Boncap, la tasa de emisión se llama cupón de licitación (campo `cupon` de la ficha, antes `tem`), para no confundirla con la TEM de mercado que da la calculadora.
+- **14/11/2026:** CER cero cupón con valor técnico, paridad, duration modificada y convexidad. Duales CER/TAMAR con las dos patas y cuál paga. Escenarios de TAMAR, dólar oficial, MEP y CCL. Nuevo agente de renta fija.

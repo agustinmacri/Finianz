@@ -15,8 +15,9 @@ from langgraph.graph.message import add_messages
 class Estado(TypedDict, total=False):
     # add_messages: cada nodo AGREGA mensajes a la lista, en vez de reemplazarla
     messages: Annotated[list[AnyMessage], add_messages]
-    ruta: str                   # decisión del router: macro, noticias, ambos o general
+    ruta: str                   # decisión del router: los agentes elegidos ("macro+renta_fija") o "general"
     informe_macro: str | None   # respuesta del agente macro en este turno
+    informe_renta_fija: str | None
     informe_noticias: str | None
 
 

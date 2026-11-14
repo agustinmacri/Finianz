@@ -8,14 +8,15 @@ Construido con [LangGraph](https://langchain-ai.github.io/langgraph/) y modelos 
 
 | Agente | Qué hace | Fuentes |
 |---|---|---|
-| **Macro** | Busca y analiza indicadores: inflación, expectativas del REM, reservas, tipo de cambio, tasas, CER, UVA, actividad. De EE. UU.: CPI, PCE, empleo, PBI, tasa de la Fed, bonos del Tesoro. Precios de bonos, letras, ONs, acciones y CEDEARs. Calcula acumulados, tasas reales y proyecciones. | API del BCRA, Series de Tiempo de datos.gob.ar, FRED, API de PPI |
+| **Macro** | Busca y analiza indicadores: inflación, expectativas del REM, reservas, tipo de cambio, tasas, CER, UVA, actividad. De EE. UU.: CPI, PCE, empleo, PBI, tasa de la Fed, bonos del Tesoro. Precios de acciones y CEDEARs. Calcula acumulados, tasas reales y proyecciones. | API del BCRA, Series de Tiempo de datos.gob.ar, FRED, API de PPI |
+| **Renta fija** | Calculadora propia de bonos: tasa fija, CER, TAMAR, duales (con las dos formas de pago), dollar linked y hard dollar. Breakevens entre curvas (inflación, devaluación, tipo de cambio real, brecha, TAMAR) y comparación con el REM. Proyecciones de rendimiento con el REM, el breakeven o escenarios propios de inflación, TAMAR, dólar oficial, MEP y CCL. | API de PPI (precios), BCRA (CER, TAMAR, A3500), REM, FRED (Treasuries) |
 | **Noticias** | Busca noticias sobre un tema y resume los titulares del día, con su implicancia para el mercado. | Google News (RSS), feeds de Ámbito |
 
-Los dos agentes consultan además un **calendario de feriados** de Argentina y EE. UU. (nacionales, bancos, BYMA, NYSE y bonos del Tesoro) desde 2016 hasta el año próximo, y calculan días hábiles por mercado (por ejemplo, la liquidación T+2).
+Los agentes consultan además un **calendario de feriados** de Argentina y EE. UU. (nacionales, bancos, BYMA, NYSE y bonos del Tesoro) desde 2016 hasta el año próximo, y calculan días hábiles por mercado (por ejemplo, la liquidación T+2).
 
 También consultan un **calendario de publicaciones** con las fechas de los datos oficiales que sigue el proyecto (IPC, EMAE, salarios y balanza de pagos del INDEC; recaudación de ARCA; CPI, empleo, PCE, PBI, ISM y otras de EE. UU.), para saber cuándo sale el próximo dato. Las del BCRA, el Tesoro y la Fed se suman en el próximo paso.
 
-Un **router** decide qué agente responde cada pregunta. Si hacen falta los dos, corren en paralelo y sus respuestas se integran en una sola.
+Un **router** decide qué agente o agentes responden cada pregunta. Si hacen falta varios, corren en paralelo y sus respuestas se integran en una sola.
 
 Ejemplos de preguntas:
 
@@ -24,19 +25,20 @@ Ejemplos de preguntas:
 - *¿Cuál fue el último dato de inflación en EE. UU. y cuándo sale el próximo?*
 - *¿Qué pasó hoy en el mercado?*
 - *¿Cómo viene la inflación y qué se dice de la próxima licitación?*
+- *¿Cuánto rinde el TXMJ8? ¿Qué pata paga con el REM?*
+- *¿Qué inflación descuentan los bonos CER contra las Lecap?*
 
 ## Cómo funciona
 
 ```
-                       ┌→ agente_macro ────┐
-    pregunta → router ─┤                   ├→ responder → respuesta
-                       ├→ agente_noticias ─┤
-                       └───────────────────┘   (saludos: directo a responder)
+                       ┌→ agente_macro ──────┐
+    pregunta → router ─┼→ agente_renta_fija ─┼→ responder → respuesta
+                       └→ agente_noticias ───┘   (saludos: directo a responder)
 ```
 
-- **Router:** una sola llamada al modelo, con salida estructurada. Elige entre `macro`, `noticias`, `ambos` o `general`.
+- **Router:** una sola llamada al modelo, con salida estructurada. Elige uno o varios agentes (`macro`, `renta_fija`, `noticias`), o ninguno para saludos y preguntas sobre la conversación.
 - **Agentes:** cada uno es un subgrafo con su propio prompt y **solo sus herramientas**. Iteran entre el modelo y las herramientas hasta tener la respuesta.
-- **Responder:** si respondió un solo agente, devuelve su informe tal cual, sin otra llamada al modelo. Si respondieron los dos, los integra.
+- **Responder:** si respondió un solo agente, devuelve su informe tal cual, sin otra llamada al modelo. Si respondieron varios, los integra.
 - **Memoria:** la conversación guarda solo las preguntas y las respuestas finales. Las consultas internas de cada agente no se acumulan, y así el contexto se mantiene chico.
 
 Principios de diseño:
@@ -68,6 +70,9 @@ Finianz/
 │   ├── noticias.py      # buscar_noticias, titulares_recientes
 │   ├── precios.py       # consultar_precio (PPI)
 │   ├── bonos.py         # calcular_bono (calculadora propia)
+│   ├── breakevens.py    # calcular_breakevens (entre curvas y contra el REM)
+│   ├── proyeccion_cer.py   # proyectar_cer (CER con REM, breakeven o escenarios)
+│   ├── proyecciones.py  # proyectar_tamar y proyectar_dolar (oficial, MEP, CCL) con escenarios
 │   ├── guardia.py       # límites de seguridad del código que escribe el agente
 │   ├── calendario.py    # consultar_feriados, calcular_dia_habil, consultar_publicaciones
 │   └── python_exec.py   # ejecutar_python, con acceso a los datos
@@ -75,7 +80,7 @@ Finianz/
 │   └── series.py        # variaciones de series (mensual, interanual, anualizada, acumulada)
 ├── renta_fija/          # todo lo propio de bonos y letras
 │   ├── fichas/          # fichas técnicas (cer.toml, cer_cupon.toml, tasa_fija.toml, tamar.toml, hard_dollar.toml, dolar_linked.toml) y prospectos/
-│   ├── escenarios/      # escenarios de inflación para proyectar el CER (inflacion.toml)
+│   ├── escenarios/      # escenarios propios: inflacion.toml, tamar.toml, dolar_oficial.toml, dolar_mep.toml, dolar_ccl.toml
 │   ├── calculadoras/    # cuentas puras: motor.py (TIR, duration...) y una por familia (cer.py, cer_cupon.py, tasa_fija.py, tamar.py, hard_dollar.py, dolar_linked.py)
 │   └── leer_fichas.py   # lee y valida las fichas
 ├── conexiones/             # acceso a fuentes externas, sin IA
@@ -112,7 +117,7 @@ Finianz/
 │   ├── publicaciones.toml      # catálogo de publicaciones que se siguen, con su importancia
 │   └── indec/                  # calendarios semestrales del INDEC en PDF
 ├── prompts/             # instrucciones de cada agente
-├── tests/               # pruebas automáticas (python -m tests.test_renta_fija_cer, ..._cer_cupon, ..._tasa_fija, ..._tamar, ..._hard_dollar, ..._dolar_linked, tests.test_breakevens, tests.test_proyeccion_cer, tests.test_series)
+├── tests/               # pruebas automáticas (python -m tests.test_renta_fija_cer, ..._cer_cupon, ..._tasa_fija, ..._tamar, ..._hard_dollar, ..._dolar_linked, tests.test_breakevens, tests.test_proyeccion_cer, tests.test_proyecciones, tests.test_grafo, tests.test_series)
 └── docs/
     ├── arquitectura-multiagente.md   # arquitectura completa y plan por fases
     └── convenciones-renta-fija.md    # cómo se calcula cada variable de cada bono
@@ -222,7 +227,7 @@ El sistema se construye por fases. El detalle está en [`docs/arquitectura-multi
 
 - [ ] **Fase A** (en curso): router + agentes macro y noticias ✓; calendario de publicaciones del INDEC ✓, de EE. UU. (FRED) ✓ y por regla (ISM, recaudación) ✓; faltan las manuales (BCRA, Tesoro, FOMC).
 - [ ] **Fase B** (en curso): bases de datos locales (✓ feriados, ✓ publicaciones), precios de mercado (✓ consulta en vivo vía PPI; falta la base de precios), cartera y registro de pronósticos.
-- [ ] **Fase C** (en curso): calculadoras de bonos (✓ motor, ✓ CER cupón cero, ✓ CER con cupón: TX28 y TX31, ✓ tasa fija: Lecap/Boncap y TY30P, ✓ TAMAR: Bonos TAMAR y duales TTD26 y TXM, ✓ hard dollar: Bonares y Globales del canje 2020, ✓ dollar linked del Tesoro, ✓ breakevens entre curvas, ✓ proyección del CER y rendimiento nominal, ✓ REM; faltan corporativos) y agente de renta fija.
+- [ ] **Fase C** (en curso): calculadoras de bonos (✓ motor, ✓ CER cupón cero, ✓ CER con cupón: TX28 y TX31, ✓ tasa fija: Lecap/Boncap y TY30P, ✓ TAMAR: Bonos TAMAR y duales TTD26 y TXM, ✓ hard dollar: Bonares y Globales del canje 2020, ✓ dollar linked del Tesoro, ✓ breakevens entre curvas, ✓ proyección del CER y rendimiento nominal, ✓ REM, ✓ escenarios de TAMAR y dólar; faltan corporativos) y ✓ agente de renta fija.
 - [ ] **Fase D:** agente de escenarios y estratega (retornos esperados, estrés, límites regulatorios).
 - [ ] **Fase E:** redactor de informes y revisión humana.
 - [ ] **Fase F:** agente de equity (balances, DCF, comparables).

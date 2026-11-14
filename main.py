@@ -14,7 +14,11 @@ import config
 from graph.builder import construir_grafo
 from graph.errores import es_temporal
 
-ICONOS_RUTA = {"macro": "📊 macro", "noticias": "📰 noticias", "ambos": "📊 macro + 📰 noticias", "general": "💬 general"}
+ICONOS = {"macro": "📊 macro", "renta_fija": "💵 renta fija", "noticias": "📰 noticias", "general": "💬 general"}
+
+
+def _icono_ruta(ruta: str | None) -> str:
+    return " + ".join(ICONOS.get(parte, parte) for parte in (ruta or "general").split("+"))
 
 
 def preguntar(grafo, pregunta: str | None, hilo: str) -> str:
@@ -37,7 +41,7 @@ def preguntar(grafo, pregunta: str | None, hilo: str) -> str:
             for nodo, cambios in paso.items():
                 cambios = cambios or {}
                 if nodo == "router":
-                    print(f"  🧭 {ICONOS_RUTA.get(cambios.get('ruta'), cambios.get('ruta'))}")
+                    print(f"  🧭 {_icono_ruta(cambios.get('ruta'))}")
                 elif nodo == "modelo" and agente:
                     for mensaje in cambios.get("messages", []):
                         for llamada in mensaje.tool_calls:
@@ -69,7 +73,7 @@ def main():
         print(preguntar(grafo, " ".join(sys.argv[1:]), hilo))
         return
 
-    print(f"Finianz listo ({config.GEMINI_MODEL}): agentes macro y noticias.\n"
+    print(f"Finianz listo ({config.GEMINI_MODEL}): agentes macro, renta fija y noticias.\n"
           "Comandos: 'nuevo' (reiniciar), 'reintentar' (si hubo un error), 'salir'.\n")
     while True:
         try:

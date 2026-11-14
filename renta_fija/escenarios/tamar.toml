@@ -1,0 +1,16 @@
+# Escenarios de TAMAR (TNA de bancos privados) para proyectar los bonos TAMAR y la pata TAMAR de los duales.
+# Se usan con la fuente "escenario:<nombre>".
+#
+# Cada [[escenario]] tiene:
+#   nombre       una palabra, sin espacios
+#   descripcion  qué supone
+#   mensual      TNA de cada mes, { "AAAA-MM" = fracción } (0.24 = 24%)
+#   resto        opcional: TNA de los meses posteriores al último cargado (si falta, se repite el último)
+#
+# Ejemplo (borrá los # para usarlo):
+#
+# [[escenario]]
+# nombre = "baja_tasas"
+# descripcion = "La TAMAR baja medio punto por mes hasta 20% y queda ahí"
+# mensual = { "2026-12" = 0.235, "2027-01" = 0.23, "2027-02" = 0.225, "2027-03" = 0.22, "2027-04" = 0.215, "2027-05" = 0.21 }
+# resto = 0.20

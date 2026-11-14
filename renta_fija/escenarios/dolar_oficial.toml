@@ -1,0 +1,17 @@
+# Escenarios de dólar oficial (A3500) para proyectar bonos dollar linked.
+# Se usan con la fuente "escenario:<nombre>". Se parte del valor de hoy.
+#
+# Cada [[escenario]] tiene:
+#   nombre       una palabra, sin espacios
+#   descripcion  qué supone
+#   nivel        opcional: pesos por dólar esperados para algunos meses (promedio del mes), { "AAAA-MM" = valor }
+#   mensual      opcional: variación mensual de algunos meses, { "AAAA-MM" = fracción } (0.02 = 2%)
+#   resto        opcional: variación mensual después del último mes cargado (si falta, la del último tramo)
+#
+# Entre meses, el tipo de cambio crece en forma geométrica. Ejemplo (borrá los # para usarlo):
+#
+# [[escenario]]
+# nombre = "deslizamiento"
+# descripcion = "1,5% mensual hasta junio de 2027 y después 1% mensual"
+# mensual = { "2026-12" = 0.015, "2027-01" = 0.015, "2027-02" = 0.015, "2027-03" = 0.015, "2027-04" = 0.015, "2027-05" = 0.015, "2027-06" = 0.015 }
+# resto = 0.01

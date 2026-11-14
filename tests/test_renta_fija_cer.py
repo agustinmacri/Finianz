@@ -103,9 +103,22 @@ def test_tzxo7_a_103_35():
     assert round(oficial["tea_real"] * 100, 2) == 5.52, oficial["tea_real"]
 
 
+def test_variables_extra():
+    """Valor técnico, paridad, duration modificada y convexidad: iguales al motor común con un solo flujo."""
+    from renta_fija.calculadoras import motor
+    liq, vto = date(2026, 11, 13), date(2027, 10, 29)
+    r = cer.calcular(103.35, 791.48970450621, 861.22954, liq, vto)
+    assert abs(r["valor_tecnico"] - 100 * 861.22954 / 791.48970450621) < 1e-9
+    assert abs(r["paridad"] - 103.35 / r["valor_tecnico"]) < 1e-15
+    flujos = [motor.Flujo(vto, 0.0, r["valor_tecnico"])]
+    assert abs(r["duration_modificada"] - motor.duration_modificada(flujos, liq, r["tea_real"])) < 1e-12
+    assert abs(r["convexidad"] - motor.convexidad(flujos, liq, r["tea_real"])) < 1e-12
+
+
 if __name__ == "__main__":
     for prueba in (test_variables_como_el_excel, test_el_motor_da_la_misma_tir, test_fecha_cer_final,
-                   test_fecha_cer_corriente, test_fecha_base_con_feriados_puente, test_tzxo7_a_103_35):
+                   test_fecha_cer_corriente, test_fecha_base_con_feriados_puente, test_tzxo7_a_103_35,
+                   test_variables_extra):
         prueba()
         print(f"OK  {prueba.__name__}")
     print(f"Todas las pruebas pasaron ({len(CASOS)} bonos del Excel).")

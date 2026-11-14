@@ -73,7 +73,8 @@ def _pct(x: float) -> str:
 
 
 def calcular_bono(ticker: str, precio: float | None = None, fecha: str | None = None,
-                  inflacion_mensual: float | None = None) -> str:
+                  inflacion_mensual: float | None = None, fuente_inflacion: str | None = None,
+                  fuente_tamar: str = "actual") -> str:
     try:
         lista = fichas.fichas_de(ticker)
         if not lista and ticker.upper()[-1:] in ("D", "C"):     # AL30D / GD30C: el bono en dólares
@@ -123,18 +124,27 @@ def calcular_bono(ticker: str, precio: float | None = None, fecha: str | None = 
             avisos += f"\nNOTA: {f['nota']}"
     familias = {f["familia"] for f in lista}
     if {"tasa_fija_capitalizable", "tamar_capitalizable"} <= familias:
-        secciones.append(_dual_tasa_fija_tamar(lista, precio, liquidacion, operacion))
+        secciones.append(_dual_tasa_fija_tamar(lista, precio, liquidacion, operacion, fuente_tamar))
+    if "cer_cero_cupon" in familias and "tamar_capitalizable" in familias:
+        if fuente_inflacion is None:
+            from admin_datos import rem as db_rem
+            fuente_inflacion = "rem" if db_rem.ultimo() else "breakeven"
+        secciones.append(_dual_cer_tamar(lista, precio, liquidacion, operacion, fuente_inflacion, fuente_tamar,
+                                         date.fromisoformat(fecha) if fecha else None))
     return encabezado + "\n".join(secciones) + avisos
 
 
-def _dual_tasa_fija_tamar(lista: list[dict], precio: float, liquidacion: date, operacion: date) -> str:
-    """Qué pata paga un dual tasa fija / TAMAR: la de mayor pago final (la TAMAR, con la parte por publicar estimada)."""
+def _dual_tasa_fija_tamar(lista: list[dict], precio: float, liquidacion: date, operacion: date,
+                          fuente_tamar: str = "actual") -> str:
+    """Qué pata paga un dual tasa fija / TAMAR: la de mayor pago final (la TAMAR, con la parte por publicar proyectada)."""
+    from tools import proyecciones
     try:
         fija = next(f for f in lista if f["familia"] == "tasa_fija_capitalizable")
         pata_tamar = next(f for f in lista if f["familia"] == "tamar_capitalizable")
         pf_fija = tasa_fija.pago_final(fija["cupon"], fija["emision"], fija["vencimiento"])
-        d = _datos_tamar(pata_tamar, operacion)
-        r = tamar.calcular(precio, d["tamar_bono"], pata_tamar["margen"], pata_tamar["emision"],
+        camino, desc_tamar = proyecciones.camino_tamar(fuente_tamar, operacion)
+        tamar_bono, d = proyecciones.tamar_del_bono(pata_tamar, operacion, camino)
+        r = tamar.calcular(precio, tamar_bono, pata_tamar["margen"], pata_tamar["emision"],
                            pata_tamar["vencimiento"], liquidacion, d["referencia"])
     except (ErrorAPI, ValueError, StopIteration) as e:
         return f"\n— Qué pata paga —\nSin dato: {e}"
@@ -152,9 +162,60 @@ def _dual_tasa_fija_tamar(lista: list[dict], precio: float, liquidacion: date, o
                     "\nLa ventana de la TAMAR ya está completa: el resultado es definitivo.")
     return (
         f"\n— Qué pata paga (al vencimiento, la de mayor pago final) —\n"
-        f"Pago final pata tasa fija: {pf_fija:.4f} | pata TAMAR: {r['pago_final']:.4f} "
-        f"({d['a_estimar']} días de TAMAR por publicar, estimados con {_pct(d['referencia'])}) → paga la pata {gana}\n"
-        f"Rendimiento del dual con ese pago: TNA {_pct(tna)} | TEA (TIR) {_pct(tea)}" + linea_umbral
+        f"Pata tasa fija: pago final {pf_fija:.4f} | TNA {_pct((pf_fija / precio - 1) * 365 / plazo)} | TEA {_pct(tea_fija)}\n"
+        f"Pata TAMAR: pago final {r['pago_final']:.4f} | TNA {_pct(r['tna'])} | TEA {_pct(r['tea'])} "
+        f"({d['a_estimar']} días por publicar con {desc_tamar})\n"
+        f"→ Con estos supuestos paga la pata {gana}. Rendimiento del dual: TNA {_pct(tna)} | TEA (TIR) {_pct(tea)}" + linea_umbral
+    )
+
+
+def _dual_cer_tamar(lista: list[dict], precio: float, liquidacion: date, operacion: date, fuente_inflacion: str,
+                    fuente_tamar: str, fecha_precios: date | None) -> str:
+    """Qué pata paga un dual CER / TAMAR: la de mayor pago final, con el CER y la TAMAR proyectados."""
+    from renta_fija.calculadoras import proyeccion_cer as pc
+    from tools import proyeccion_cer, proyecciones
+    try:
+        pata_cer = next(f for f in lista if f["familia"] == "cer_cero_cupon")
+        pata_tamar = next(f for f in lista if f["familia"] == "tamar_capitalizable")
+        _, f2, _ = _datos_cer(pata_cer, liquidacion)
+        fecha_final = feriados.sumar_dias_habiles(pata_cer["vencimiento"], -cer.REZAGO_HABILES, CALENDARIO_HABILES)
+        caminos, desc_inflacion, serie, publicadas = proyeccion_cer.camino_inflacion(
+            fuente_inflacion, liquidacion, pc.mes_aplicado(fecha_final), None, operacion, fecha_precios)
+        ultimo = max(serie)
+        inflacion = {m: v for m, (v, _) in caminos.items()}
+        cer_final = serie[fecha_final] if fecha_final <= ultimo else pc.proyectar(serie, inflacion, fecha_final)[fecha_final]
+        pago_cer = 100 * cer_final / f2["cer_inicial"]
+        camino, desc_tamar = proyecciones.camino_tamar(fuente_tamar, operacion)
+        tamar_bono, d = proyecciones.tamar_del_bono(pata_tamar, operacion, camino)
+        r = tamar.calcular(precio, tamar_bono, pata_tamar["margen"], pata_tamar["emision"], pata_tamar["vencimiento"],
+                           liquidacion, d["referencia"])
+    except (ErrorAPI, ValueError, StopIteration, KeyError) as e:
+        return f"\n— Qué pata paga —\nSin dato: {e}"
+    plazo = r["plazo_residual"]
+    rinde = lambda pago: ((pago / precio - 1) * 365 / plazo, (pago / precio) ** (365 / plazo) - 1)
+    tna_cer, tea_cer = rinde(pago_cer)
+    gana = "CER" if pago_cer >= r["pago_final"] else "TAMAR"
+    tna, tea = rinde(max(pago_cer, r["pago_final"]))
+    # Inflación mensual plana (en los meses sin publicar) con la que las dos patas pagan lo mismo
+    if fecha_final <= ultimo:
+        linea = "\nEl CER final ya está publicado: la pata CER es definitiva."
+    else:
+        objetivo = r["pago_final"] * f2["cer_inicial"] / 100
+        meses = list(caminos)
+        cer_con = lambda x: pc.proyectar(serie, {m: x for m in meses}, fecha_final)[fecha_final]
+        bajo, alto = -0.05, 0.5
+        for _ in range(80):
+            medio = (bajo + alto) / 2
+            bajo, alto = (medio, alto) if cer_con(medio) < objetivo else (bajo, medio)
+        linea = (f"\nLas dos patas pagan lo mismo con una inflación mensual plana de {_pct((bajo + alto) / 2)} desde "
+                 f"{meses[0][1]:02d}/{meses[0][0]} (los meses sin publicar): por encima paga la CER, por debajo la TAMAR.")
+    return (
+        f"\n— Qué pata paga (al vencimiento, la de mayor pago final) —\n"
+        f"Pata CER: CER final {cer_final:,.4f} al {fecha_final} ({'publicado' if fecha_final <= ultimo else 'proyectado: ' + desc_inflacion}) "
+        f"→ pago final {pago_cer:.4f} | TNA {_pct(tna_cer)} | TEA {_pct(tea_cer)}\n"
+        f"Pata TAMAR: TAMAR del bono {_pct(tamar_bono)} ({desc_tamar}) → pago final {r['pago_final']:.4f} | "
+        f"TNA {_pct(r['tna'])} | TEA {_pct(r['tea'])}\n"
+        f"→ Con estos supuestos paga la pata {gana}. Rendimiento del dual: TNA {_pct(tna)} | TEA (TIR) {_pct(tea)}" + linea
     )
 
 
@@ -403,9 +464,12 @@ def _cer_cero_cupon(f: dict, precio: float, cer_corriente: float, liquidacion: d
     fecha_cer_final = feriados.sumar_dias_habiles(f["vencimiento"], -cer.REZAGO_HABILES, CALENDARIO_HABILES)
     r = cer.calcular(precio, f["cer_inicial"], cer_corriente, liquidacion, f["vencimiento"], inflacion)
     return (
-        f"Plazo residual: {r['plazo_residual']} días | duration: {r['duration']:.4f} | ratio: {r['ratio']:,.4f}\n"
+        f"Plazo residual: {r['plazo_residual']} días | ratio: {r['ratio']:,.4f} | valor técnico: {r['valor_tecnico']:,.4f} "
+        f"(100 × ratio, en pesos) | paridad: {_pct(r['paridad'])}\n"
         f"Fecha CER final (10.º día hábil anterior al vencimiento): {fecha_cer_final}\n"
         f"TNA real: {_pct(r['tna_real'])} | TEA real (TIR): {_pct(r['tea_real'])}\n"
+        f"Duration: {r['duration']:.4f} | duration modificada: {r['duration_modificada']:.4f} | "
+        f"convexidad: {r['convexidad']:.4f}\n"
         f"Carry mensual: {_pct(r['carry_mensual'])} (inflación {_pct(inflacion)} [{origen_inflacion}] + TNA / 12)"
     )
 
@@ -452,6 +516,8 @@ CALCULAR_BONO = {
             "precio": {"type": "number", "description": "Precio por 100 VN, si se quiere calcular con otro precio (opcional)"},
             "fecha": {"type": "string", "description": "Fecha de operación AAAA-MM-DD para usar el cierre de ese día (opcional)"},
             "inflacion_mensual": {"type": "number", "description": "Inflación mensual en % para el carry (opcional; por defecto, el último dato del INDEC)"},
+            "fuente_inflacion": {"type": "string", "description": "Duales CER/TAMAR: con qué inflación proyectar la pata CER: rem, breakeven, escenario:<nombre> o mensual:<tasa> (por defecto, rem si está cargado)"},
+            "fuente_tamar": {"type": "string", "description": "Duales: con qué TAMAR proyectar la pata TAMAR: actual, rem, tna:<tasa> o escenario:<nombre> (por defecto, actual)"},
         },
         "required": ["ticker"],
     },
