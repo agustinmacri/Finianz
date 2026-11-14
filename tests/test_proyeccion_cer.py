@@ -84,6 +84,14 @@ def test_nominal():
     assert abs(r2["tir"] - r["tir"]) < 1e-9 and abs(r2["flujos"][0].total - r["pago_final"]) < 1e-9
 
 
+def test_tasa_mensual():
+    from tools.proyeccion_cer import tasa_mensual
+    for texto in ("2%", "2", "0.02", "2,0%"):
+        assert abs(tasa_mensual(texto) - 0.02) < 1e-15, texto
+    assert abs(tasa_mensual("1.66") - 0.0166) < 1e-15                     # el caso que daba 857% de TNA
+    assert abs(tasa_mensual("0.25") - 0.0025) < 1e-15
+
+
 def test_escenarios_del_archivo():
     from tools import proyeccion_cer
     assert isinstance(proyeccion_cer.escenarios(), dict)                 # el archivo de ejemplo no trae activos
@@ -91,7 +99,7 @@ def test_escenarios_del_archivo():
 
 if __name__ == "__main__":
     for prueba in (test_regla_con_los_datos_del_bcra, test_proyectar, test_camino_mensual_y_anual,
-                   test_inflacion_desde_cer, test_nominal, test_escenarios_del_archivo):
+                   test_inflacion_desde_cer, test_nominal, test_tasa_mensual, test_escenarios_del_archivo):
         prueba()
         print(f"OK  {prueba.__name__}")
     print("Todas las pruebas de la proyección del CER pasaron.")

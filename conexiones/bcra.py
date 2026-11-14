@@ -39,6 +39,7 @@ _CER = ("estabilizacion", "cer")  # el CER no figura con su sigla: "coeficiente 
 ID_CER = 30                        # Coeficiente de estabilización de referencia (base 2.2.02=1), diario
 ID_TAMAR = 44                      # TAMAR de bancos privados, en % TNA, días hábiles (la 45 es la misma en % TEA)
 ID_A3500 = 5                       # Tipo de cambio mayorista de referencia, Comunicación A 3500 ($ por US$), días hábiles
+ID_REM_12M = 29                    # REM: inflación esperada para los próximos 12 meses, mediana (% interanual)
 
 SINONIMOS = {
     "inflacion": _INFLACION, "ipc": _INFLACION, "precios": _INFLACION,

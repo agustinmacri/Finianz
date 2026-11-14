@@ -1,14 +1,16 @@
 """Proyección del CER con distintas fuentes de inflación y rendimiento nominal de los bonos CER.
 
-Fuentes: "breakeven" (la inflación que descuenta la curva CER contra la tasa fija), "escenario:<nombre>"
-(renta_fija/escenarios/inflacion.toml) y "mensual:<tasa>" (una inflación mensual plana). El REM se suma
-cuando esté su carga. Reglas en renta_fija/calculadoras/proyeccion_cer.py y docs/convenciones-renta-fija.md.
+Fuentes: "breakeven" (la inflación que descuenta la curva CER contra la tasa fija), "rem", "escenario:<nombre>"
+(renta_fija/escenarios/inflacion.toml) y "mensual:<tasa>" (una inflación mensual plana).
+"rem", hasta que esté la carga del Excel del BCRA (mes a mes y por año), usa la mediana de la inflación
+esperada a 12 meses de la API, pasada a mensual y plana, y lo aclara como aproximación. Reglas en renta_fija/calculadoras/proyeccion_cer.py y docs/convenciones-renta-fija.md.
 """
 import tomllib
 from datetime import date, timedelta
 from pathlib import Path
 
 from admin_datos import series as db_series
+from conexiones import bcra
 from conexiones.http import ErrorAPI
 from renta_fija import leer_fichas as fichas
 from renta_fija.calculadoras import breakeven as be
@@ -44,6 +46,23 @@ def _serie_cer() -> dict[date, float]:
     return {date.fromisoformat(p["fecha"]): p["valor"] for p in db_series.entre("CER", desde)}
 
 
+def tasa_mensual(texto: str) -> float:
+    """Lee una inflación mensual: "2%", "2", "1.66" o "0.02". Con % o desde 0,2 se toma como porcentaje
+    (una inflación mensual de 20% o más escrita en fracción no es un caso real)."""
+    limpio = texto.strip().replace("%", "").replace(",", ".")
+    valor = float(limpio)
+    return valor / 100 if "%" in texto or valor >= 0.2 else valor
+
+
+def _rem_12_meses() -> tuple[float, str]:
+    """Mediana del REM para la inflación de los próximos 12 meses (fracción) y la fecha del relevamiento."""
+    for v in bcra.listar_variables():
+        descripcion = bcra.normalizar(v["descripcion"])
+        if v["id"] == bcra.ID_REM_12M and ("esperada" in descripcion or "expectativ" in descripcion):
+            return float(v["ultimo_valor"]) / 100, str(v["ultima_fecha"])[:10]
+    raise ErrorAPI("no se encontró en el BCRA la inflación esperada del REM a 12 meses.")
+
+
 def _nombre_mes(mes: pc.Mes) -> str:
     return f"{MESES[mes[1] - 1]}-{mes[0] % 100:02d}"
 
@@ -76,13 +95,20 @@ def proyectar_cer(fuente: str = "breakeven", ticker: str | None = None, fecha: s
         puntos_tf = [(p["x"], p["tea"]) for p in curvas["tasa_fija"]]
 
         # Camino de inflación según la fuente
-        if fuente.startswith("mensual:"):
-            tasa = float(fuente.split(":", 1)[1].replace("%", "")) / (100 if "%" in fuente else 1)
+        if fuente.startswith("mensual:") or fuente == "rem":
+            if fuente == "rem":
+                anual, fecha_rem = _rem_12_meses()
+                tasa = (1 + anual) ** (1 / 12) - 1
+                descripcion = (f"REM (relevamiento al {fecha_rem}): mediana de la inflación esperada a 12 meses "
+                               f"{bonos._pct(anual)}, pasada a mensual ({bonos._pct(tasa)}) y aplicada plana. Aproximación "
+                               "hasta cargar el REM mes a mes y por año")
+            else:
+                tasa = tasa_mensual(fuente.split(":", 1)[1])
+                descripcion = f"inflación mensual plana de {bonos._pct(tasa)}"
             mes, caminos = desde, {}
             while mes <= hasta_mes:
                 caminos[mes] = (tasa, "plana")
                 mes = pc.sumar_meses(mes, 1)
-            descripcion = f"inflación mensual plana de {bonos._pct(tasa)}"
         elif fuente.startswith("escenario:"):
             nombre = fuente.split(":", 1)[1]
             todos = escenarios()
@@ -109,7 +135,7 @@ def proyectar_cer(fuente: str = "breakeven", ticker: str | None = None, fecha: s
             caminos = pc.inflacion_desde_cer((ultimo, serie[ultimo]), nodos, desde, hasta_mes)
             descripcion = "breakeven: la inflación que iguala cada CER cero cupón con la tasa fija a su plazo"
         else:
-            return "Fuente desconocida. Opciones: breakeven, escenario:<nombre>, mensual:<tasa> (ej.: mensual:2%)."
+            return "Fuente desconocida. Opciones: breakeven, rem, escenario:<nombre>, mensual:<tasa> (ej.: mensual:2%)."
 
         proyectado = pc.proyectar(serie, {m: v for m, (v, _) in caminos.items()}, max(hasta, ultimo))
         cer_en = lambda d: serie.get(d) or proyectado[d]
@@ -179,13 +205,14 @@ PROYECTAR_CER = {
     "description": (
         "Proyecta el CER con la regla del BCRA (la inflación del mes m se reparte del 16 de m+1 al 15 de m+2) y calcula "
         "el rendimiento nominal de los bonos CER (TNA, TIR nominal y CER final) para contrastarlo con la tasa fija u "
-        "otros activos. Fuentes de inflación: 'breakeven' (la que descuenta la curva), 'escenario:<nombre>' "
-        "(escenarios cargados) o 'mensual:<tasa>' (plana, ej.: 'mensual:2%')."
+        "otros activos. Fuentes de inflación: 'breakeven' (la que descuenta la curva), 'rem' (expectativas del REM), "
+        "'escenario:<nombre>' (escenarios cargados) o 'mensual:<tasa>' (plana, en porcentaje: 'mensual:2%'). "
+        "Para el REM usá 'rem': no armes la inflación a mano."
     ),
     "parameters": {
         "type": "object",
         "properties": {
-            "fuente": {"type": "string", "description": "breakeven, escenario:<nombre> o mensual:<tasa> (por defecto, breakeven)"},
+            "fuente": {"type": "string", "description": "breakeven, rem, escenario:<nombre> o mensual:<tasa en %> (ej.: mensual:2%). Por defecto, breakeven"},
             "ticker": {"type": "string", "description": "Un bono CER puntual (opcional; si no, todos)"},
             "fecha": {"type": "string", "description": "Fecha de operación AAAA-MM-DD para usar los cierres de ese día (opcional)"},
         },

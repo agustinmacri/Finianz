@@ -161,8 +161,8 @@ Código: `renta_fija/calculadoras/proyeccion_cer.py` y herramienta `proyectar_ce
 **Fuentes:**
 - `breakeven`: CER implícito en la fecha del CER final de cada CER cero cupón = precio × (1 + TEA de la tasa fija a su plazo) ^ (plazo/365) × CER inicial / 100. Entre esos puntos, inflación mensual constante (interpolación del logaritmo del CER en meses de CER). Después del último bono, se repite la última inflación mensual.
 - `escenario:<nombre>`: los escenarios del archivo, con inflaciones mensuales y anuales.
-- `mensual:<tasa>`: inflación mensual plana.
-- REM: pendiente de la carga del Excel del BCRA.
+- `mensual:<tasa>`: inflación mensual plana, en porcentaje ("2%", "2" o "1.66"); una fracción menor a 0,2 ("0.02") también se acepta.
+- `rem`: hasta cargar el Excel del BCRA (mes a mes y por año), la mediana de la inflación esperada a 12 meses de la API (BCRA id 29), pasada a mensual y plana, aclarada como aproximación.
 
 **Rendimiento nominal:** CER de cada pago = el proyectado (o publicado) 10 días hábiles antes. Cero cupón: pago final = 100 × CER final / CER inicial; TNA = (pago / precio − 1) × 365 / plazo; TIR = (pago / precio) ^ (365 / plazo) − 1. Con cupón: flujos reales × CER del pago / CER inicial y TIR efectiva (base 365) con el motor; TNA semestral exacta. Se contrasta con la TEA de la tasa fija interpolada al plazo.
 
