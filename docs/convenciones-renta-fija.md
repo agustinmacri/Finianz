@@ -147,6 +147,11 @@ Código: `renta_fija/calculadoras/breakeven.py` (cuentas) y `tools/breakevens.py
 | Brecha (dollar linked vs Bonares en MEP) | (1 + TEA del DL) / (1 + TEA del Bonar en MEP) − 1 | Brecha implícita = brecha de hoy (MEP implícito AL30/AL30D / A3500) × (1 + acumulado). Incluye el riesgo de crédito en dólares del Bonar |
 | TAMAR (Bonos TAMAR vs tasa fija) | TAMAR promedio de los días por publicar que hace rendir al bono TAMAR la TEA de la tasa fija a su plazo | Contra la TAMAR actual (últimos 5 días) |
 
+**Comparación con el REM** (último relevamiento cargado, mediana; decisión de Agustin, 14/11/2026):
+- Inflación: para cada CER, la inflación anual que espera el REM entre la liquidación y el mismo plazo del breakeven (cada mes calendario pesa por la fracción de días que cae en el período; los meses ya publicados con el dato del INDEC). Breakeven − REM en puntos porcentuales: positivo = el mercado descuenta más inflación que el REM.
+- Devaluación: el A3500 implícito de cada dollar linked contra el tipo de cambio del REM a la misma fecha, interpolado en forma geométrica entre el A3500 de hoy y los promedios mensuales del REM (ubicados a mitad de mes; también su dato a 12 meses y el de diciembre de cada año). Solo hasta donde llega el REM.
+- TAMAR: la TAMAR implícita de los días por publicar contra el promedio de la TAMAR del REM esos mismos días, y la TEA del bono TAMAR si se cumple el REM. TAMAR del REM (decisión de Agustin, 14/11/2026): la mediana mensual en los meses que trae el relevamiento y, para todos los meses siguientes, su valor "próximos 12 meses" sin modificar. Los valores anuales (diciembre) no se usan.
+
 ## Proyección del CER y rendimiento nominal de los CER
 
 Código: `renta_fija/calculadoras/proyeccion_cer.py` y herramienta `proyectar_cer` (`tools/proyeccion_cer.py`). Escenarios: `renta_fija/escenarios/inflacion.toml`.
@@ -169,7 +174,7 @@ Código: `renta_fija/calculadoras/proyeccion_cer.py` y herramienta `proyectar_ce
 ## Puntos abiertos (para decidir con Agustin)
 
 1. **Para más adelante (decisión de Agustin, 13/11/2026):** duration modificada, convexidad, valor técnico y paridad de los CER cero cupón. Por ahora no hacen falta.
-2. **Pendiente:** usar el REM también para TAMAR y tipo de cambio (ya están en la base del REM), y comparar los breakevens contra el REM.
+2. **Para más adelante:** proyectar los bonos TAMAR y los dollar linked con escenarios propios, como el CER.
 3. **Para más adelante:** curva teórica de tasa fija (regresión de la TEA contra el logaritmo de la duration, con cada letra por encima o por debajo de la curva).
 4. **Para más adelante:** calculadora de letras a descuento (hoy todas las letras vigentes son capitalizables).
 5. **Para más adelante:** la pata tasa fija del dual TTD26 (hoy se calcula solo como TAMAR).
@@ -193,3 +198,4 @@ Código: `renta_fija/calculadoras/proyeccion_cer.py` y herramienta `proyectar_ce
 - **13/11/2026:** breakevens entre curvas (inflación, devaluación, tipo de cambio real, brecha y TAMAR implícita), interpolando al plazo (duration en días), TEA contra TEA, sin ajustar rezagos, con forwards y niveles implícitos.
 - **13/11/2026:** regla del CER verificada (días corridos, período del 16 al 15). Proyección del CER con breakeven, escenarios o inflación plana, y rendimiento nominal de todos los CER.
 - **14/11/2026:** REM cargado desde el Excel del BCRA (relevamiento de octubre de 2026). La fuente `rem` de la proyección del CER usa la mediana mes a mes y completa cada año para cerrar en la anual del REM (decisión de Agustin).
+- **14/11/2026:** breakevens de inflación, devaluación y TAMAR comparados con el REM.

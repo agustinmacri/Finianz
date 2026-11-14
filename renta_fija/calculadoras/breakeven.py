@@ -98,3 +98,48 @@ def tamar_implicita(tea_objetivo: float, precio: float, plazo: int, dias_30_360:
     tna = ((1 + tem) ** (12 * 32 / 365) - 1) * 365 / 32
     tamar_bono = tna - margen
     return (tamar_bono * (len(conocidas) + a_estimar) - sum(conocidas)) / a_estimar
+
+
+# --- Comparación con el REM ---
+
+def inflacion_acumulada(inflacion_mes: dict[tuple[int, int], float], desde, hasta) -> float:
+    """Inflación acumulada entre dos fechas con una inflación por mes calendario: cada mes pesa por la
+    fracción de sus días que cae en el período. Error si falta algún mes."""
+    from datetime import timedelta
+    import calendar
+    total, dia = 1.0, desde
+    while dia < hasta:
+        dias_mes = calendar.monthrange(dia.year, dia.month)[1]
+        fin_mes = dia.replace(day=dias_mes) + timedelta(days=1)
+        tramo = (min(fin_mes, hasta) - dia).days
+        mes = (dia.year, dia.month)
+        if mes not in inflacion_mes:
+            raise ValueError(f"Falta la inflación de {mes[0]}-{mes[1]:02d}.")
+        total *= (1 + inflacion_mes[mes]) ** (tramo / dias_mes)
+        dia = min(fin_mes, hasta)
+    return total - 1
+
+
+def interpolar_log(puntos: list[tuple], x) -> float | None:
+    """Interpolación lineal del logaritmo (crecimiento geométrico) entre puntos (fecha, valor). None fuera del rango."""
+    import math
+    puntos = sorted(puntos)
+    if not puntos or x < puntos[0][0] or x > puntos[-1][0]:
+        return None
+    for (x0, y0), (x1, y1) in zip(puntos, puntos[1:]):
+        if x0 <= x <= x1:
+            peso = 0 if x1 == x0 else (x - x0).days / (x1 - x0).days
+            return math.exp(math.log(y0) + (math.log(y1) - math.log(y0)) * peso)
+    return puntos[-1][1]
+
+
+def camino_con_resto(mensuales: dict[tuple[int, int], float], resto: float):
+    """Función mes -> valor: el dato mensual donde lo hay; después del último, 'resto' tal cual (ej.: la TAMAR
+    del REM: los meses que trae y, para los demás, su valor a 12 meses). Antes del primero, el primero."""
+    primero, ultimo = min(mensuales), max(mensuales)
+
+    def valor(mes: tuple[int, int]) -> float:
+        if mes in mensuales:
+            return mensuales[mes]
+        return resto if mes > ultimo else mensuales[primero]
+    return valor

@@ -80,9 +80,41 @@ def test_herramienta_con_curvas_inventadas():
         breakevens._curvas, breakevens._brecha_actual = original_curvas, original_brecha
 
 
+def test_comparacion_con_rem():
+    """Inflación acumulada por fracción de mes, interpolación geométrica, camino mensual y lectura del REM real."""
+    import tempfile
+    from pathlib import Path
+    import config
+    from admin_datos import rem as db_rem
+    from carga_datos import rem
+    infl = {(2026, 11): 0.02, (2026, 12): 0.03}
+    acum = be.inflacion_acumulada(infl, date(2026, 11, 16), date(2026, 12, 16))
+    assert abs(acum - (1.02 ** (15 / 30) * 1.03 ** (15 / 31) - 1)) < 1e-15
+    assert abs(be.inflacion_acumulada(infl, date(2026, 11, 1), date(2027, 1, 1)) - (1.02 * 1.03 - 1)) < 1e-15
+    puntos = [(date(2026, 11, 15), 1000.0), (date(2027, 11, 15), 1210.0)]
+    medio = be.interpolar_log(puntos, date(2027, 5, 16))
+    assert abs(medio - 1000 * 1.21 ** (182 / 365)) < 1e-9 and be.interpolar_log(puntos, date(2028, 1, 1)) is None
+    camino = be.camino_con_resto({(2026, 11): 0.239, (2026, 12): 0.24, (2027, 4): 0.232}, 0.2627)
+    assert camino((2026, 12)) == 0.24 and camino((2027, 4)) == 0.232
+    assert camino((2027, 5)) == 0.2627 and camino((2029, 1)) == 0.2627 and camino((2026, 10)) == 0.239
+    original = config.DATOS_DIR
+    with tempfile.TemporaryDirectory() as tmp:
+        config.DATOS_DIR = Path(tmp)
+        try:
+            rem.cargar()
+            tc = db_rem.por_mes("TIPO_CAMBIO", incluir_proximos=True)
+            assert tc[(2026, 12)] == 1590 and abs(tc[(2027, 12)] - 1993.508048205643) < 1e-9 and (2027, 10) in tc
+            tamar = db_rem.por_mes("TAMAR", incluir_anuales=False)
+            assert len(tamar) == 6 and tamar[(2027, 4)] == 23.2                   # noviembre 2026 a abril 2027
+            assert abs(db_rem.valores("TAMAR")["prox12"] - 26.27040108488353) < 1e-9
+        finally:
+            config.DATOS_DIR = original
+
+
 if __name__ == "__main__":
     for prueba in (test_interpolar_sin_extrapolar, test_formulas, test_cruzar_y_forwards,
-                   test_tamar_implicita_ida_y_vuelta, test_herramienta_con_curvas_inventadas):
+                   test_tamar_implicita_ida_y_vuelta, test_herramienta_con_curvas_inventadas,
+                   test_comparacion_con_rem):
         prueba()
         print(f"OK  {prueba.__name__}")
     print("Todas las pruebas de breakevens pasaron.")
