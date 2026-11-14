@@ -7,7 +7,7 @@ Validación: `python -m tests.test_renta_fija_cer` reproduce los 19 bonos del Ex
 ## Generales
 
 - Los precios y los cálculos siempre se realizan en **T+1**, salvo que se indique lo contrario.
-- Precio por cada 100 de valor nominal original, para todos los bonos (uniformidad). Se usa el precio como cotiza: nominal y con cupón corrido (dirty).
+- Precio por cada 100 de valor nominal original, para todos los bonos (uniformidad). Se usa el precio como cotiza en pantalla. En los bonos en pesos no se distingue precio clean y dirty (decisión de Agustin, 14/11/2026): el precio sin el interés corrido solo se usa por dentro para el current yield y el cash yield, y no se muestra. La distinción clean/dirty es solo de los hard dollar, que en el exterior cotizan clean.
 - Días hábiles: calendario de BYMA (decisión de Agustin, 13/11/2026), para la liquidación, el rezago del CER y las fechas de pago. Ej.: el 9/11/2026 y el 10/11/2026 fueron inhábiles.
 - Fichas: solo condiciones de emisión (fechas, tasas, cronograma). Los valores de índices (CER) salen de la base propia de series, cargada desde la fuente oficial (decisión de Agustin, 13/11/2026).
 - Fechas de pago: si caen en un día inhábil, se corren al día hábil siguiente, y esa fecha se usa en todos los cálculos (TIR, duration, convexidad).
@@ -45,19 +45,18 @@ Todo por 100 VN original y en términos reales (sin el ajuste CER), salvo los pr
 | Cupón de cada pago | Residual anterior × tasa anual × días 30/360 del período / 360 (semestre completo: × 180/360). El primer período empieza en la emisión |
 | Interés corrido | Residual × tasa × días 30/360 (DAYS360 de Excel, método US) desde el último cupón / 360 |
 | Valor técnico | Residual + interés corrido |
-| Precio dirty real | Precio de mercado / ratio |
-| Precio clean | Dirty real − interés corrido (real); × ratio en pesos |
-| Paridad | Dirty real / valor técnico |
-| TIR real | Tasa efectiva anual (base 365) que iguala los flujos futuros reales, en las fechas corridas, al dirty real (como el XIRR de Excel) |
+| Precio real | Precio de mercado / ratio |
+| Paridad | Precio real / valor técnico |
+| TIR real | Tasa efectiva anual (base 365) que iguala los flujos futuros reales, en las fechas corridas, al precio real (como el XIRR de Excel) |
 | TNA semestral | ((1 + TIR)^(1/2) − 1) × 2 (capitalización semestral exacta; para todos los bonos) |
 | TNA 30 d | ((1 + TIR)^(30/365) − 1) × 365/30 |
 | TEM | (1 + TIR)^(30/365) − 1 |
 | Duration | Macaulay, en años |
 | Duration modificada | Duration / (1 + TIR) |
-| Convexidad | Σ flujo × t(t+1) / (1 + TIR)^(t+2) / dirty real |
-| PV01 / DD | Dirty real × (−MD × Δ + CVX × Δ² / 2), con Δ = 1 pb y 100 pb |
-| Current yield | Cupón actual (tasa × residual) / precio clean real |
-| Cash yield | (Cupones + amortizaciones de los próximos 12 meses) / precio clean real |
+| Convexidad | Σ flujo × t(t+1) / (1 + TIR)^(t+2) / precio real |
+| PV01 / DD | Precio real × (−MD × Δ + CVX × Δ² / 2), con Δ = 1 pb y 100 pb |
+| Current yield | Cupón actual (tasa × residual) / (precio real − interés corrido) |
+| Cash yield | (Cupones + amortizaciones de los próximos 12 meses) / (precio real − interés corrido) |
 
 Correcciones al Excel del TX28 acordadas el 13/11/2026: la fila del último cupón usaba la emisión en lugar de la liquidación; la TIR nominal dejaba afuera el último flujo; algunas sumas tenían rangos desplazados; la duration y la convexidad usaban fechas sin correr mientras la TIR usaba fechas corridas (ahora todo con fechas corridas); el current yield mezclaba unidades.
 
@@ -106,13 +105,14 @@ Bonares (ley argentina, AL) y Globales (ley Nueva York, GD). Bonares AL29, AL30,
 | Precio | Por 100 VN original, en dólares, con cupón corrido. Se calcula con el MEP (ticker D) y con el cable (ticker C) |
 | Cupón de cada pago | Residual × tasa vigente al inicio del período × días 30/360 del período / 360 |
 | Interés corrido | Residual × tasa vigente × días 30/360 desde el último cupón / 360 |
-| Valor técnico, paridad, precio clean | Como los bonos con cupón |
-| TIR | Nominal anual con capitalización semestral, base 30/360: precio = Σ flujo / (1 + TIR/2) ^ (días 30/360 / 180) (convención de mercado; solo para esta familia) |
-| TEA | (1 + TIR/2)² − 1 |
-| Duration / modificada / convexidad | Macaulay en años con esa TIR; modificada = duration / (1 + TIR/2) |
+| Valor técnico, paridad | Como los bonos con cupón |
+| Precio clean | (Precio − interés corrido) / residual × 100: por cada 100 de valor residual (definición de Agustin, 14/11/2026) |
+| TNA | Nominal anual con capitalización semestral, base 30/360: precio = Σ flujo / (1 + TNA/2) ^ (días 30/360 / 180) (convención de mercado; solo para esta familia) |
+| TIR (TEA) | (1 + TNA/2)² − 1 |
+| Duration / modificada / convexidad | Macaulay en años con esa tasa; modificada = duration / (1 + TNA/2) |
 | Current yield, cash yield | Cupón vigente × residual / clean; flujos de 12 meses / clean |
-| Spread contra Treasuries | TIR − rendimiento del Treasury constant maturity (FRED, también semestral) interpolado linealmente a la duration del bono, en pb |
-| Spread ley NY − ley AR | TIR del Global − TIR del Bonar del mismo vencimiento, con el mismo tipo de precio (MEP con MEP, cable con cable) |
+| Spread contra Treasuries | TNA semestral − rendimiento del Treasury constant maturity (FRED, también semestral) interpolado linealmente a la duration del bono, en pb |
+| Spread ley NY − ley AR | TNA del Global − TNA del Bonar del mismo vencimiento, con el mismo tipo de precio (MEP con MEP, cable con cable) |
 | Dólar implícito | Precio en pesos / precio en dólares: MEP con el D, CCL con el C |
 
 Fechas de pago corridas al día hábil siguiente, como en el resto de los bonos (la convención de mercado suele contar el 30/360 hasta la fecha teórica: la diferencia es de uno o dos días por flujo).
@@ -199,3 +199,5 @@ Código: `renta_fija/calculadoras/proyeccion_cer.py` y herramienta `proyectar_ce
 - **13/11/2026:** regla del CER verificada (días corridos, período del 16 al 15). Proyección del CER con breakeven, escenarios o inflación plana, y rendimiento nominal de todos los CER.
 - **14/11/2026:** REM cargado desde el Excel del BCRA (relevamiento de octubre de 2026). La fuente `rem` de la proyección del CER usa la mediana mes a mes y completa cada año para cerrar en la anual del REM (decisión de Agustin).
 - **14/11/2026:** breakevens de inflación, devaluación y TAMAR comparados con el REM.
+- **14/11/2026:** hard dollar: la tasa semestral 30/360 se muestra como TNA y la TEA como TIR, como en las demás familias. Precio clean por 100 de residual. AL29 validado por Agustin en paridad, duration, duration modificada, convexidad y TEA.
+- **14/11/2026:** clean y dirty solo en los hard dollar. En los bonos en pesos (TX28, TX31, TY30P) se muestra el precio (y en los CER el precio real = precio / ratio); el precio sin el interés corrido sigue en el current yield y el cash yield, sin nombrarlo.

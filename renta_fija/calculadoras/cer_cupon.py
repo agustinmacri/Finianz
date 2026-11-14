@@ -10,16 +10,17 @@ términos reales (sin el ajuste CER), salvo los precios nominales:
   × 180/360). El primer período empieza en la emisión.
 - Interés corrido = residual × tasa × días 30/360 desde el último cupón / 360.
 - Valor técnico = residual + interés corrido.
-- Precio dirty real = precio de mercado (nominal, con cupón corrido) / ratio.
-- Precio clean = dirty − interés corrido (real), y × ratio en pesos.
-- Paridad = dirty real / valor técnico.
+- Precio real = precio de mercado (el de pantalla) / ratio. En el código, "precio_dirty_real".
+- Precio sin el interés corrido (real) = precio real − interés corrido: solo para el current yield y el
+  cash yield. En los bonos en pesos no se muestra como "clean" (decisión de Agustin, 14/11/2026).
+- Paridad = precio real / valor técnico.
 - TIR real = la tasa que iguala los flujos futuros (en las fechas de pago corridas al día
-  hábil siguiente) al dirty real. TNA semestral ((1+TIR)^(1/2) − 1) × 2, TNA 30 d y TEM:
+  hábil siguiente) al precio real. TNA semestral ((1+TIR)^(1/2) − 1) × 2, TNA 30 d y TEM:
   equivalentes de la TIR.
 - Duration (Macaulay), duration modificada = duration / (1 + TIR), convexidad, PV01 (1 pb) y
   DD (100 pb): con el motor común.
-- Current yield = tasa × residual / precio clean real.
-- Cash yield = (cupones + amortizaciones de los próximos 12 meses) / precio clean real.
+- Current yield = tasa × residual / precio real sin el interés corrido.
+- Cash yield = (cupones + amortizaciones de los próximos 12 meses) / precio real sin el interés corrido.
 
 Funciones puras: el CER y los días hábiles los recibe el que llama.
 """

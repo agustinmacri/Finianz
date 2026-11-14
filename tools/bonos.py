@@ -243,30 +243,31 @@ def _hard_dollar(f: dict, precio: float | None, fecha: date | None, liquidacion:
         f"Liquidación {liquidacion} (T+{PLAZO_LIQUIDACION}) | residual: {r0['residual']:g} | cupón vigente: "
         f"{_pct(r0['tasa_vigente'])} | interés corrido: {r0['interes_corrido']:.4f} | valor técnico: {r0['valor_tecnico']:.4f}\n"
         f"Próximos flujos por 100 VN en USD (renta + amortización, fechas corridas): {proximos}\n"
-        f"TIR: nominal anual semestral, base 30/360. Precios por 100 VN en dólares.\n"
+        f"TNA: nominal anual con capitalización semestral, base 30/360; TIR = TEA. Precios en dólares por 100 VN original "
+        f"(el clean, por 100 de residual).\n"
     )
     for nombre, r in resultados.items():
         p, origen = precios[nombre]
         texto += (
             f"\n— Con precio {nombre} ({base + SUFIJOS_USD[nombre] if origen != 'precio indicado' else 'indicado'}): "
             f"{p:,.2f} ({origen}) —\n"
-            f"Precio clean: {r['precio_clean']:.4f} | paridad: {_pct(r['paridad'])}\n"
-            f"TIR: {_pct(r['tir'])} | TEA: {_pct(r['tea'])}\n"
+            f"Precio clean (por 100 de residual): {r['precio_clean_residual']:.4f} | paridad: {_pct(r['paridad'])}\n"
+            f"TNA (semestral 30/360): {_pct(r['tir'])} | TIR (TEA): {_pct(r['tea'])}\n"
             f"Duration: {r['duration']:.4f} | duration modificada: {r['duration_modificada']:.4f} | "
             f"convexidad: {r['convexidad']:.4f} | PV01: {r['pv01']:.6f} | DD (100 pb): {r['dd']:.4f}\n"
             f"Current yield: {_pct(r['current_yield'])} | cash yield (12 meses): {_pct(r['cash_yield'])}\n"
         )
         if curva:
             ust = hard_dollar.interpolar(curva, r["duration"])
-            texto += (f"Spread contra Treasuries: {(r['tir'] - ust) * 10000:,.0f} pb (Treasury interpolado a "
+            texto += (f"Spread contra Treasuries (sobre la TNA semestral): {(r['tir'] - ust) * 10000:,.0f} pb (Treasury interpolado a "
                       f"{r['duration']:.2f} años: {_pct(ust)}, FRED al {fecha_ust})\n")
         if par and precio is None:
             try:
                 p_par, _ = _precio(par["ticker"].upper() + SUFIJOS_USD[nombre], fecha)
                 tir_par = calcular(par, p_par)["tir"]
                 ny, ar = (r["tir"], tir_par) if f["ley"] == "NY" else (tir_par, r["tir"])
-                texto += (f"Spread ley NY − ley AR: {(ny - ar) * 10000:,.0f} pb ({par['ticker'].upper()} a "
-                          f"{p_par:,.2f}: TIR {_pct(tir_par)})\n")
+                texto += (f"Spread ley NY − ley AR (sobre la TNA semestral): {(ny - ar) * 10000:,.0f} pb ({par['ticker'].upper()} a "
+                          f"{p_par:,.2f}: TNA {_pct(tir_par)})\n")
             except (ErrorAPI, ValueError) as e:
                 texto += f"Spread ley NY − ley AR: sin dato ({e})\n"
     if not curva:
@@ -347,7 +348,7 @@ def _tasa_fija_cupon(f: dict, precio: float, liquidacion: date) -> str:
     return (
         f"Residual: {r['residual']:g} | interés corrido: {r['interes_corrido']:.4f} | "
         f"valor técnico: {r['valor_tecnico']:.4f}\n"
-        f"Precio clean: {r['precio_clean']:.4f} | paridad: {_pct(r['paridad'])}\n"
+        f"Paridad: {_pct(r['paridad'])}\n"
         f"TIR: {_pct(r['tir_real'])} | TNA semestral: {_pct(r['tna_semestral'])} | TNA 30 d: {_pct(r['tna_30'])} | "
         f"TEM: {_pct(r['tem'])}\n"
         f"Duration: {r['duration']:.4f} | duration modificada: {r['duration_modificada']:.4f} | "
@@ -382,8 +383,7 @@ def _cer_cupon(f: dict, precio: float, cer_corriente: float, liquidacion: date) 
     return (
         f"Ratio: {r['ratio']:,.4f} | residual: {r['residual']:g} | interés corrido: {r['interes_corrido']:.4f} | "
         f"valor técnico: {r['valor_tecnico']:.4f}\n"
-        f"Precio dirty real: {r['precio_dirty_real']:.4f} | clean real: {r['precio_clean_real']:.4f} | "
-        f"clean nominal: {r['precio_clean_nominal']:,.2f} | paridad: {_pct(r['paridad'])}\n"
+        f"Precio real (precio / ratio): {r['precio_dirty_real']:.4f} | paridad: {_pct(r['paridad'])}\n"
         f"TIR real: {_pct(r['tir_real'])} | TNA semestral: {_pct(r['tna_semestral'])} | TNA 30 d: {_pct(r['tna_30'])} | "
         f"TEM: {_pct(r['tem'])}\n"
         f"Duration: {r['duration']:.4f} | duration modificada: {r['duration_modificada']:.4f} | "
@@ -407,7 +407,7 @@ CALCULAR_BONO = {
         "Dollar linked del Tesoro (D30N6, D15E7, D31M7, TZV27, TZV28, TZVD8): precio en dólares con el A3500 del día "
         "de concertación, TNA, TIR y TEM en dólares (actual/365), duration. "
         "Hard dollar (Bonares AL29, AL30, AL35, AE38, AL41 y Globales GD29, GD30, GD35, GD38, GD41, GD46; también "
-        "con el ticker en dólares, ej.: AL30D, GD35C): TIR semestral 30/360 con precio MEP y cable, duration, paridad, "
+        "con el ticker en dólares, ej.: AL30D, GD35C): TNA semestral 30/360 y TIR (TEA) con precio MEP y cable, precio clean por 100 de residual, duration, paridad, "
         "spread contra Treasuries, spread ley NY − ley AR y dólar implícito MEP y CCL; 'precio' es en dólares."
     ),
     "parameters": {

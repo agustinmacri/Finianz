@@ -106,8 +106,8 @@ pagos = [
     { fecha = 2029-01-09, amortizacion = 10.0 },
     { fecha = 2029-07-09, amortizacion = 10.0 },
 ]
-revisado = false
-fuente = "Mismas condiciones que el Global Bonos USD 1% 2029 (Anexo II del Decreto 676/2020); a validar por Agustin"
+revisado = true
+fuente = "Mismas condiciones que el Global Bonos USD 1% 2029 (Anexo II del Decreto 676/2020); validado por Agustin con su planilla el 14/11/2026"
 
 [[bono]]
 ticker = "GD29"

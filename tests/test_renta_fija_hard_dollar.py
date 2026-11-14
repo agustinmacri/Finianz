@@ -53,6 +53,7 @@ def test_indicadores():
     assert r["residual"] == 64 and r["tasa_vigente"] == 0.0075
     assert abs(r["interes_corrido"] - 64 * 0.0075 * 127 / 360) < 1e-12           # 9/7 al 16/11: 127 días 30/360
     assert abs(r["precio_clean"] - (PRECIO - r["interes_corrido"])) < 1e-12
+    assert abs(r["precio_clean_residual"] - (PRECIO - r["interes_corrido"]) / 0.64) < 1e-12   # por 100 de residual
     assert abs(r["paridad"] - PRECIO / (64 + r["interes_corrido"])) < 1e-12
     y = r["tir"]
     n = [(motor.dias_30_360(LIQUIDACION, fl.fecha) / 180, fl.total) for fl in r["flujos"]]
@@ -88,6 +89,7 @@ def test_herramienta():
         texto = bonos.calcular_bono("AL30D", fecha=None)
         assert "Con precio MEP (AL30D)" in texto and "Con precio cable (AL30C)" in texto
         assert "Spread contra Treasuries" in texto and "Spread ley NY − ley AR" in texto
+        assert "TNA (semestral 30/360)" in texto and "TIR (TEA)" in texto and "Precio clean (por 100 de residual)" in texto
         assert "MEP: 1,450.00" in texto and "CCL: 1,438.02" in texto
         assert "AVISO" not in texto                                   # AL30 y GD30 ya validados
         precios.update({"GD46D": 70.0, "GD46C": 70.3, "GD46": 101000.0})

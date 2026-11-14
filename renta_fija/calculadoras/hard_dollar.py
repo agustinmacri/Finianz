@@ -6,10 +6,11 @@ Convenciones (decisiones de Agustin, 13/11/2026; docs/convenciones-renta-fija.md
 - Cupón step-up: cada período devenga la tasa vigente al inicio del período, sobre el residual,
   en base 30/360: residual × tasa × días 30/360 / 360.
 - Interés corrido = residual × tasa vigente × días 30/360 desde el último cupón / 360.
-- TIR: nominal anual con capitalización semestral, base 30/360 (convención de mercado de los bonos
-  en dólares). TEA equivalente = (1 + TIR/2)^2 − 1.
-- Duration (Macaulay, años), duration modificada = duration / (1 + TIR/2) y convexidad con esa TIR.
-- Spread contra Treasuries: TIR − rendimiento del Treasury (constant maturity de FRED, que también es
+- Precio clean = (precio − interés corrido) / residual × 100: por cada 100 de valor residual.
+- TNA: nominal anual con capitalización semestral, base 30/360 (convención de mercado de los bonos en
+  dólares; en el código, "tir"). TIR (TEA) = (1 + TNA/2)^2 − 1.
+- Duration (Macaulay, años), duration modificada = duration / (1 + TNA/2) y convexidad con esa tasa.
+- Spread contra Treasuries: TNA semestral − rendimiento del Treasury (constant maturity de FRED, que también es
   semestral) interpolado linealmente a la duration del bono.
 
 Funciones puras: precios, fechas hábiles y curva de Treasuries los recibe el que llama.
@@ -71,7 +72,8 @@ def calcular(precio: float, liquidacion: date, pagos: list[dict], tramos: list[d
         "tasa_vigente": tasa,
         "interes_corrido": corrido,
         "valor_tecnico": tecnico,
-        "precio_clean": clean,
+        "precio_clean": clean,                              # por 100 VN original (para current y cash yield)
+        "precio_clean_residual": clean / residual * VN,      # por 100 de residual (como se muestra)
         "paridad": precio / tecnico,
         "tir": tir,
         "tea": (1 + tir / FRECUENCIA_TIR) ** FRECUENCIA_TIR - 1,
