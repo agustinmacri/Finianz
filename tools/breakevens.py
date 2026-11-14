@@ -41,6 +41,9 @@ def _curvas(operacion: date, liquidacion: date, fecha_precios: date | None,
                 r = tasa_fija.calcular_capitalizable(precio, tasa_fija.pago_final(f["cupon"], f["emision"], f["vencimiento"]),
                                                      liquidacion, f["vencimiento"])
                 curva, tea, dur = "tasa_fija", r["tea"], r["duration"]
+            elif familia == "tasa_fija_descuento":
+                r = tasa_fija.calcular_descuento(precio, liquidacion, f["vencimiento"])
+                curva, tea, dur = "tasa_fija", r["tea"], r["duration"]
             elif familia == "tasa_fija_cupon":
                 r = tasa_fija.calcular_cupon(precio, liquidacion, f["pagos"], f["cupon"], f["frecuencia"], f["emision"], ajustar)
                 curva, tea, dur = "tasa_fija", r["tir_real"], r["duration"]

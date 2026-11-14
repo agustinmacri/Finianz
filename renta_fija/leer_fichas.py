@@ -19,6 +19,8 @@ CAMPOS = {
     "tasa_fija_cupon": ("ticker", "tipo", "familia", "emision", "vencimiento", "cupon", "frecuencia", "pagos"),
     "tamar_capitalizable": ("ticker", "tipo", "familia", "emision", "vencimiento", "margen"),
     "dolar_linked_bullet": ("ticker", "tipo", "familia", "emision", "vencimiento"),
+    "dolar_linked_cupon": ("ticker", "tipo", "familia", "emision", "vencimiento", "cupon", "frecuencia", "base", "pagos"),
+    "tasa_fija_descuento": ("ticker", "tipo", "familia", "emision", "vencimiento"),
     "hard_dollar": ("ticker", "tipo", "familia", "ley", "emision", "vencimiento", "tramos", "pagos"),  # par opcional
 }
 
@@ -49,7 +51,7 @@ def leer_todas() -> dict[str, list[dict]]:
             if "cer_inicial" in bono:
                 raise ErrorFicha(f"{donde}: 'cer_inicial' no va en la ficha. El CER inicial se toma de la base "
                                  "de series (10.º día hábil anterior a la emisión): borrá esa línea.")
-            if familia in ("cer_cupon", "tasa_fija_cupon", "hard_dollar"):
+            if familia in ("cer_cupon", "tasa_fija_cupon", "hard_dollar", "dolar_linked_cupon"):
                 _validar_pagos(bono, donde)
             if familia == "hard_dollar":
                 _validar_tramos(bono, donde)
@@ -78,8 +80,11 @@ def _validar_pagos(bono: dict, donde: str):
     total = sum(p.get("amortizacion", 0) for p in pagos)
     if abs(total - 100) > 1e-9:
         raise ErrorFicha(f"{donde}: las amortizaciones suman {total}, tienen que sumar 100.")
-    if bono.get("base", "30/360") != "30/360":
-        raise ErrorFicha(f"{donde}: base '{bono['base']}' todavía no implementada (hoy: 30/360).")
+    from renta_fija.calculadoras.motor import BASES
+    if bono.get("base", "30/360") not in BASES:
+        raise ErrorFicha(f"{donde}: base '{bono['base']}' desconocida. Opciones: {', '.join(BASES)}.")
+    if bono["familia"] != "dolar_linked_cupon" and bono.get("base", "30/360") != "30/360":
+        raise ErrorFicha(f"{donde}: en esta familia la base es 30/360.")
 
 
 def _validar_tramos(bono: dict, donde: str):

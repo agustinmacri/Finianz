@@ -74,9 +74,20 @@ def test_ty30p_duration_con_tir_de_mercado():
     assert r["flujos"][-1].fecha == date(2030, 5, 30) and r["flujos"][-1].total == 114.75
 
 
+def test_letra_a_descuento():
+    from datetime import date
+    liq, vto = date(2026, 11, 16), date(2027, 2, 26)
+    r = tasa_fija.calcular_descuento(93.0, liq, vto)
+    plazo = (vto - liq).days
+    assert r["pago_final"] == 100 and r["plazo_residual"] == plazo
+    assert abs(r["tna"] - (100 / 93 - 1) * 365 / plazo) < 1e-15
+    assert abs(r["tea"] - ((100 / 93) ** (365 / plazo) - 1)) < 1e-12
+    assert abs(r["tasa_descuento"] - 0.07 * 365 / plazo) < 1e-15
+
+
 if __name__ == "__main__":
     for prueba in (test_lecaps_como_el_excel, test_vencimientos_corregidos, test_ty30p_como_el_excel,
-                   test_ty30p_duration_con_tir_de_mercado):
+                   test_ty30p_duration_con_tir_de_mercado, test_letra_a_descuento):
         prueba()
         print(f"OK  {prueba.__name__}")
     print("Todas las pruebas de tasa fija pasaron.")

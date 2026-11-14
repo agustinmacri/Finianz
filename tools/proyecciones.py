@@ -201,7 +201,7 @@ def camino_dolar(tipo: str, fuente: str, operacion: date, fecha_precios: date | 
         liquidacion = bonos.feriados.sumar_dias_habiles(operacion, bonos.PLAZO_LIQUIDACION, "BYMA")
         if curvas is None:
             curvas, _, _ = breakevens._curvas(operacion, liquidacion, fecha_precios,
-                                              {"tasa_fija_capitalizable", "tasa_fija_cupon", "dolar_linked_bullet"})
+                                              {"tasa_fija_capitalizable", "tasa_fija_descuento", "tasa_fija_cupon", "dolar_linked_bullet"})
         filas = [f for f in be.cruzar(curvas["dl"], curvas["tasa_fija"], be.devaluacion) if f["acumulado"] is not None]
         if not filas:
             raise ValueError("No alcanzan los dollar linked y la tasa fija con precio para el breakeven.")
@@ -258,7 +258,7 @@ def _contexto(fecha: str | None):
 def _tasa_fija(operacion, liquidacion, fecha_precios, curvas=None):
     from tools import breakevens
     if curvas is None:
-        curvas, _, _ = breakevens._curvas(operacion, liquidacion, fecha_precios, {"tasa_fija_capitalizable", "tasa_fija_cupon"})
+        curvas, _, _ = breakevens._curvas(operacion, liquidacion, fecha_precios, {"tasa_fija_capitalizable", "tasa_fija_descuento", "tasa_fija_cupon"})
     return [(p["x"], p["tea"]) for p in curvas["tasa_fija"]]
 
 

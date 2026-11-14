@@ -104,3 +104,15 @@ pagos = [
     { fecha = 2029-11-30, amortizacion = 0 },
     { fecha = 2030-05-30, amortizacion = 100 },
 ]
+
+# --- Letras a descuento (Lede): familia tasa_fija_descuento ---
+# Pagan 100 al vencimiento y se compran bajo la par. Hoy no hay ninguna vigente. Formato:
+#
+# [[bono]]
+# ticker = "S00X0"
+# tipo = "LEDE"
+# familia = "tasa_fija_descuento"
+# emision = 2027-01-15
+# vencimiento = 2027-04-30
+# revisado = false
+# fuente = "Llamado a licitación del Tesoro"

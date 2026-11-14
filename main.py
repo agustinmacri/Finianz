@@ -21,6 +21,16 @@ def _icono_ruta(ruta: str | None) -> str:
     return " + ".join(ICONOS.get(parte, parte) for parte in (ruta or "general").split("+"))
 
 
+def _agente_de(origen: tuple) -> str | None:
+    """Qué agente hizo el paso. Si el agente macro corre dentro de una herramienta del de renta fija
+    (delegación), el paso aparece anidado bajo renta fija: se muestra como "renta_fija → macro"."""
+    if not origen:
+        return None
+    partes = [p.split(":")[0] for p in origen]
+    agente = partes[0].removeprefix("agente_")
+    return f"{agente} → macro" if "herramientas" in partes[1:] else agente
+
+
 def preguntar(grafo, pregunta: str | None, hilo: str) -> str:
     """Envía la pregunta al grafo, muestra qué hace cada agente y devuelve la respuesta final.
 
@@ -37,7 +47,7 @@ def preguntar(grafo, pregunta: str | None, hilo: str) -> str:
     try:
         # subgraphs=True: también recibimos lo que pasa dentro de cada agente
         for origen, paso in grafo.stream(entrada, cfg, stream_mode="updates", subgraphs=True):
-            agente = origen[0].split(":")[0].removeprefix("agente_") if origen else None
+            agente = _agente_de(origen)
             for nodo, cambios in paso.items():
                 cambios = cambios or {}
                 if nodo == "router":

@@ -223,6 +223,7 @@ def _dual_cer_tamar(lista: list[dict], precio: float, liquidacion: date, operaci
 NOMBRE_FAMILIA = {
     "cer_cero_cupon": "CER", "cer_cupon": "CER", "tasa_fija_capitalizable": "tasa fija",
     "tasa_fija_cupon": "tasa fija", "tamar_capitalizable": "TAMAR", "dolar_linked_bullet": "dollar linked",
+    "dolar_linked_cupon": "dollar linked", "tasa_fija_descuento": "tasa fija",
 }
 
 
@@ -239,6 +240,10 @@ def _calcular_ficha(f: dict, precio: float, liquidacion: date, operacion: date,
         return _tamar_capitalizable(f, precio, liquidacion, operacion)
     if f["familia"] == "dolar_linked_bullet":
         return _dolar_linked_bullet(f, precio, liquidacion, operacion)
+    if f["familia"] == "dolar_linked_cupon":
+        return _dolar_linked_cupon(f, precio, liquidacion, operacion)
+    if f["familia"] == "tasa_fija_descuento":
+        return _tasa_fija_descuento(f, precio, liquidacion)
     return _tasa_fija_cupon(f, precio, liquidacion)
 
 
@@ -437,6 +442,36 @@ def _tasa_fija_capitalizable(f: dict, precio: float, liquidacion: date) -> str:
     )
 
 
+def _tasa_fija_descuento(f: dict, precio: float, liquidacion: date) -> str:
+    r = tasa_fija.calcular_descuento(precio, liquidacion, f["vencimiento"])
+    return (
+        f"Letra a descuento: paga 100 por 100 VN al vencimiento\n"
+        f"Plazo residual: {r['plazo_residual']} días | duration: {r['duration']:.4f}\n"
+        f"TNA: {_pct(r['tna'])} | TEA (TIR): {_pct(r['tea'])} | TEM (30 días): {_pct(r['tem'])} | "
+        f"tasa de descuento: {_pct(r['tasa_descuento'])}"
+    )
+
+
+def _dolar_linked_cupon(f: dict, precio: float, liquidacion: date, operacion: date) -> str:
+    tc, fecha_tc, estimado = _a3500(operacion)
+    r = dolar_linked.calcular_cupon(precio, tc, liquidacion, f["pagos"], f["cupon"], f["emision"], f["base"],
+                                    lambda d: feriados.proximo_dia_habil(d, CALENDARIO_HABILES))
+    origen_tc = (f"A3500 del {fecha_tc}, estimado: el del {operacion} todavía no se publicó" if estimado
+                 else f"A3500 del día de concertación, {fecha_tc}")
+    proximos = "; ".join(f"{fl.fecha}: {fl.renta:.4f} + {fl.amortizacion:g} = {fl.total:.4f}" for fl in r["flujos"][:4])
+    pago = f" | tipo de cambio de pago: {f['tipo_cambio_pago']}" if f.get("tipo_cambio_pago") else ""
+    return (
+        f"Precio en dólares: {r['precio_usd']:.4f} por 100 VN (precio en pesos / {tc:,.4f}, {origen_tc}){pago}\n"
+        f"Residual: {r['residual']:g} | cupón {_pct(f['cupon'])} ({f['base']}) | interés corrido: {r['interes_corrido']:.4f} | "
+        f"valor técnico: {r['valor_tecnico']:.4f} | paridad: {_pct(r['paridad'])}\n"
+        f"TIR (TEA, en dólares): {_pct(r['tir'])} | TNA semestral: {_pct(r['tna_semestral'])} | TEM: {_pct(r['tem'])}\n"
+        f"Duration: {r['duration']:.4f} | duration modificada: {r['duration_modificada']:.4f} | "
+        f"convexidad: {r['convexidad']:.4f} | PV01: {r['pv01']:.6f} | DD (100 pb): {r['dd']:.4f}\n"
+        f"Current yield: {_pct(r['current_yield'])} | cash yield (12 meses): {_pct(r['cash_yield'])}\n"
+        f"Próximos flujos en dólares por 100 VN (renta + amortización, fechas corridas): {proximos}"
+    )
+
+
 def _tasa_fija_cupon(f: dict, precio: float, liquidacion: date) -> str:
     r = tasa_fija.calcular_cupon(precio, liquidacion, f["pagos"], f["cupon"], f["frecuencia"], f["emision"],
                                  lambda d: feriados.proximo_dia_habil(d, CALENDARIO_HABILES))
@@ -504,7 +539,8 @@ CALCULAR_BONO = {
         "TMF28, TMG28 y el dual TTD26): TAMAR proyectada, TEM, pago final teórico, TNA, TEA, TNA 30 d y spread sobre TAMAR. "
         "Los duales CER/TAMAR (TXMJ8, TXMD8, TXMJ9, TXMD9, TXMJ0) se devuelven calculados como CER y como TAMAR. "
         "Dollar linked del Tesoro (D30N6, D15E7, D31M7, TZV27, TZV28, TZVD8): precio en dólares con el A3500 del día "
-        "de concertación, TNA, TIR y TEM en dólares (actual/365), duration. "
+        "de concertación, TNA, TIR y TEM en dólares (actual/365), duration. Dollar linked con cupón (ONs, si hay fichas "
+        "cargadas): TIR en dólares, paridad, duration. Letras a descuento (si hay fichas): TNA, TEA, TEM y tasa de descuento. "
         "Hard dollar (Bonares AL29, AL30, AL35, AE38, AL41 y Globales GD29, GD30, GD35, GD38, GD41, GD46; también "
         "con el ticker en dólares, ej.: AL30D, GD35C): TNA semestral 30/360 y TIR (TEA) con precio MEP y cable, precio clean por 100 de residual, duration, paridad, "
         "spread contra Treasuries, spread ley NY − ley AR y dólar implícito MEP y CCL; 'precio' es en dólares."

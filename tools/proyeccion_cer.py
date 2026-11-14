@@ -104,7 +104,7 @@ def camino_inflacion(fuente: str, liquidacion: date, hasta_mes: pc.Mes, curvas: 
     hasta_mes = max(hasta_mes, desde)
     if fuente == "breakeven" and curvas is None:
         curvas, _, _ = breakevens._curvas(operacion or date.today(), liquidacion, fecha_precios,
-                                          {"tasa_fija_capitalizable", "tasa_fija_cupon", "cer_cero_cupon"})
+                                          {"tasa_fija_capitalizable", "tasa_fija_descuento", "tasa_fija_cupon", "cer_cero_cupon"})
     puntos_tf = [(p["x"], p["tea"]) for p in curvas["tasa_fija"]] if curvas else []
     # Camino de inflación según la fuente
     if fuente == "rem" and db_rem.ultimo():
@@ -204,7 +204,7 @@ def proyectar_cer(fuente: str = "breakeven", ticker: str | None = None, fecha: s
 
         fecha_precios = operacion if fecha else None
         curvas, _, errores = breakevens._curvas(operacion, liquidacion, fecha_precios,
-                                                {"tasa_fija_capitalizable", "tasa_fija_cupon", "cer_cero_cupon"})
+                                                {"tasa_fija_capitalizable", "tasa_fija_descuento", "tasa_fija_cupon", "cer_cero_cupon"})
         puntos_tf = [(p["x"], p["tea"]) for p in curvas["tasa_fija"]]
 
         caminos, descripcion, serie, publicadas = camino_inflacion(fuente, liquidacion, hasta_mes, curvas, operacion, fecha_precios)

@@ -66,3 +66,30 @@ emision = 2026-06-12
 vencimiento = 2028-12-15
 revisado = true
 fuente = "Listado de Agustin, 13/11/2026"
+
+# --- Dollar linked con cupón y amortización (corporativos, ONs): familia dolar_linked_cupon ---
+# Campos además de los de arriba:
+#   cupon        tasa anual en dólares (0.05 = 5%)
+#   frecuencia   pagos de renta por año (2 = semestral, 4 = trimestral)
+#   base         base de cálculo de la renta según el prospecto: 30/360, actual/365 o actual/360
+#   pagos        cronograma: cada fecha de pago y la amortización de ese día (% del VN original); suma 100
+#   tipo_cambio_pago  el del prospecto (ej.: "A3500 promedio de los 3 días hábiles previos al pago")
+#
+# Ejemplo de formato (bono inventado; borrá los # y completá con los datos del prospecto para usarlo):
+#
+# [[bono]]
+# ticker = "XXXXD"
+# tipo = "ON DOLLAR LINKED"
+# familia = "dolar_linked_cupon"
+# emision = 2026-03-15
+# vencimiento = 2028-03-15
+# cupon = 0.04
+# frecuencia = 2
+# base = "actual/365"
+# pagos = [
+#     { fecha = 2026-09-15 }, { fecha = 2027-03-15 }, { fecha = 2027-09-15 },
+#     { fecha = 2028-03-15, amortizacion = 100 },
+# ]
+# tipo_cambio_pago = "A3500 promedio de los 3 días hábiles previos a cada fecha de pago"
+# revisado = false
+# fuente = "Prospecto de la ON"

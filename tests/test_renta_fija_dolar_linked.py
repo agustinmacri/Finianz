@@ -49,8 +49,25 @@ def test_a3500_del_dia_o_estimado():
             config.DATOS_DIR, bonos.carga_series.actualizar = original, original_carga
 
 
+def test_con_cupon():
+    """Dollar linked con cupón (formato de ON): base actual/365, corrido, paridad y TIR igual al motor."""
+    from renta_fija.calculadoras import motor
+    pagos = [{"fecha": date(2026, 9, 15)}, {"fecha": date(2027, 3, 15)}, {"fecha": date(2027, 9, 15)},
+             {"fecha": date(2028, 3, 15), "amortizacion": 100}]
+    liq = date(2026, 11, 16)
+    r = dolar_linked.calcular_cupon(1450.0 * 98, 1450.0, liq, pagos, 0.04, date(2026, 3, 15), "actual/365", lambda d: d)
+    assert abs(r["precio_usd"] - 98) < 1e-12 and r["residual"] == 100
+    assert abs(r["interes_corrido"] - 100 * 0.04 * (liq - date(2026, 9, 15)).days / 365) < 1e-12
+    assert abs(r["paridad"] - 98 / r["valor_tecnico"]) < 1e-15
+    renta_mar27 = 100 * 0.04 * (date(2027, 3, 15) - date(2026, 9, 15)).days / 365
+    assert abs(r["flujos"][0].renta - renta_mar27) < 1e-12 and len(r["flujos"]) == 3
+    assert abs(motor.valor_presente(r["flujos"], liq, r["tir"]) - 98) < 1e-8
+    con_30_360 = dolar_linked.calcular_cupon(1450.0 * 98, 1450.0, liq, pagos, 0.04, date(2026, 3, 15), "30/360", lambda d: d)
+    assert abs(con_30_360["flujos"][0].renta - 2.0) < 1e-12                     # semestre completo 30/360
+
+
 if __name__ == "__main__":
-    for prueba in (test_cuentas, test_fichas, test_a3500_del_dia_o_estimado):
+    for prueba in (test_cuentas, test_fichas, test_a3500_del_dia_o_estimado, test_con_cupon):
         prueba()
         print(f"OK  {prueba.__name__}")
     print("Todas las pruebas de dollar linked pasaron.")

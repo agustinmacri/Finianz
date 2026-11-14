@@ -154,12 +154,24 @@ def dias_30_360(desde: date, hasta: date) -> int:
     return (hasta.year - desde.year) * 360 + (hasta.month - desde.month) * 30 + (d2 - d1)
 
 
+BASES = ("30/360", "actual/365", "actual/360")
+
+
+def fraccion_anio(desde: date, hasta: date, base: str = "30/360") -> float:
+    """Fracción de año entre dos fechas según la base de cálculo del bono."""
+    if base == "30/360":
+        return dias_30_360(desde, hasta) / 360
+    if base == "actual/365":
+        return (hasta - desde).days / 365
+    if base == "actual/360":
+        return (hasta - desde).days / 360
+    raise ValueError(f"Base de cálculo '{base}' desconocida. Opciones: {', '.join(BASES)}.")
+
+
 def interes_corrido(residual: float, tasa_anual: float, ultimo_cupon: date, liquidacion: date,
                     base: str = "30/360") -> float:
     """Interés devengado desde el último cupón hasta la liquidación (por 100 VN)."""
-    if base != "30/360":
-        raise ValueError(f"Base de cálculo '{base}' todavía no implementada.")
-    return residual * tasa_anual * dias_30_360(ultimo_cupon, liquidacion) / 360
+    return residual * tasa_anual * fraccion_anio(ultimo_cupon, liquidacion, base)
 
 
 def tna_equivalente(tir_: float, dias: int) -> float:

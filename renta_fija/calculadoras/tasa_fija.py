@@ -15,7 +15,9 @@ Capitalizables (Lecap "S", Boncap "T"): no pagan cupón; al vencimiento pagan el
 Con cupón y amortización (Bonte, ej. TY30P): la misma matemática que los CER con cupón
 (renta_fija/calculadoras/cer_cupon.py) sin ajuste por CER, es decir con ratio = 1.
 
-A descuento (sin capitalización): para más adelante.
+A descuento (Lede, sin capitalización): pagan 100 al vencimiento y se compran por debajo de la par.
+- Mismas variables que las capitalizables con pago final 100.
+- Tasa de descuento = (1 − precio / 100) × 365 / plazo residual (la forma en que se licitaban).
 """
 from datetime import date
 
@@ -52,3 +54,10 @@ def calcular_cupon(precio: float, liquidacion: date, pagos: list[dict], tasa: fl
     return {k: v for k, v in r.items()
             if k not in ("ratio", "precio_clean_nominal", "precio_dirty_real", "precio_clean_real")} | {
         "precio_dirty": r["precio_dirty_real"], "precio_clean": r["precio_clean_real"]}
+
+
+def calcular_descuento(precio: float, liquidacion: date, vencimiento: date) -> dict:
+    """Letra a descuento: paga 100 al vencimiento."""
+    r = calcular_capitalizable(precio, 100.0, liquidacion, vencimiento)
+    return r | {"tasa_descuento": (1 - precio / 100) * BASE / r["plazo_residual"]}
+

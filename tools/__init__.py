@@ -8,7 +8,7 @@ import functools
 
 from langchain_core.tools import StructuredTool
 
-from . import base_propia, bonos, breakevens, calendario, datos_macro, noticias, precios, proyeccion_cer, proyecciones, python_exec
+from . import base_propia, bonos, breakevens, calendario, curvas, datos_macro, noticias, precios, proyeccion_cer, proyecciones, python_exec
 
 
 def _segura(nombre: str, funcion):
@@ -38,7 +38,7 @@ HERRAMIENTAS_MACRO = _convertir([*datos_macro.HERRAMIENTAS, *precios.HERRAMIENTA
                                  (python_exec.DEFINICION, python_exec.ejecutar)])
 # Renta fija trabaja solo con lo que está en el sistema (calculadoras, base propia, precios, calendario).
 # Lo que no está, se lo pide al agente macro: esa herramienta se agrega al armar el grafo (graph/delegacion.py).
-HERRAMIENTAS_RENTA_FIJA = _convertir([*bonos.HERRAMIENTAS, *breakevens.HERRAMIENTAS, *proyeccion_cer.HERRAMIENTAS,
+HERRAMIENTAS_RENTA_FIJA = _convertir([*bonos.HERRAMIENTAS, *breakevens.HERRAMIENTAS, *curvas.HERRAMIENTAS, *proyeccion_cer.HERRAMIENTAS,
                                       *proyecciones.HERRAMIENTAS, *base_propia.HERRAMIENTAS, *precios.HERRAMIENTAS,
                                       *calendario.HERRAMIENTAS])
 HERRAMIENTAS_NOTICIAS = _convertir([*noticias.HERRAMIENTAS, *calendario.HERRAMIENTAS])

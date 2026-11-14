@@ -81,6 +81,10 @@ Código: `renta_fija/calculadoras/tasa_fija.py`. Fichas: `renta_fija/fichas/tasa
 
 **Con cupón (Bonte, ej. TY30P):** las mismas variables que los CER con cupón, en pesos (sin ratio).
 
+**A descuento (Lede, familia `tasa_fija_descuento`):** pagan 100 al vencimiento; mismas variables que las capitalizables con pago final 100, más la tasa de descuento = (1 − precio / 100) × 365 / plazo residual. Hoy no hay ninguna vigente; la ficha de ejemplo está comentada en `tasa_fija.toml`. Entran en la curva de tasa fija.
+
+**Curva teórica** (herramienta `curva_tasa_fija`, `renta_fija/calculadoras/curva.py`): TEA = a + b × ln(duration en años), por mínimos cuadrados, con las Lecap, Boncap y letras a descuento (el Bonte, opcional). Para cada bono: TEA de la curva, desvío en pb y desvío contra sus vecinos de plazo. Lectura (Agustin, 14/11/2026): estar por encima o por debajo de la curva no implica barato o caro; sirve para comparar bonos de plazos parecidos.
+
 Correcciones a la planilla del 13/11/2026: vencimientos del T15E7 (15/01/2027, no 17/01) y del T31Y7 (31/05/2027, no 30/05), confirmados por Agustin el 13/11/2026. En el TY30P, la duration, la convexidad y el PV01 se calculaban con la tasa fija del "rate mover" (28,5974% TNA) en lugar de la TIR de mercado, y en base 360; ahora con la TIR de mercado y base 365. Emisión del TY30P: 04/06/2025.
 
 ## TAMAR
@@ -132,6 +136,8 @@ Valor nominal en dólares; se suscriben, cotizan y pagan en pesos al tipo de cam
 | TNA | (100 / precio en dólares − 1) × 365 / plazo residual (actual/365, distinto de los hard dollar) |
 | TIR | (1 + TNA × plazo / 365) ^ (365 / plazo) − 1 |
 | Duration, TEM | Plazo / 365; TEM de 30 días corridos |
+
+**Con cupón y amortización (corporativos, ONs; familia `dolar_linked_cupon`):** flujos en dólares por 100 VN; renta = residual × tasa × fracción de año según la base del prospecto (30/360, actual/365 o actual/360); precio en dólares con el A3500 del día de concertación; interés corrido, valor técnico y paridad; TIR efectiva anual (base 365, fechas corridas), TNA semestral exacta, TEM, duration, duration modificada, convexidad, PV01, current y cash yield. El tipo de cambio de pago de cada prospecto queda en la ficha (informativo). Ficha de ejemplo comentada en `dolar_linked.toml`; por ahora no hay ninguna cargada.
 
 ## Breakevens entre curvas
 
@@ -194,11 +200,9 @@ Código: `tools/proyecciones.py` (herramientas `proyectar_tamar` y `proyectar_do
 
 ## Puntos abiertos (para decidir con Agustin)
 
-1. **Para más adelante:** curva teórica de tasa fija (regresión de la TEA contra el logaritmo de la duration, con cada letra por encima o por debajo de la curva).
-2. **Para más adelante:** calculadora de letras a descuento (hoy todas las letras vigentes son capitalizables).
-3. **Para más adelante:** dollar linked corporativos con cupones y amortizaciones, con el tipo de cambio de pago de cada prospecto.
-4. **Para más adelante (decisión de Agustin, 14/11/2026):** base propia de la curva de Treasuries (hoy se baja de FRED en cada consulta).
-5. **Objetivo:** que las condiciones de emisión de cada bono salgan del análisis de los prospectos, sin carga manual.
+1. **Próximo, con prioridad (Agustin, 14/11/2026):** fichas desde los prospectos y carga de los bonos nuevos de cada licitación.
+2. **Después:** cargar ONs dollar linked reales (la calculadora ya está).
+3. **Para más adelante (decisión de Agustin, 14/11/2026):** base propia de la curva de Treasuries (hoy se baja de FRED en cada consulta).
 
 ## Historial de cambios de definición
 
@@ -223,3 +227,4 @@ Código: `tools/proyecciones.py` (herramientas `proyectar_tamar` y `proyectar_do
 - **14/11/2026:** hard dollar validados por Agustin (todos los Bonares y Globales). TTD26: pata tasa fija con cupón 2,14% y pago final como las Lecap; al vencimiento paga la pata de mayor pago final. La herramienta muestra las dos patas, cuál paga con la TAMAR estimada y la TAMAR de los días por publicar que iguala las dos.
 - **14/11/2026:** en las Lecap/Boncap, la tasa de emisión se llama cupón de licitación (campo `cupon` de la ficha, antes `tem`), para no confundirla con la TEM de mercado que da la calculadora.
 - **14/11/2026:** CER cero cupón con valor técnico, paridad, duration modificada y convexidad. Duales CER/TAMAR con las dos patas y cuál paga. Escenarios de TAMAR, dólar oficial, MEP y CCL. Nuevo agente de renta fija.
+- **14/11/2026:** curva teórica de tasa fija (con la lectura de vecinos de plazo), letras a descuento y dollar linked con cupón (bases 30/360, actual/365 y actual/360).
