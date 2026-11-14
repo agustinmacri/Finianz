@@ -39,27 +39,33 @@ def leer_todas() -> dict[str, list[dict]]:
             raise ErrorFicha(f"{archivo.name} tiene un error de formato: {e}") from None
         for i, bono in enumerate(datos.get("bono", []), start=1):
             donde = f"{archivo.name}, bono n.º {i} ({bono.get('ticker', 'sin ticker')})"
-            familia = bono.get("familia")
-            if familia not in CAMPOS:
-                raise ErrorFicha(f"{donde}: familia '{familia}' desconocida. Opciones: {', '.join(CAMPOS)}.")
-            for campo in CAMPOS[familia]:
-                if bono.get(campo) in (None, ""):
-                    raise ErrorFicha(f"{donde}: falta el campo '{campo}'.")
-            for campo in ("emision", "vencimiento"):
-                if campo in bono and not isinstance(bono[campo], date):
-                    raise ErrorFicha(f"{donde}: '{campo}' tiene que ser una fecha AAAA-MM-DD sin comillas.")
-            if "cer_inicial" in bono:
-                raise ErrorFicha(f"{donde}: 'cer_inicial' no va en la ficha. El CER inicial se toma de la base "
-                                 "de series (10.º día hábil anterior a la emisión): borrá esa línea.")
-            if familia in ("cer_cupon", "tasa_fija_cupon", "hard_dollar", "dolar_linked_cupon"):
-                _validar_pagos(bono, donde)
-            if familia == "hard_dollar":
-                _validar_tramos(bono, donde)
+            validar(bono, donde)
+            familia = bono["familia"]
             ticker = bono["ticker"].upper()
             if any(otra["familia"] == familia for otra in fichas.get(ticker, [])):
                 raise ErrorFicha(f"{donde}: el ticker {ticker} está repetido en la familia {familia}.")
             fichas.setdefault(ticker, []).append(bono)
     return fichas
+
+
+def validar(bono: dict, donde: str):
+    """Revisa una ficha: familia conocida, campos obligatorios, fechas, cronograma y step-up."""
+    familia = bono.get("familia")
+    if familia not in CAMPOS:
+        raise ErrorFicha(f"{donde}: familia '{familia}' desconocida. Opciones: {', '.join(CAMPOS)}.")
+    for campo in CAMPOS[familia]:
+        if bono.get(campo) in (None, ""):
+            raise ErrorFicha(f"{donde}: falta el campo '{campo}'.")
+    for campo in ("emision", "vencimiento"):
+        if campo in bono and not isinstance(bono[campo], date):
+            raise ErrorFicha(f"{donde}: '{campo}' tiene que ser una fecha AAAA-MM-DD sin comillas.")
+    if "cer_inicial" in bono:
+        raise ErrorFicha(f"{donde}: 'cer_inicial' no va en la ficha. El CER inicial se toma de la base "
+                         "de series (10.º día hábil anterior a la emisión): borrá esa línea.")
+    if familia in ("cer_cupon", "tasa_fija_cupon", "hard_dollar", "dolar_linked_cupon"):
+        _validar_pagos(bono, donde)
+    if familia == "hard_dollar":
+        _validar_tramos(bono, donde)
 
 
 def todas() -> list[dict]:

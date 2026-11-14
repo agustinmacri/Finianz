@@ -76,6 +76,7 @@ Finianz/
 │   ├── proyecciones.py  # proyectar_tamar y proyectar_dolar (oficial, MEP, CCL) con escenarios
 │   ├── base_propia.py   # consultar_base: datos guardados (CER, TAMAR, A3500, inflación, REM), sin API
 │   ├── curvas.py        # curva_tasa_fija: curva teórica de Lecap/Boncap
+│   ├── lector_fichas.py # leer_documento_bonos: borradores de fichas desde un documento
 │   ├── guardia.py       # límites de seguridad del código que escribe el agente
 │   ├── calendario.py    # consultar_feriados, calcular_dia_habil, consultar_publicaciones
 │   └── python_exec.py   # ejecutar_python, con acceso a los datos
@@ -106,6 +107,7 @@ Finianz/
 │   ├── publicaciones_regla.py  # fechas por regla de días hábiles (ISM, recaudación)
 │   ├── precios.py              # precios diarios desde PPI, solo los días que faltan
 │   ├── series.py               # CER, TAMAR y A3500 desde el BCRA, toda la historia y después los días nuevos
+│   ├── fichas_documentos.py    # lector de fichas: borradores desde llamados a licitación y prospectos, y aprobación
 │   └── catalogo.py      # lectura del catálogo de publicaciones
 ├── datos/               # las bases (no se suben a git)
 │   ├── feriados.db
@@ -120,7 +122,7 @@ Finianz/
 │   ├── publicaciones.toml      # catálogo de publicaciones que se siguen, con su importancia
 │   └── indec/                  # calendarios semestrales del INDEC en PDF
 ├── prompts/             # instrucciones de cada agente
-├── tests/               # pruebas automáticas (python -m tests.test_renta_fija_cer, ..._cer_cupon, ..._tasa_fija, ..._tamar, ..._hard_dollar, ..._dolar_linked, tests.test_breakevens, tests.test_proyeccion_cer, tests.test_proyecciones, tests.test_curva, tests.test_grafo, tests.test_series)
+├── tests/               # pruebas automáticas (python -m tests.test_renta_fija_cer, ..._cer_cupon, ..._tasa_fija, ..._tamar, ..._hard_dollar, ..._dolar_linked, tests.test_breakevens, tests.test_proyeccion_cer, tests.test_proyecciones, tests.test_curva, tests.test_fichas_documentos, tests.test_grafo, tests.test_series)
 └── docs/
     ├── arquitectura-multiagente.md   # arquitectura completa y plan por fases
     └── convenciones-renta-fija.md    # cómo se calcula cada variable de cada bono
@@ -208,6 +210,8 @@ Las publicaciones con fecha fija por regla (por ejemplo, el ISM manufacturero sa
 Qué publicaciones se siguen y con qué importancia se define en `calendarios/publicaciones.toml`. Las del INDEC que no están en el catálogo también se guardan, con importancia baja.
 
 **Series (CER, TAMAR y A3500).** `datos/series.db` guarda el CER diario del BCRA desde 2002, la TAMAR de bancos privados (variable 44, % TNA, días hábiles) y el tipo de cambio A3500 (variable 5). La primera vez se baja toda la historia (tarda unos segundos) y después solo los días nuevos; como el BCRA publica el CER por adelantado, se piden también los próximos 60 días. Las calculadoras de bonos toman de acá el CER corriente y el CER inicial de cada bono (el del 10.º día hábil anterior a su emisión), así las fichas solo tienen condiciones de emisión. Se regenera en cualquier momento. Para comparar las bases con las de tus Excel: `python -m tests.verificar_cer_inicial`.
+
+**Fichas de bonos nuevos.** `python -m carga_datos.fichas_documentos leer <URL o archivo>` lee un llamado a licitación del Tesoro (o su resultado, una resolución o un prospecto) y deja borradores de fichas de los bonos nuevos en `renta_fija/fichas/borradores/borradores.toml`, con lo que falta anotado como pendiente. Esa carpeta está en `.gitignore`: lo que no aprobaste no se sube. Después de revisarlos: `... pendientes`, `... aprobar <TICKER>` (pasa la ficha al archivo de su familia) o `... descartar <TICKER>`. El agente de renta fija también lo hace si le pasás el documento, pero no aprueba.
 
 **REM.** El BCRA publica cada mes un Excel con las expectativas del Relevamiento de Expectativas de Mercado (inflación, TAMAR, tipo de cambio, PIB...) mes a mes y por año. La API solo trae la inflación a 12 meses, así que se baja el Excel del sitio del BCRA a `fuentes/rem/` y `python actualizar.py` lo carga en `datos/rem.db`. La proyección del CER lo usa con la fuente `rem`.
 

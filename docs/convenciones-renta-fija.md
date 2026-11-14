@@ -198,9 +198,18 @@ Código: `tools/proyecciones.py` (herramientas `proyectar_tamar` y `proyectar_do
 - Escenarios de dólar: `nivel` (pesos por dólar de algunos meses, a mitad de mes), `mensual` (variación de algunos meses) y `resto` (variación mensual después). Entre puntos, crecimiento geométrico; después del último, `resto` o la variación del último tramo.
 - **Fuente `camino:`** (inflación, TAMAR y dólar), para usar en la consulta un supuesto del usuario o del agente macro sin guardarlo como escenario: claves `AAAA-MM` (un mes), `AAAA` (un año, solo inflación) y `resto`, separadas con punto y coma. Ej.: `camino:2026-12=2%;2027-01=1.8%;2027=22%;resto=1.5%`. En el dólar, un número es el nivel en pesos y un porcentaje, la variación mensual.
 
+## Fichas desde documentos (lector de fichas)
+
+Código: `carga_datos/fichas_documentos.py` (comando) y herramienta `leer_documento_bonos` del agente de renta fija. Decisiones de Agustin, 14/11/2026: se arranca por los llamados a licitación del Tesoro; lo extraído queda como borrador hasta que él lo aprueba; se dispara por comando o pidiéndoselo al agente.
+
+- Un modelo lee el documento (URL, PDF, HTML o TXT) y devuelve cada instrumento con sus condiciones, con salida estructurada y una cita del texto para verificar. Lo que no está en el texto o se define en la licitación (la TEM de una Lecap nueva, el margen de un TAMAR) queda vacío y anotado como pendiente: no se inventa.
+- Los bonos que ya tienen ficha (reaperturas) se informan y no se tocan. Los nuevos quedan en `renta_fija/fichas/borradores/borradores.toml` con revisado = false; ninguna calculadora los usa y la carpeta está en `.gitignore` (lo no aprobado no se sube a git).
+- Con el resultado de la licitación se completan los borradores del llamado (ticker, cupón, margen).
+- `aprobar <TICKER>` valida el borrador con las mismas reglas que el resto de las fichas y lo agrega al archivo de su familia con revisado = true. El agente no aprueba.
+
 ## Puntos abiertos (para decidir con Agustin)
 
-1. **Próximo, con prioridad (Agustin, 14/11/2026):** fichas desde los prospectos y carga de los bonos nuevos de cada licitación.
+1. **En prueba:** lector de fichas con llamados y resultados reales; después, resoluciones y prospectos de ONs.
 2. **Después:** cargar ONs dollar linked reales (la calculadora ya está).
 3. **Para más adelante (decisión de Agustin, 14/11/2026):** base propia de la curva de Treasuries (hoy se baja de FRED en cada consulta).
 
@@ -228,3 +237,4 @@ Código: `tools/proyecciones.py` (herramientas `proyectar_tamar` y `proyectar_do
 - **14/11/2026:** en las Lecap/Boncap, la tasa de emisión se llama cupón de licitación (campo `cupon` de la ficha, antes `tem`), para no confundirla con la TEM de mercado que da la calculadora.
 - **14/11/2026:** CER cero cupón con valor técnico, paridad, duration modificada y convexidad. Duales CER/TAMAR con las dos patas y cuál paga. Escenarios de TAMAR, dólar oficial, MEP y CCL. Nuevo agente de renta fija.
 - **14/11/2026:** curva teórica de tasa fija (con la lectura de vecinos de plazo), letras a descuento y dollar linked con cupón (bases 30/360, actual/365 y actual/360).
+- **14/11/2026:** lector de fichas desde documentos (llamados a licitación), con borradores y aprobación.
