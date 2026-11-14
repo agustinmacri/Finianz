@@ -66,6 +66,29 @@ def _rem_12_meses() -> tuple[float, str]:
     raise ErrorAPI("no se encontró en el BCRA la inflación esperada del REM a 12 meses.")
 
 
+def rem_inflacion() -> tuple[str, dict, dict] | None:
+    """(relevamiento, inflación mensual {(año, mes): fracción}, anual {año: fracción}) del último REM, o None."""
+    relevamiento = db_rem.ultimo()
+    if relevamiento is None:
+        return None
+    ipc = db_rem.valores("IPC", relevamiento)
+    mensuales = {(int(p[:4]), int(p[5:7])): v / 100 for p, v in ipc.items() if len(p) == 7 and p[4] == "-"}
+    anuales = {int(p): v / 100 for p, v in ipc.items() if p.isdigit()}
+    return relevamiento, mensuales, anuales
+
+
+def inflacion_rem_por_mes(hasta_mes: pc.Mes) -> tuple[str, dict[pc.Mes, float]] | None:
+    """Inflación de cada mes: la publicada (leída del CER) y, desde el primer mes sin publicar, el camino del REM."""
+    rem = rem_inflacion()
+    if rem is None:
+        return None
+    relevamiento, mensuales, anuales = rem
+    publicadas = pc.inflacion_publicada(_serie_cer())
+    desde = pc.sumar_meses(max(publicadas), 1)
+    caminos = pc.camino(publicadas, mensuales, anuales, desde, max(hasta_mes, desde))
+    return relevamiento, publicadas | {m: v for m, (v, _) in caminos.items()}
+
+
 def _nombre_mes(mes: pc.Mes) -> str:
     return f"{MESES[mes[1] - 1]}-{mes[0] % 100:02d}"
 
@@ -99,10 +122,7 @@ def proyectar_cer(fuente: str = "breakeven", ticker: str | None = None, fecha: s
 
         # Camino de inflación según la fuente
         if fuente == "rem" and db_rem.ultimo():
-            relevamiento = db_rem.ultimo()
-            ipc = db_rem.valores("IPC", relevamiento)
-            mensuales = {(int(p[:4]), int(p[5:7])): v / 100 for p, v in ipc.items() if len(p) == 7 and p[4] == "-"}
-            anuales = {int(p): v / 100 for p, v in ipc.items() if p.isdigit()}
+            relevamiento, mensuales, anuales = rem_inflacion()
             caminos = pc.camino(publicadas, mensuales, anuales, desde, hasta_mes)
             meses_rem = sorted(m for m in mensuales if m >= desde)
             descripcion = (f"REM del BCRA, relevamiento {relevamiento} (mediana). Mes a mes"

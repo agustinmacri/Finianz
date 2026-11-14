@@ -307,6 +307,7 @@ def _datos_tamar(f: dict, corte: date) -> dict:
     desde_estimar = max(inicio, ultima_fecha + timedelta(days=1))
     a_estimar = len(feriados.dias_habiles_entre(desde_estimar, fin, CALENDARIO_HABILES))
     return {"inicio": inicio, "fin": fin, "conocidas": conocidas, "a_estimar": a_estimar, "referencia": referencia,
+            "desde_estimar": desde_estimar,
             "tamar_bono": tamar.tamar_del_bono(conocidas, a_estimar, referencia),
             "ultimas": (ultimas[0]["fecha"], ultimas[-1]["fecha"])}
 
