@@ -4,7 +4,8 @@ Definiciones de Agustin (docs/convenciones-renta-fija.md), tomadas de su planill
 (13/11/2026). Todo por cada 100 de valor nominal original, en T+1.
 
 Capitalizables (Lecap "S", Boncap "T"): no pagan cupón; al vencimiento pagan el pago final.
-- Pago final = 100 × (1 + TEM de emisión) ^ (días 30/360 entre emisión y vencimiento / 30).
+- Pago final = 100 × (1 + cupón de licitación) ^ (días 30/360 entre emisión y vencimiento / 30). El cupón de
+  licitación es la tasa mensual capitalizable con la que se emite (la TEM de emisión).
 - Plazo residual = días corridos entre la liquidación y el vencimiento.
 - Duration = plazo residual / 365.
 - TNA = (pago final / precio − 1) × 365 / plazo residual.
@@ -23,9 +24,9 @@ from renta_fija.calculadoras import cer_cupon, motor
 BASE = 365
 
 
-def pago_final(tem_emision: float, emision: date, vencimiento: date) -> float:
+def pago_final(cupon: float, emision: date, vencimiento: date) -> float:
     """Lo que paga una Lecap/Boncap al vencimiento, por 100 VN, según sus condiciones de emisión."""
-    return 100 * (1 + tem_emision) ** (motor.dias_30_360(emision, vencimiento) / 30)
+    return 100 * (1 + cupon) ** (motor.dias_30_360(emision, vencimiento) / 30)
 
 
 def calcular_capitalizable(precio: float, pago_final_: float, liquidacion: date, vencimiento: date) -> dict:

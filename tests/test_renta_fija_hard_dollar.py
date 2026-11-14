@@ -94,7 +94,7 @@ def test_herramienta():
         assert "AVISO" not in texto                                   # AL30 y GD30 ya validados
         precios.update({"GD46D": 70.0, "GD46C": 70.3, "GD46": 101000.0})
         gd46 = bonos.calcular_bono("GD46")
-        assert "Spread ley" not in gd46 and "AVISO" in gd46           # sin par de ley argentina; ficha por revisar
+        assert "Spread ley" not in gd46 and "AVISO" not in gd46       # sin par de ley argentina; ficha validada
         solo = bonos.calcular_bono("GD30", precio=62.0)
         assert "Con precio MEP (indicado)" in solo and "cable" not in solo
     finally:

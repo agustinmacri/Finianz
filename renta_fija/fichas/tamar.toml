@@ -24,7 +24,7 @@ vencimiento = 2026-12-15
 margen = 0.0
 revisado = true
 fuente = "Planilla de TAMAR de Agustin (ejemplo_tamar.xlsx), 13/11/2026"
-nota = "Dual: paga el mayor entre la tasa fija y TAMAR. Se calcula solo la pata TAMAR."
+nota = "Dual: al vencimiento paga la pata que dé el mayor pago final (tasa fija con cupón 2,14% o TAMAR). Se muestra calculado de las dos formas."
 
 [[bono]]
 ticker = "TMF27"

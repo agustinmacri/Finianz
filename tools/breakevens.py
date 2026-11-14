@@ -38,7 +38,7 @@ def _curvas(operacion: date, liquidacion: date, fecha_precios: date | None,
             precio, _ = bonos._precio(ticker + ("D" if familia == "hard_dollar" else ""), fecha_precios)
             punto = {"ticker": ticker, "vencimiento": f["vencimiento"], "precio": precio}
             if familia == "tasa_fija_capitalizable":
-                r = tasa_fija.calcular_capitalizable(precio, tasa_fija.pago_final(f["tem"], f["emision"], f["vencimiento"]),
+                r = tasa_fija.calcular_capitalizable(precio, tasa_fija.pago_final(f["cupon"], f["emision"], f["vencimiento"]),
                                                      liquidacion, f["vencimiento"])
                 curva, tea, dur = "tasa_fija", r["tea"], r["duration"]
             elif familia == "tasa_fija_cupon":

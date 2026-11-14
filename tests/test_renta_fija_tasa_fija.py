@@ -28,7 +28,7 @@ PUBLICADOS = {"T15E7": 161.104, "T31Y7": 151.563}
 def test_lecaps_como_el_excel():
     for t, (precio, pf, tna, tea, tem) in LECAPS_EXCEL.items():
         f = leer_fichas.ficha(t)
-        pago = tasa_fija.pago_final(f["tem"], f["emision"], f["vencimiento"])
+        pago = tasa_fija.pago_final(f["cupon"], f["emision"], f["vencimiento"])
         assert abs(pago - pf) < 1e-9, (t, pago, pf)
         r = tasa_fija.calcular_capitalizable(precio, pago, LIQUIDACION, f["vencimiento"])
         assert abs(r["tna"] - tna) < 1e-9 and abs(r["tea"] - tea) < 1e-9 and abs(r["tem"] - tem) < 1e-9, t
@@ -38,7 +38,7 @@ def test_lecaps_como_el_excel():
 def test_vencimientos_corregidos():
     for t, publicado in PUBLICADOS.items():
         f = leer_fichas.ficha(t)
-        assert round(tasa_fija.pago_final(f["tem"], f["emision"], f["vencimiento"]), 3) == publicado, t
+        assert round(tasa_fija.pago_final(f["cupon"], f["emision"], f["vencimiento"]), 3) == publicado, t
 
 
 def _ajustar(d: date) -> date:

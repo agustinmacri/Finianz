@@ -1,8 +1,8 @@
 # Fichas técnicas de los bonos y letras a tasa fija en pesos.
 #
 # Capitalizables (familia tasa_fija_capitalizable: Lecap "S", Boncap "T"):
-#   emision, vencimiento, tem (TEM de emisión / tasa de corte). El pago final se calcula:
-#   100 × (1 + tem) ^ (días 30/360 entre emisión y vencimiento / 30).
+#   emision, vencimiento, cupon (cupón de licitación: tasa mensual capitalizable, la TEM de emisión). El pago final se calcula:
+#   100 × (1 + cupon) ^ (días 30/360 entre emisión y vencimiento / 30).
 #
 # Con cupón (familia tasa_fija_cupon: Bonte): como los CER con cupón, sin cer_inicial
 #   (cupon, frecuencia, base y el cronograma de pagos, que tiene que sumar 100 de amortización).
@@ -11,12 +11,23 @@
 # Las definiciones de cada variable están en docs/convenciones-renta-fija.md.
 
 [[bono]]
+ticker = "TTD26"
+tipo = "DUAL TAMAR/TASA FIJA"
+familia = "tasa_fija_capitalizable"
+emision = 2025-01-29
+vencimiento = 2026-12-15
+cupon = 0.0214
+revisado = true
+fuente = "Pata tasa fija del dual TTD26: cupón 2,14% (Agustin, 14/11/2026); la pata TAMAR está en tamar.toml"
+nota = "Dual: al vencimiento paga la pata que dé el mayor pago final (tasa fija con cupón 2,14% o TAMAR). Se muestra calculado de las dos formas."
+
+[[bono]]
 ticker = "S30N6"
 tipo = "LECAP"
 familia = "tasa_fija_capitalizable"
 emision = 2025-12-15
 vencimiento = 2026-11-30
-tem = 0.023
+cupon = 0.023
 revisado = true
 fuente = "Planilla de tasa fija de Agustin (tasa_fija.xlsx), 13/11/2026"
 
@@ -26,7 +37,7 @@ tipo = "BONCAP"
 familia = "tasa_fija_capitalizable"
 emision = 2025-01-31
 vencimiento = 2027-01-15
-tem = 0.0205
+cupon = 0.0205
 revisado = true
 fuente = "Planilla de tasa fija de Agustin (tasa_fija.xlsx), 13/11/2026; vencimiento 15/01/2027 confirmado por Agustin (el Excel decía 17/01)"
 
@@ -36,7 +47,7 @@ tipo = "LECAP"
 familia = "tasa_fija_capitalizable"
 emision = 2026-08-31
 vencimiento = 2027-01-29
-tem = 0.0225
+cupon = 0.0225
 revisado = true
 fuente = "Planilla de tasa fija de Agustin (tasa_fija.xlsx), 13/11/2026"
 
@@ -46,7 +57,7 @@ tipo = "BONCAP"
 familia = "tasa_fija_capitalizable"
 emision = 2025-10-31
 vencimiento = 2027-04-30
-tem = 0.0255
+cupon = 0.0255
 revisado = true
 fuente = "Planilla de tasa fija de Agustin (tasa_fija.xlsx), 13/11/2026"
 
@@ -56,7 +67,7 @@ tipo = "BONCAP"
 familia = "tasa_fija_capitalizable"
 emision = 2025-12-15
 vencimiento = 2027-05-31
-tem = 0.024
+cupon = 0.024
 revisado = true
 fuente = "Planilla de tasa fija de Agustin (tasa_fija.xlsx), 13/11/2026; vencimiento 31/05/2027 confirmado por Agustin (el Excel decía 30/05)"
 
@@ -66,7 +77,7 @@ tipo = "BONCAP"
 familia = "tasa_fija_capitalizable"
 emision = 2026-01-16
 vencimiento = 2027-06-30
-tem = 0.0258
+cupon = 0.0258
 revisado = true
 fuente = "Planilla de tasa fija de Agustin (tasa_fija.xlsx), 13/11/2026"
 

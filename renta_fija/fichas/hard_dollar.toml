@@ -140,8 +140,8 @@ pagos = [
     { fecha = 2029-01-09, amortizacion = 10.0 },
     { fecha = 2029-07-09, amortizacion = 10.0 },
 ]
-revisado = false
-fuente = "Anexo II del Decreto 676/2020 (Bonos Globales Bonos USD 1% 2029); a validar por Agustin"
+revisado = true
+fuente = "Anexo II del Decreto 676/2020 (Bonos Globales Bonos USD 1% 2029); validado por Agustin con su planilla el 14/11/2026"
 
 [[bono]]
 ticker = "AL35"
@@ -192,8 +192,8 @@ pagos = [
     { fecha = 2035-01-09, amortizacion = 10.0 },
     { fecha = 2035-07-09, amortizacion = 10.0 },
 ]
-revisado = false
-fuente = "Mismas condiciones que el Global Step Up 2035 (Anexo II del Decreto 676/2020); a validar por Agustin"
+revisado = true
+fuente = "Mismas condiciones que el Global Step Up 2035 (Anexo II del Decreto 676/2020); validado por Agustin con su planilla el 14/11/2026"
 
 [[bono]]
 ticker = "GD35"
@@ -244,8 +244,8 @@ pagos = [
     { fecha = 2035-01-09, amortizacion = 10.0 },
     { fecha = 2035-07-09, amortizacion = 10.0 },
 ]
-revisado = false
-fuente = "Anexo II del Decreto 676/2020 (Bonos Globales Step Up 2035); a validar por Agustin"
+revisado = true
+fuente = "Anexo II del Decreto 676/2020 (Bonos Globales Step Up 2035); validado por Agustin con su planilla el 14/11/2026"
 
 [[bono]]
 ticker = "AE38"
@@ -299,8 +299,8 @@ pagos = [
     { fecha = 2037-07-09, amortizacion = 4.545454545454546 },
     { fecha = 2038-01-09, amortizacion = 4.545454545454546 },
 ]
-revisado = false
-fuente = "Mismas condiciones que el Global Step Up 2038 (Anexo II del Decreto 676/2020); a validar por Agustin"
+revisado = true
+fuente = "Mismas condiciones que el Global Step Up 2038 (Anexo II del Decreto 676/2020); validado por Agustin con su planilla el 14/11/2026"
 
 [[bono]]
 ticker = "GD38"
@@ -354,8 +354,8 @@ pagos = [
     { fecha = 2037-07-09, amortizacion = 4.545454545454546 },
     { fecha = 2038-01-09, amortizacion = 4.545454545454546 },
 ]
-revisado = false
-fuente = "Anexo II del Decreto 676/2020 (Bonos Globales Step Up 2038); a validar por Agustin"
+revisado = true
+fuente = "Anexo II del Decreto 676/2020 (Bonos Globales Step Up 2038); validado por Agustin con su planilla el 14/11/2026"
 
 [[bono]]
 ticker = "AL41"
@@ -415,8 +415,8 @@ pagos = [
     { fecha = 2041-01-09, amortizacion = 3.5714285714285716 },
     { fecha = 2041-07-09, amortizacion = 3.5714285714285716 },
 ]
-revisado = false
-fuente = "Mismas condiciones que el Global Step Up 2041 (Anexo II del Decreto 676/2020); a validar por Agustin"
+revisado = true
+fuente = "Mismas condiciones que el Global Step Up 2041 (Anexo II del Decreto 676/2020); validado por Agustin con su planilla el 14/11/2026"
 
 [[bono]]
 ticker = "GD41"
@@ -476,8 +476,8 @@ pagos = [
     { fecha = 2041-01-09, amortizacion = 3.5714285714285716 },
     { fecha = 2041-07-09, amortizacion = 3.5714285714285716 },
 ]
-revisado = false
-fuente = "Anexo II del Decreto 676/2020 (Bonos Globales Step Up 2041); a validar por Agustin"
+revisado = true
+fuente = "Anexo II del Decreto 676/2020 (Bonos Globales Step Up 2041); validado por Agustin con su planilla el 14/11/2026"
 
 [[bono]]
 ticker = "GD46"
@@ -549,5 +549,5 @@ pagos = [
     { fecha = 2046-01-09, amortizacion = 2.272727272727273 },
     { fecha = 2046-07-09, amortizacion = 2.272727272727273 },
 ]
-revisado = false
-fuente = "Anexo II del Decreto 676/2020 (Bonos Globales Step Up 2046); a validar por Agustin"
+revisado = true
+fuente = "Anexo II del Decreto 676/2020 (Bonos Globales Step Up 2046); validado por Agustin con su planilla el 14/11/2026"

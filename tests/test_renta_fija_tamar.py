@@ -83,6 +83,9 @@ def test_ventana_y_dias_estimados():
             assert abs(d["tamar_bono"] - esperado) < 1e-15
             texto = bonos.calcular_bono("TXMJ8", precio=102.2, fecha="2026-11-13")
             assert "Calculado como CER" in texto and "Calculado como TAMAR" in texto
+            dual = bonos.calcular_bono("TTD26", precio=176.0, fecha="2026-11-13")
+            assert "Calculado como tasa fija" in dual and "Calculado como TAMAR" in dual and "Qué pata paga" in dual
+            assert dual.count("NOTA:") == 1
         finally:
             config.DATOS_DIR = original
 

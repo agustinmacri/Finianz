@@ -68,7 +68,7 @@ Código: `renta_fija/calculadoras/tasa_fija.py`. Fichas: `renta_fija/fichas/tasa
 
 | Variable | Definición |
 |---|---|
-| Pago final | 100 × (1 + TEM de emisión) ^ (días 30/360 entre emisión y vencimiento / 30) |
+| Pago final | 100 × (1 + cupón de licitación) ^ (días 30/360 entre emisión y vencimiento / 30). El cupón de licitación es la tasa mensual capitalizable de emisión (campo `cupon` de la ficha) |
 | Plazo residual | Días corridos entre la liquidación y el vencimiento |
 | Duration | Plazo residual / 365 |
 | TNA | (pago final / precio − 1) × 365 / plazo residual |
@@ -177,7 +177,6 @@ Código: `renta_fija/calculadoras/proyeccion_cer.py` y herramienta `proyectar_ce
 2. **Para más adelante:** proyectar los bonos TAMAR y los dollar linked con escenarios propios, como el CER.
 3. **Para más adelante:** curva teórica de tasa fija (regresión de la TEA contra el logaritmo de la duration, con cada letra por encima o por debajo de la curva).
 4. **Para más adelante:** calculadora de letras a descuento (hoy todas las letras vigentes son capitalizables).
-5. **Para más adelante:** la pata tasa fija del dual TTD26 (hoy se calcula solo como TAMAR).
 7. **Para más adelante:** dollar linked corporativos con cupones y amortizaciones, con el tipo de cambio de pago de cada prospecto.
 8. **Objetivo:** que las condiciones de emisión de cada bono salgan del análisis de los prospectos, sin carga manual.
 
@@ -201,3 +200,5 @@ Código: `renta_fija/calculadoras/proyeccion_cer.py` y herramienta `proyectar_ce
 - **14/11/2026:** breakevens de inflación, devaluación y TAMAR comparados con el REM.
 - **14/11/2026:** hard dollar: la tasa semestral 30/360 se muestra como TNA y la TEA como TIR, como en las demás familias. Precio clean por 100 de residual. AL29 validado por Agustin en paridad, duration, duration modificada, convexidad y TEA.
 - **14/11/2026:** clean y dirty solo en los hard dollar. En los bonos en pesos (TX28, TX31, TY30P) se muestra el precio (y en los CER el precio real = precio / ratio); el precio sin el interés corrido sigue en el current yield y el cash yield, sin nombrarlo.
+- **14/11/2026:** hard dollar validados por Agustin (todos los Bonares y Globales). TTD26: pata tasa fija con cupón 2,14% y pago final como las Lecap; al vencimiento paga la pata de mayor pago final. La herramienta muestra las dos patas, cuál paga con la TAMAR estimada y la TAMAR de los días por publicar que iguala las dos.
+- **14/11/2026:** en las Lecap/Boncap, la tasa de emisión se llama cupón de licitación (campo `cupon` de la ficha, antes `tem`), para no confundirla con la TEM de mercado que da la calculadora.

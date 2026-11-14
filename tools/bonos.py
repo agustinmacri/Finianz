@@ -19,7 +19,7 @@ from carga_datos import series as carga_series
 from conexiones import bcra, fred, ppi
 from conexiones.http import ErrorAPI
 from renta_fija import leer_fichas as fichas
-from renta_fija.calculadoras import cer, cer_cupon, dolar_linked, hard_dollar, tamar, tasa_fija
+from renta_fija.calculadoras import breakeven, cer, cer_cupon, dolar_linked, hard_dollar, motor, tamar, tasa_fija
 
 PLAZO_LIQUIDACION = 1          # T+1: precios y cálculos a la fecha de liquidación, salvo que se indique otra cosa
 CALENDARIO_HABILES = "BYMA"    # días hábiles del rezago del CER y de las fechas de pago (decisión de Agustin, 13/11/2026)
@@ -121,7 +121,42 @@ def calcular_bono(ticker: str, precio: float | None = None, fecha: str | None = 
                        "tomá ese resultado como preliminar.")
         if f.get("nota") and f["nota"] not in avisos:
             avisos += f"\nNOTA: {f['nota']}"
+    familias = {f["familia"] for f in lista}
+    if {"tasa_fija_capitalizable", "tamar_capitalizable"} <= familias:
+        secciones.append(_dual_tasa_fija_tamar(lista, precio, liquidacion, operacion))
     return encabezado + "\n".join(secciones) + avisos
+
+
+def _dual_tasa_fija_tamar(lista: list[dict], precio: float, liquidacion: date, operacion: date) -> str:
+    """Qué pata paga un dual tasa fija / TAMAR: la de mayor pago final (la TAMAR, con la parte por publicar estimada)."""
+    try:
+        fija = next(f for f in lista if f["familia"] == "tasa_fija_capitalizable")
+        pata_tamar = next(f for f in lista if f["familia"] == "tamar_capitalizable")
+        pf_fija = tasa_fija.pago_final(fija["cupon"], fija["emision"], fija["vencimiento"])
+        d = _datos_tamar(pata_tamar, operacion)
+        r = tamar.calcular(precio, d["tamar_bono"], pata_tamar["margen"], pata_tamar["emision"],
+                           pata_tamar["vencimiento"], liquidacion, d["referencia"])
+    except (ErrorAPI, ValueError, StopIteration) as e:
+        return f"\n— Qué pata paga —\nSin dato: {e}"
+    gana = "tasa fija" if pf_fija >= r["pago_final"] else "TAMAR"
+    pago = max(pf_fija, r["pago_final"])
+    tna = (pago / precio - 1) * 365 / r["plazo_residual"]
+    tea = (pago / precio) ** (365 / r["plazo_residual"]) - 1
+    # TAMAR de los días por publicar con la que la pata TAMAR iguala a la fija
+    plazo, d360 = r["plazo_residual"], motor.dias_30_360(pata_tamar["emision"], pata_tamar["vencimiento"])
+    tea_fija = (pf_fija / precio) ** (365 / plazo) - 1
+    umbral = breakeven.tamar_implicita(tea_fija, precio, plazo, d360, pata_tamar["margen"], d["conocidas"], d["a_estimar"])
+    linea_umbral = (f"\nLas dos patas pagan lo mismo si la TAMAR de los {d['a_estimar']} días hábiles que faltan publicar promedia "
+                    f"{_pct(umbral)} TNA: por encima paga la TAMAR, por debajo la tasa fija (hoy, últimos 5 días: "
+                    f"{_pct(d['referencia'])})." if umbral is not None else
+                    "\nLa ventana de la TAMAR ya está completa: el resultado es definitivo.")
+    return (
+        f"\n— Qué pata paga (al vencimiento, la de mayor pago final) —\n"
+        f"Pago final pata tasa fija: {pf_fija:.4f} | pata TAMAR: {r['pago_final']:.4f} "
+        f"({d['a_estimar']} días de TAMAR por publicar, estimados con {_pct(d['referencia'])}) → paga la pata {gana}\n"
+        f"Rendimiento del dual con ese pago: TNA {_pct(tna)} | TEA (TIR) {_pct(tea)}" + linea_umbral
+    )
+
 
 
 NOMBRE_FAMILIA = {
@@ -331,10 +366,10 @@ def _tamar_capitalizable(f: dict, precio: float, liquidacion: date, operacion: d
 
 
 def _tasa_fija_capitalizable(f: dict, precio: float, liquidacion: date) -> str:
-    pf = tasa_fija.pago_final(f["tem"], f["emision"], f["vencimiento"])
+    pf = tasa_fija.pago_final(f["cupon"], f["emision"], f["vencimiento"])
     r = tasa_fija.calcular_capitalizable(precio, pf, liquidacion, f["vencimiento"])
     return (
-        f"Pago final: {r['pago_final']:.4f} por 100 VN (TEM de emisión {_pct(f['tem'])}, emitida el {f['emision']})\n"
+        f"Pago final: {r['pago_final']:.4f} por 100 VN (cupón de licitación {_pct(f['cupon'])} mensual capitalizable, emitida el {f['emision']})\n"
         f"Plazo residual: {r['plazo_residual']} días ({r['meses_al_vencimiento']:.2f} meses 30/360) | "
         f"duration: {r['duration']:.4f}\n"
         f"TNA: {_pct(r['tna'])} | TEA (TIR): {_pct(r['tea'])} | TEM (30 días): {_pct(r['tem'])}"

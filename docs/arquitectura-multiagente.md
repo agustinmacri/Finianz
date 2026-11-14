@@ -161,3 +161,5 @@ datos/          feriados.db, publicaciones.db, precios.db, cartera.db (no se sub
 calendarios/    feriados_ajustes.toml, publicaciones.toml (catálogo), indec/ (PDF semestrales)
 actualizar.py   recarga la base
 ```
+- **14/11/2026:** TTD26 con ficha en `tasa_fija.toml` (pata fija, cupón 2,14%) además de la de `tamar.toml`; `calcular_bono` agrega `_dual_tasa_fija_tamar` (pata que paga, rendimiento del dual y TAMAR de indiferencia con `breakeven.tamar_implicita`). Hard dollar: clean por residual, TNA semestral y TIR (TEA); todas las fichas validadas. Bonos en pesos sin clean/dirty en la salida.
+- **14/11/2026:** fichas de Lecap/Boncap: el campo `tem` pasa a llamarse `cupon` (cupón de licitación).

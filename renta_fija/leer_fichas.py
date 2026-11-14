@@ -15,7 +15,7 @@ CARPETA = config.BASE_DIR / "renta_fija" / "fichas"
 CAMPOS = {
     "cer_cero_cupon": ("ticker", "tipo", "familia", "emision", "vencimiento"),
     "cer_cupon": ("ticker", "tipo", "familia", "emision", "vencimiento", "cupon", "frecuencia", "pagos"),
-    "tasa_fija_capitalizable": ("ticker", "tipo", "familia", "emision", "vencimiento", "tem"),
+    "tasa_fija_capitalizable": ("ticker", "tipo", "familia", "emision", "vencimiento", "cupon"),
     "tasa_fija_cupon": ("ticker", "tipo", "familia", "emision", "vencimiento", "cupon", "frecuencia", "pagos"),
     "tamar_capitalizable": ("ticker", "tipo", "familia", "emision", "vencimiento", "margen"),
     "dolar_linked_bullet": ("ticker", "tipo", "familia", "emision", "vencimiento"),
