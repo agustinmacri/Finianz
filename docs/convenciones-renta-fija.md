@@ -205,7 +205,8 @@ Código: `carga_datos/fichas_documentos.py` (comando) y herramienta `leer_docume
 - Un modelo lee el documento (URL, PDF, HTML o TXT) y devuelve cada instrumento con sus condiciones, con salida estructurada y una cita del texto para verificar. Lo que no está en el texto o se define en la licitación (la TEM de una Lecap nueva, el margen de un TAMAR) queda vacío y anotado como pendiente: no se inventa.
 - Los bonos que ya tienen ficha (reaperturas) se informan y no se tocan. Los nuevos quedan en `renta_fija/fichas/borradores/borradores.toml` con revisado = false; ninguna calculadora los usa y la carpeta está en `.gitignore` (lo no aprobado no se sube a git).
 - Con el resultado de la licitación se completan los borradores del llamado (ticker, cupón, margen).
-- `aprobar <TICKER>` valida el borrador con las mismas reglas que el resto de las fichas y lo agrega al archivo de su familia con revisado = true. El agente no aprueba.
+- Los instrumentos con vencimiento anterior a hoy no se cargan: se informan como vencidos. Un borrador que vence antes de aprobarse se saca en la próxima lectura, y `aprobar` lo rechaza (Agustin, 14/11/2026).
+- `aprobar <TICKER>` valida el borrador con las mismas reglas que el resto de las fichas y lo agrega al archivo de su familia con revisado = true. El agente de renta fija también puede aprobar o descartar (`aprobar_ficha`, `descartar_borrador`), solo a pedido explícito del usuario y con la misma validación; la fuente queda como "aprobado por Agustin (vía agente de renta fija)" (Agustin, 14/11/2026).
 
 ## Puntos abiertos (para decidir con Agustin)
 

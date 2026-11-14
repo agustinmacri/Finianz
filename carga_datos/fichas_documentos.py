@@ -217,18 +217,33 @@ def _mismo(a: dict, b: dict) -> bool:
     return a.get("familia") == b.get("familia") and a.get("vencimiento") == b.get("vencimiento")
 
 
-def leer(fuente: str, extractor=extraer_con_modelo) -> dict:
-    """Lee un documento y actualiza los borradores. Devuelve el resumen de lo que hizo."""
+def _vencido(ficha: dict, hoy: date) -> bool:
+    vto = ficha.get("vencimiento")
+    return isinstance(vto, date) and vto < hoy
+
+
+def leer(fuente: str, extractor=extraer_con_modelo, hoy: date | None = None) -> dict:
+    """Lee un documento y actualiza los borradores. Devuelve el resumen de lo que hizo.
+
+    Los instrumentos ya vencidos (vencimiento anterior a hoy) no se cargan: se informan y listo. Los borradores que
+    vencieron mientras esperaban aprobación también se sacan."""
+    hoy = hoy or date.today()
     texto = obtener_texto(fuente)
     documento = extractor(texto)
     existentes = leer_fichas.leer_todas()
     borradores = _leer_borradores()
     resumen = {"documento": documento.tipo_documento, "fecha": documento.fecha_documento, "ya_cargados": [],
-               "nuevos": [], "completados": [], "sin_familia": [], "descartados": []}
+               "vencidos": [], "nuevos": [], "completados": [], "sin_familia": [], "descartados": []}
+    for b in [b for b in borradores if _vencido(b, hoy)]:
+        borradores.remove(b)
+        resumen["vencidos"].append(f"{b['clave']} (borrador, venció el {b['vencimiento']:%d/%m/%Y})")
     origen = fuente if re.match(r"https?://", fuente) else Path(fuente).name
     for ins in documento.instrumentos:
         ficha = a_ficha(ins, origen, documento.tipo_documento, documento.fecha_documento)
         ticker = ficha.get("ticker")
+        if _vencido(ficha, hoy):
+            resumen["vencidos"].append(f"{ticker or ins.nombre} (venció el {ficha['vencimiento']:%d/%m/%Y})")
+            continue
         if ticker and any(f["familia"] == ficha.get("familia") or not ficha.get("familia") for f in existentes.get(ticker, [])):
             resumen["ya_cargados"].append(ticker)
             sobrantes = [b for b in borradores if _mismo(b, {**ficha, "ticker": None})]   # el del llamado, sin ticker
@@ -262,8 +277,9 @@ def pendientes() -> list[dict]:
     return _leer_borradores()
 
 
-def aprobar(clave: str, carpeta: Path | None = None) -> str:
+def aprobar(clave: str, carpeta: Path | None = None, por: str = "Agustin", hoy: date | None = None) -> str:
     """Valida el borrador y lo pasa al archivo de su familia con revisado = true."""
+    hoy = hoy or date.today()
     borradores = _leer_borradores()
     elegido = next((b for b in borradores if b.get("clave", "").upper() == clave.upper()
                     or (b.get("ticker") or "").upper() == clave.upper()), None)
@@ -272,16 +288,26 @@ def aprobar(clave: str, carpeta: Path | None = None) -> str:
     ficha = {k: v for k, v in elegido.items() if k not in ("pendiente", "cita", "clave")}
     if not ficha.get("ticker"):
         raise leer_fichas.ErrorFicha("Al borrador le falta el ticker: completalo en el archivo de borradores.")
+    if _vencido(ficha, hoy):
+        raise leer_fichas.ErrorFicha(f"{ficha['ticker']} ya venció ({ficha['vencimiento']:%d/%m/%Y}): no hace falta cargarlo. Descartalo.")
     leer_fichas.validar(ficha, f"borrador {clave}")
     if any(f["familia"] == ficha["familia"] for f in leer_fichas.fichas_de(ficha["ticker"])):
         raise leer_fichas.ErrorFicha(f"{ficha['ticker']} ya tiene ficha en la familia {ficha['familia']}.")
     ficha["revisado"] = True
-    ficha["fuente"] = f"{ficha.get('fuente', '')}; aprobado por Agustin el {date.today():%d/%m/%Y}"
+    ficha["fuente"] = f"{ficha.get('fuente', '')}; aprobado por {por} el {hoy:%d/%m/%Y}"
     destino = (carpeta or leer_fichas.CARPETA) / ARCHIVO_DE_FAMILIA[ficha["familia"]]
     with open(destino, "a", encoding="utf-8") as archivo:
         archivo.write("\n" + a_toml(ficha))
     _guardar_borradores([b for b in borradores if b is not elegido])
     return f"{ficha['ticker']} aprobado y agregado a {destino.name}."
+
+
+def describir_borradores() -> str:
+    """Texto con cada borrador completo, para revisarlo antes de aprobar."""
+    lista = pendientes()
+    if not lista:
+        return "No hay borradores pendientes."
+    return "\n\n".join(a_toml(b) for b in lista)
 
 
 def descartar(clave: str) -> str:
@@ -298,6 +324,8 @@ def describir(resumen: dict) -> str:
     lineas = [f"Documento: {resumen['documento']}{' del ' + resumen['fecha'] if resumen['fecha'] else ''}"]
     if resumen["ya_cargados"]:
         lineas.append("Ya tienen ficha (no se tocan): " + ", ".join(resumen["ya_cargados"]))
+    if resumen["vencidos"]:
+        lineas.append("Ya vencidos, no se cargan: " + ", ".join(resumen["vencidos"]))
     if resumen["nuevos"]:
         lineas.append("Borradores nuevos: " + ", ".join(resumen["nuevos"]))
     for clave, campos in resumen["completados"]:
@@ -309,8 +337,9 @@ def describir(resumen: dict) -> str:
     for b in pendientes():
         if b.get("pendiente"):
             lineas.append(f"  {b['clave']}: pendiente → " + "; ".join(b["pendiente"]))
-    lineas.append(f"Revisá {BORRADORES.relative_to(leer_fichas.CARPETA.parent.parent)} y aprobá con: "
-                  "python -m carga_datos.fichas_documentos aprobar <TICKER>")
+    if pendientes():
+        lineas.append(f"Revisá {BORRADORES.relative_to(leer_fichas.CARPETA.parent.parent)} y aprobá con: "
+                      "python -m carga_datos.fichas_documentos aprobar <TICKER> (o pedíselo al agente de renta fija)")
     return "\n".join(lineas)
 
 

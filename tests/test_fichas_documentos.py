@@ -6,10 +6,14 @@ Correr con:
 import shutil
 import tempfile
 import tomllib
+from datetime import date
 from pathlib import Path
 
 from carga_datos import fichas_documentos as fd
 from renta_fija import leer_fichas
+from tools import lector_fichas
+
+HOY = date(2026, 4, 15)   # el día del llamado: todavía no venció nada
 
 LLAMADO = fd.Documento(tipo_documento="llamado a licitación", fecha_documento="2026-04-13", instrumentos=[
     fd.Instrumento(nombre="LECAP capitalizable con vencimiento 14 de agosto de 2026", familia="tasa_fija_capitalizable",
@@ -41,27 +45,49 @@ def test_borradores_aprobacion():
         documento = Path(tmp) / "llamado.txt"
         documento.write_text("Llamado a licitación del Tesoro. " * 20, encoding="utf-8")
         try:
-            r = fd.leer(str(documento), extractor=lambda texto: LLAMADO)
+            r = fd.leer(str(documento), extractor=lambda texto: LLAMADO, hoy=HOY)
             assert "TZXS8" in r["ya_cargados"]                                  # reapertura de un bono cargado
             assert "AO27" in r["nuevos"] and "tasa_fija_capitalizable-2026-08-14" in r["nuevos"]
             lecap = next(b for b in fd.pendientes() if b["clave"] == "tasa_fija_capitalizable-2026-08-14")
             assert lecap["revisado"] is False and "cupon" not in lecap and len(lecap["pendiente"]) == 2
 
-            r = fd.leer(str(documento), extractor=lambda texto: RESULTADO)          # el resultado completa
+            r = fd.leer(str(documento), extractor=lambda texto: RESULTADO, hoy=HOY)          # el resultado completa
             claves = dict(r["completados"])
             assert set(claves["S14G6"]) >= {"ticker", "cupon"}
             assert "TMF28" in r["ya_cargados"] and r["descartados"] == ["tamar_capitalizable-2028-02-25"]  # ya estaba cargado
             lecap = next(b for b in fd.pendientes() if b["clave"] == "S14G6")
             assert lecap["cupon"] == 0.0215 and lecap.get("pendiente") is None    # ya no queda nada pendiente
 
-            assert "No hay ningún borrador" in _error(lambda: fd.aprobar("TMF28"))
-            assert "falta el campo 'emision'" in _error(lambda: fd.aprobar("AO27"))
-            assert "S14G6 aprobado" in fd.aprobar("S14G6")
+            assert "No hay ningún borrador" in _error(lambda: fd.aprobar("TMF28", hoy=HOY))
+            assert "falta el campo 'emision'" in _error(lambda: fd.aprobar("AO27", hoy=HOY))
+            assert "S14G6 aprobado" in fd.aprobar("S14G6", hoy=HOY)
             nueva = leer_fichas.ficha("S14G6")
             assert nueva["revisado"] is True and nueva["cupon"] == 0.0215 and "cita" not in nueva
             assert "S14G6" not in [b["clave"] for b in fd.pendientes()]
             tomllib.loads((carpeta / "tasa_fija.toml").read_text(encoding="utf-8"))   # el archivo sigue siendo válido
             assert "descartado" in fd.descartar("AO27")
+
+            # Meses después: la Lecap de agosto ya venció. No se carga y el borrador que quedaba se saca solo.
+            fd.leer(str(documento), extractor=lambda texto: LLAMADO, hoy=HOY)
+            assert "tasa_fija_capitalizable-2026-08-14" in [b["clave"] for b in fd.pendientes()]
+            r = fd.leer(str(documento), extractor=lambda texto: LLAMADO, hoy=date(2026, 11, 14))
+            assert any(v.startswith("tasa_fija_capitalizable-2026-08-14 (borrador") for v in r["vencidos"])
+            assert any("14/08/2026" in v and "borrador" not in v for v in r["vencidos"])
+            assert "tasa_fija_capitalizable-2026-08-14" not in [b["clave"] for b in fd.pendientes()]
+            assert "ya venció" in _error(lambda: fd.aprobar("tasa_fija_capitalizable-2026-08-14", hoy=date(2026, 11, 14))) \
+                or "No hay ningún borrador" in _error(lambda: fd.aprobar("tasa_fija_capitalizable-2026-08-14", hoy=date(2026, 11, 14)))
+
+            # Desde el agente: ver, aprobar (con la misma validación) y descartar.
+            assert "AO27" in lector_fichas.ver_borradores()
+            assert "No se aprobó AO27" in lector_fichas.aprobar_ficha("AO27")              # le falta la emisión
+            nueva_lecap = fd.Documento(tipo_documento="resultado de licitación", fecha_documento="2026-11-12", instrumentos=[
+                fd.Instrumento(nombre="LECAP 14/05/2027", ticker="S14Y7", familia="tasa_fija_capitalizable", tipo="LECAP",
+                               emision="2026-11-14", vencimiento="2027-05-14", cupon=0.019, base="30/360")])
+            fd.leer(str(documento), extractor=lambda texto: nueva_lecap, hoy=date(2026, 11, 14))
+            salida = lector_fichas.aprobar_ficha("S14Y7")
+            assert "S14Y7 aprobado" in salida, salida
+            assert "vía agente" in leer_fichas.ficha("S14Y7")["fuente"]
+            assert "descartado" in lector_fichas.descartar_borrador("tamar_capitalizable-2028-02-25")
         finally:
             leer_fichas.CARPETA, fd.BORRADORES = original_carpeta, original_borradores
 
