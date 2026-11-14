@@ -72,8 +72,46 @@ def test_rem_oficial_sin_el_mes_en_curso():
             config.DATOS_DIR, bonos._a3500 = original, originales
 
 
+def test_caminos_indicados():
+    """La fuente camino: con meses, años y resto, para usar supuestos del usuario o del agente macro."""
+    assert pr.parsear_camino("camino:2026-12=1,8%;2027=22%;resto=1.5%") == [("2026-12", "1,8%"), ("2027", "22%"), ("resto", "1.5%")]
+    for malo in ("camino:", "camino:2026-12", "camino:diciembre=2%"):
+        try:
+            pr.parsear_camino(malo)
+            raise AssertionError(malo)
+        except ValueError:
+            pass
+    camino, _ = pr.camino_tamar("camino:2026-12=24%;2027-01=23%;resto=21%", date(2026, 11, 13))
+    assert camino((2026, 12)) == 0.24 and camino((2027, 1)) == 0.23 and camino((2027, 6)) == 0.21
+    from tools import bonos
+    originales = bonos._a3500
+    bonos._a3500 = lambda op: (1450.0, op, False)
+    try:
+        nivel, _, _, _ = pr.camino_dolar("oficial", "camino:2026-12=1600;2027-01=2%;resto=1%", date(2026, 11, 13))
+        assert abs(nivel(date(2026, 12, 15)) - 1600) < 1e-9 and abs(nivel(date(2027, 1, 15)) - 1632) < 1e-9
+        assert abs(nivel(date(2027, 2, 14)) - 1632 * 1.01 ** (30 / 30.4375)) < 1e-9
+    finally:
+        bonos._a3500 = originales
+
+
+def test_base_propia():
+    from admin_datos import series as db_series
+    from tools import base_propia
+    original = config.DATOS_DIR
+    with tempfile.TemporaryDirectory() as tmp:
+        config.DATOS_DIR = Path(tmp)
+        try:
+            db_series.guardar("A3500", [{"fecha": "2026-11-12", "valor": 1450.0}, {"fecha": "2026-11-13", "valor": 1452.0}], "prueba")
+            texto = base_propia.consultar_base("A3500", ultimos=1)
+            assert "2026-11-13: 1,452.0000" in texto and "2026-11-12:" not in texto
+            assert "No hay ningún relevamiento" in base_propia.consultar_base("REM")
+        finally:
+            config.DATOS_DIR = original
+
+
 if __name__ == "__main__":
-    for prueba in (test_leer_tasas, test_escenarios_y_caminos, test_rem_oficial_sin_el_mes_en_curso):
+    for prueba in (test_leer_tasas, test_escenarios_y_caminos, test_rem_oficial_sin_el_mes_en_curso,
+                   test_caminos_indicados, test_base_propia):
         prueba()
         print(f"OK  {prueba.__name__}")
     print("Todas las pruebas de proyecciones pasaron.")

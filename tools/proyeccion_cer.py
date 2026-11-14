@@ -130,6 +130,24 @@ def camino_inflacion(fuente: str, liquidacion: date, hasta_mes: pc.Mes, curvas: 
         while mes <= hasta_mes:
             caminos[mes] = (tasa, "plana")
             mes = pc.sumar_meses(mes, 1)
+    elif fuente.startswith("camino:"):
+        from tools.proyecciones import leer_tasa, parsear_camino
+        pares = parsear_camino(fuente)
+        mensuales = {(int(c[:4]), int(c[5:7])): tasa_mensual(x) for c, x in pares if len(c) == 7}
+        anuales = {int(c): leer_tasa(x) for c, x in pares if len(c) == 4}
+        resto = next((tasa_mensual(x) for c, x in pares if c == "resto"), None)
+        if resto is not None:
+            mes = desde
+            while mes <= hasta_mes:
+                if mes not in mensuales and mes[0] not in anuales:
+                    mensuales[mes] = resto
+                mes = pc.sumar_meses(mes, 1)
+        caminos = pc.camino(publicadas, mensuales, anuales, desde, hasta_mes)
+        descripcion = ("camino de inflación indicado: "
+                       + ", ".join(f"{_nombre_mes(m)} {bonos._pct(x)}" for m, x in sorted(mensuales.items())
+                                   if resto is None or x != resto)
+                       + ("; anual " + ", ".join(f"{a} {bonos._pct(x)}" for a, x in sorted(anuales.items())) if anuales else "")
+                       + (f"; el resto {bonos._pct(resto)} mensual" if resto is not None else ""))
     elif fuente.startswith("escenario:"):
         nombre = fuente.split(":", 1)[1]
         todos = escenarios()
@@ -156,7 +174,8 @@ def camino_inflacion(fuente: str, liquidacion: date, hasta_mes: pc.Mes, curvas: 
         caminos = pc.inflacion_desde_cer((ultimo, serie[ultimo]), nodos, desde, hasta_mes)
         descripcion = "breakeven: la inflación que iguala cada CER cero cupón con la tasa fija a su plazo"
     else:
-        raise ValueError("Fuente desconocida. Opciones: breakeven, rem, escenario:<nombre>, mensual:<tasa> (ej.: mensual:2%).")
+        raise ValueError("Fuente desconocida. Opciones: breakeven, rem, escenario:<nombre>, mensual:<tasa> (ej.: mensual:2%), "
+                         "camino:<meses> (ej.: camino:2026-12=2%;2027-01=1.8%;2027=22%;resto=1.5%).")
 
     return caminos, descripcion, serie, publicadas
 
@@ -264,7 +283,7 @@ PROYECTAR_CER = {
     "parameters": {
         "type": "object",
         "properties": {
-            "fuente": {"type": "string", "description": "breakeven, rem, escenario:<nombre> o mensual:<tasa en %> (ej.: mensual:2%). Por defecto, breakeven"},
+            "fuente": {"type": "string", "description": "breakeven, rem, escenario:<nombre>, mensual:<tasa en %> (ej.: mensual:2%) o camino:<meses> con inflación mensual por mes, anual por año y resto (ej.: camino:2026-12=2%;2027-01=1.8%;2027=22%;resto=1.5%). Por defecto, breakeven"},
             "ticker": {"type": "string", "description": "Un bono CER puntual (opcional; si no, todos)"},
             "fecha": {"type": "string", "description": "Fecha de operación AAAA-MM-DD para usar los cierres de ese día (opcional)"},
         },

@@ -37,7 +37,7 @@ Ejemplos de preguntas:
 ```
 
 - **Router:** una sola llamada al modelo, con salida estructurada. Elige uno o varios agentes (`macro`, `renta_fija`, `noticias`), o ninguno para saludos y preguntas sobre la conversación.
-- **Agentes:** cada uno es un subgrafo con su propio prompt y **solo sus herramientas**. Iteran entre el modelo y las herramientas hasta tener la respuesta.
+- **Agentes:** cada uno es un subgrafo con su propio prompt y **solo sus herramientas**. Iteran entre el modelo y las herramientas hasta tener la respuesta. El de renta fija trabaja solo con lo que está en el sistema (calculadoras, base propia, precios); lo que le falta, o un supuesto macro, se lo pide al agente macro.
 - **Responder:** si respondió un solo agente, devuelve su informe tal cual, sin otra llamada al modelo. Si respondieron varios, los integra.
 - **Memoria:** la conversación guarda solo las preguntas y las respuestas finales. Las consultas internas de cada agente no se acumulan, y así el contexto se mantiene chico.
 
@@ -59,6 +59,7 @@ Finianz/
 │   ├── builder.py       # grafo principal: router + agentes + responder
 │   ├── router.py        # decide qué agente responde
 │   ├── agente.py        # fábrica de agentes (loop modelo ↔ herramientas)
+│   ├── delegacion.py    # consultar_agente_macro: renta fija le pide datos o supuestos al macro
 │   ├── responder.py     # respuesta final: directa o síntesis
 │   ├── nodes.py         # modelos con respaldo y nodo "modelo"
 │   ├── state.py         # estados del grafo
@@ -73,6 +74,7 @@ Finianz/
 │   ├── breakevens.py    # calcular_breakevens (entre curvas y contra el REM)
 │   ├── proyeccion_cer.py   # proyectar_cer (CER con REM, breakeven o escenarios)
 │   ├── proyecciones.py  # proyectar_tamar y proyectar_dolar (oficial, MEP, CCL) con escenarios
+│   ├── base_propia.py   # consultar_base: datos guardados (CER, TAMAR, A3500, inflación, REM), sin API
 │   ├── guardia.py       # límites de seguridad del código que escribe el agente
 │   ├── calendario.py    # consultar_feriados, calcular_dia_habil, consultar_publicaciones
 │   └── python_exec.py   # ejecutar_python, con acceso a los datos

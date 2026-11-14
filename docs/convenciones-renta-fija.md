@@ -190,6 +190,7 @@ Código: `tools/proyecciones.py` (herramientas `proyectar_tamar` y `proyectar_do
 - **Dólar oficial (A3500):** `rem` (promedios mensuales a mitad de mes, a 12 meses y diciembre; sin el mes en curso), `breakeven` (A3500 implícito de los dollar linked), `mensual:<variación>` o `escenario:<nombre>`. Dollar linked en pesos: pago = 100 × A3500 proyectado al vencimiento (aproxima el tipo de cambio de pago del prospecto).
 - **MEP y CCL:** `mensual:<variación>` o `escenario:<nombre>`, desde el implícito de hoy del AL30 (precio en pesos / precio D o C). Hard dollar en pesos: cada flujo en dólares × dólar proyectado en su fecha, contra el precio en pesos; TIR efectiva (base 365).
 - Escenarios de dólar: `nivel` (pesos por dólar de algunos meses, a mitad de mes), `mensual` (variación de algunos meses) y `resto` (variación mensual después). Entre puntos, crecimiento geométrico; después del último, `resto` o la variación del último tramo.
+- **Fuente `camino:`** (inflación, TAMAR y dólar), para usar en la consulta un supuesto del usuario o del agente macro sin guardarlo como escenario: claves `AAAA-MM` (un mes), `AAAA` (un año, solo inflación) y `resto`, separadas con punto y coma. Ej.: `camino:2026-12=2%;2027-01=1.8%;2027=22%;resto=1.5%`. En el dólar, un número es el nivel en pesos y un porcentaje, la variación mensual.
 
 ## Puntos abiertos (para decidir con Agustin)
 

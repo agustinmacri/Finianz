@@ -5,11 +5,13 @@
                        └→ agente_noticias ───┘   (sin agentes, "general": directo a responder)
 
 El router elige uno o varios agentes; si son varios, corren en paralelo y responder espera a todos.
+El agente de renta fija, además, puede consultar al macro durante su trabajo (graph/delegacion.py).
 """
 from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.graph import END, START, StateGraph
 
 from graph.agente import construir_agente, nodo_agente
+from graph.delegacion import crear_herramienta_macro
 from graph.errores import REINTENTOS_MODELO
 from graph.responder import crear_responder
 from graph.router import AGENTES, crear_router, elegir_destino
@@ -18,9 +20,12 @@ from tools import HERRAMIENTAS_MACRO, HERRAMIENTAS_NOTICIAS, HERRAMIENTAS_RENTA_
 
 
 def construir_grafo(checkpointer=None):
+    macro = construir_agente("macro", "macro.md", HERRAMIENTAS_MACRO)
     agentes = {
-        "macro": construir_agente("macro", "macro.md", HERRAMIENTAS_MACRO),
-        "renta_fija": construir_agente("renta_fija", "renta_fija.md", HERRAMIENTAS_RENTA_FIJA),
+        "macro": macro,
+        # renta fija le delega al macro lo que no está en el sistema (datos o supuestos)
+        "renta_fija": construir_agente("renta_fija", "renta_fija.md",
+                                       HERRAMIENTAS_RENTA_FIJA + [crear_herramienta_macro(macro)]),
         "noticias": construir_agente("noticias", "noticias.md", HERRAMIENTAS_NOTICIAS),
     }
 

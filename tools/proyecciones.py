@@ -43,6 +43,28 @@ def leer_variacion(texto: str) -> float:
     return limpio / 100 if "%" in texto or limpio >= 0.2 else limpio
 
 
+def parsear_camino(texto: str) -> list[tuple[str, str]]:
+    """Camino escrito en la consulta: "camino:2026-12=1.8%;2027-01=1.7%;2027=20%;resto=1%" → [(clave, valor)].
+    Claves: AAAA-MM (un mes), AAAA (un año) o resto. Se separa con punto y coma."""
+    cuerpo = texto.split(":", 1)[1] if texto.startswith("camino:") else texto
+    pares = []
+    for parte in filter(None, (p.strip() for p in cuerpo.split(";"))):
+        if "=" not in parte:
+            raise ValueError(f"En el camino, '{parte}' tiene que ser clave=valor (ej.: 2027-01=1.7%).")
+        clave, valor = (x.strip() for x in parte.split("=", 1))
+        if not (clave == "resto" or (len(clave) == 7 and clave[4] == "-" and clave[:4].isdigit()) or
+                (len(clave) == 4 and clave.isdigit())):
+            raise ValueError(f"Clave '{clave}' inválida en el camino: usá AAAA-MM, AAAA o resto.")
+        pares.append((clave, valor))
+    if not pares:
+        raise ValueError("El camino está vacío.")
+    return pares
+
+
+def _mes_de(clave: str) -> tuple[int, int]:
+    return int(clave[:4]), int(clave[5:7])
+
+
 def escenarios(variable: str) -> dict[str, dict]:
     """Escenarios de 'tamar', 'oficial', 'mep' o 'ccl': {nombre: {descripcion, mensual, nivel, resto}}.
     mensual: {(año, mes): valor} (TNA para la TAMAR; variación mensual para el dólar); nivel: {(año, mes): $};
@@ -99,7 +121,19 @@ def camino_tamar(fuente: str, operacion: date):
             raise ValueError(f"El escenario '{nombre}' no tiene meses.")
         resto = e["resto"] if e["resto"] is not None else e["mensual"][max(e["mensual"])]
         return be.camino_con_resto(e["mensual"], resto), f"escenario de TAMAR '{nombre}': {e['descripcion']}"
-    raise ValueError("Fuente de TAMAR desconocida. Opciones: actual, rem, tna:<tasa>, escenario:<nombre>.")
+    if fuente.startswith("camino:"):
+        pares = parsear_camino(fuente)
+        mensual = {_mes_de(c): leer_tasa(v) for c, v in pares if len(c) == 7}
+        resto = next((leer_tasa(v) for c, v in pares if c == "resto"), None)
+        if not mensual:
+            if resto is None:
+                raise ValueError("El camino de TAMAR necesita meses (AAAA-MM=TNA) o resto.")
+            return (lambda mes: resto), f"TAMAR plana de {bonos._pct(resto)} TNA (camino indicado)"
+        resto = resto if resto is not None else mensual[max(mensual)]
+        return (be.camino_con_resto(mensual, resto),
+                "camino de TAMAR indicado: " + ", ".join(f"{_mes(m)} {bonos._pct(v)}" for m, v in sorted(mensual.items()))
+                + f"; después {bonos._pct(resto)}")
+    raise ValueError("Fuente de TAMAR desconocida. Opciones: actual, rem, tna:<tasa>, camino:<meses>, escenario:<nombre>.")
 
 
 def tamar_del_bono(f: dict, operacion: date, camino) -> tuple[float, dict]:
@@ -146,9 +180,9 @@ def camino_dolar(tipo: str, fuente: str, operacion: date, fecha_precios: date | 
     """(función fecha -> pesos por dólar, descripción, nivel de hoy, de dónde sale el de hoy)."""
     if tipo not in TIPOS_DOLAR:
         raise ValueError("Tipo de dólar desconocido. Opciones: oficial, mep, ccl.")
-    if tipo != "oficial" and not (fuente.startswith("mensual:") or fuente.startswith("escenario:")):
-        raise ValueError(f"Fuente de {TIPOS_DOLAR[tipo]} desconocida. Opciones: mensual:<tasa>, escenario:<nombre> "
-                         "(el REM y el breakeven son solo para el oficial).")
+    if tipo != "oficial" and not fuente.startswith(("mensual:", "escenario:", "camino:")):
+        raise ValueError(f"Fuente de {TIPOS_DOLAR[tipo]} desconocida. Opciones: mensual:<tasa>, camino:<meses>, "
+                         "escenario:<nombre> (el REM y el breakeven son solo para el oficial).")
     hoy, origen_hoy = nivel_hoy(tipo, operacion, fecha_precios)
     if fuente.startswith("mensual:"):
         v = leer_variacion(fuente.split(":", 1)[1])
@@ -174,8 +208,20 @@ def camino_dolar(tipo: str, fuente: str, operacion: date, fecha_precios: date | 
         puntos = [(operacion, hoy)] + [(f["vencimiento"], hoy * (1 + f["acumulado"])) for f in filas]
         return (_extender(puntos, None), "breakeven: el A3500 implícito de cada dollar linked contra la tasa fija; después "
                 "del último, la variación del último tramo", hoy, origen_hoy)
-    if fuente.startswith("escenario:"):
-        nombre, e = _escenario(tipo, fuente)
+    if fuente.startswith(("escenario:", "camino:")):
+        if fuente.startswith("escenario:"):
+            nombre, e = _escenario(tipo, fuente)
+            descripcion = f"escenario de {TIPOS_DOLAR[tipo]} '{nombre}': {e['descripcion']}"
+        else:
+            pares = parsear_camino(fuente)
+            e = {"nivel": {_mes_de(c): float(v.replace(",", ".")) for c, v in pares if len(c) == 7 and "%" not in v},
+                 "mensual": {_mes_de(c): leer_variacion(v) for c, v in pares if len(c) == 7 and "%" in v},
+                 "resto": next((leer_variacion(v) for c, v in pares if c == "resto"), None)}
+            descripcion = (f"camino de {TIPOS_DOLAR[tipo]} indicado: "
+                           + ", ".join(f"{_mes(m)} ${v:,.0f}" for m, v in sorted(e["nivel"].items()))
+                           + (", " if e["nivel"] and e["mensual"] else "")
+                           + ", ".join(f"{_mes(m)} {bonos._pct(v)}" for m, v in sorted(e["mensual"].items()))
+                           + (f"; después {bonos._pct(e['resto'])} mensual" if e["resto"] is not None else ""))
         puntos, nivel, mes = [(operacion, hoy)], hoy, (operacion.year, operacion.month)
         ultimo = max([*e["mensual"], *e["nivel"]], default=None)
         while ultimo and mes <= ultimo:
@@ -190,8 +236,9 @@ def camino_dolar(tipo: str, fuente: str, operacion: date, fecha_precios: date | 
             if dia > operacion:
                 puntos.append((dia, nivel))
             mes = (mes[0] + mes[1] // 12, mes[1] % 12 + 1)
-        return _extender(puntos, e["resto"]), f"escenario de {TIPOS_DOLAR[tipo]} '{nombre}': {e['descripcion']}", hoy, origen_hoy
-    opciones = "rem, breakeven, mensual:<tasa>, escenario:<nombre>" if tipo == "oficial" else "mensual:<tasa>, escenario:<nombre>"
+        return _extender(puntos, e["resto"]), descripcion, hoy, origen_hoy
+    opciones = ("rem, breakeven, mensual:<tasa>, camino:<meses>, escenario:<nombre>" if tipo == "oficial"
+                else "mensual:<tasa>, camino:<meses>, escenario:<nombre>")
     raise ValueError(f"Fuente de {TIPOS_DOLAR[tipo]} desconocida. Opciones: {opciones}.")
 
 
@@ -308,7 +355,7 @@ PROYECTAR_TAMAR = {
         "'escenario:<nombre>'. Da la TAMAR del bono, el pago final, la TNA, la TEA y la tasa fija al mismo plazo."
     ),
     "parameters": {"type": "object", "properties": {
-        "fuente": {"type": "string", "description": "actual, rem, tna:<tasa> o escenario:<nombre> (por defecto, rem)"},
+        "fuente": {"type": "string", "description": "actual, rem, tna:<tasa>, camino:<meses> (TNA por mes y resto, ej.: camino:2026-12=24%;2027-01=23%;resto=21%) o escenario:<nombre> (por defecto, rem)"},
         "ticker": {"type": "string", "description": "Un bono TAMAR puntual (opcional)"},
         "fecha": {"type": "string", "description": "Fecha de operación AAAA-MM-DD (opcional)"},
     }},
@@ -323,7 +370,7 @@ PROYECTAR_DOLAR = {
     ),
     "parameters": {"type": "object", "properties": {
         "tipo": {"type": "string", "enum": ["oficial", "mep", "ccl"], "description": "Qué dólar proyectar (por defecto, oficial)"},
-        "fuente": {"type": "string", "description": "rem, breakeven, mensual:<variación> o escenario:<nombre>"},
+        "fuente": {"type": "string", "description": "rem, breakeven, mensual:<variación>, camino:<meses> (nivel en $ o variación con %, y resto; ej.: camino:2026-12=1600;2027-06=1.5%;resto=1%) o escenario:<nombre>"},
         "ticker": {"type": "string", "description": "Un bono puntual (opcional)"},
         "fecha": {"type": "string", "description": "Fecha de operación AAAA-MM-DD (opcional)"},
     }},
