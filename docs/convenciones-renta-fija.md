@@ -162,18 +162,17 @@ Código: `renta_fija/calculadoras/proyeccion_cer.py` y herramienta `proyectar_ce
 - `breakeven`: CER implícito en la fecha del CER final de cada CER cero cupón = precio × (1 + TEA de la tasa fija a su plazo) ^ (plazo/365) × CER inicial / 100. Entre esos puntos, inflación mensual constante (interpolación del logaritmo del CER en meses de CER). Después del último bono, se repite la última inflación mensual.
 - `escenario:<nombre>`: los escenarios del archivo, con inflaciones mensuales y anuales.
 - `mensual:<tasa>`: inflación mensual plana, en porcentaje ("2%", "2" o "1.66"); una fracción menor a 0,2 ("0.02") también se acepta.
-- `rem`: hasta cargar el Excel del BCRA (mes a mes y por año), la mediana de la inflación esperada a 12 meses de la API (BCRA id 29), pasada a mensual y plana, aclarada como aproximación.
+- `rem`: último relevamiento del REM cargado (Excel del BCRA en `fuentes/rem/`, base `datos/rem.db`), mediana. Los meses que trae mes a mes se usan tal cual; los demás meses de cada año se completan para que el año cierre en la inflación anual del REM (diciembre contra diciembre); después del último año del REM se repite su anual. Los meses ya publicados usan el dato del INDEC, aunque el REM esperara otro. Si no hay Excel cargado, la mediana a 12 meses de la API (BCRA id 29), pasada a mensual y plana, como aproximación.
 
 **Rendimiento nominal:** CER de cada pago = el proyectado (o publicado) 10 días hábiles antes. Cero cupón: pago final = 100 × CER final / CER inicial; TNA = (pago / precio − 1) × 365 / plazo; TIR = (pago / precio) ^ (365 / plazo) − 1. Con cupón: flujos reales × CER del pago / CER inicial y TIR efectiva (base 365) con el motor; TNA semestral exacta. Se contrasta con la TEA de la tasa fija interpolada al plazo.
 
 ## Puntos abiertos (para decidir con Agustin)
 
 1. **Para más adelante (decisión de Agustin, 13/11/2026):** duration modificada, convexidad, valor técnico y paridad de los CER cero cupón. Por ahora no hacen falta.
-2. **Pendiente:** cargar el REM (mensual de los próximos meses y anual de los próximos años) como fuente de la proyección del CER.
+2. **Pendiente:** usar el REM también para TAMAR y tipo de cambio (ya están en la base del REM), y comparar los breakevens contra el REM.
 3. **Para más adelante:** curva teórica de tasa fija (regresión de la TEA contra el logaritmo de la duration, con cada letra por encima o por debajo de la curva).
 4. **Para más adelante:** calculadora de letras a descuento (hoy todas las letras vigentes son capitalizables).
 5. **Para más adelante:** la pata tasa fija del dual TTD26 (hoy se calcula solo como TAMAR).
-6. **Pendiente:** comparar los breakevens de inflación y de tipo de cambio con el REM del BCRA (falta identificar las variables).
 7. **Para más adelante:** dollar linked corporativos con cupones y amortizaciones, con el tipo de cambio de pago de cada prospecto.
 8. **Objetivo:** que las condiciones de emisión de cada bono salgan del análisis de los prospectos, sin carga manual.
 
@@ -193,3 +192,4 @@ Código: `renta_fija/calculadoras/proyeccion_cer.py` y herramienta `proyectar_ce
 - **13/11/2026:** dollar linked del Tesoro (bullet), actual/365, con el A3500 del día de concertación (estimado con el del día hábil anterior hasta que se publica). A3500 (BCRA id 5) en la base de series.
 - **13/11/2026:** breakevens entre curvas (inflación, devaluación, tipo de cambio real, brecha y TAMAR implícita), interpolando al plazo (duration en días), TEA contra TEA, sin ajustar rezagos, con forwards y niveles implícitos.
 - **13/11/2026:** regla del CER verificada (días corridos, período del 16 al 15). Proyección del CER con breakeven, escenarios o inflación plana, y rendimiento nominal de todos los CER.
+- **14/11/2026:** REM cargado desde el Excel del BCRA (relevamiento de octubre de 2026). La fuente `rem` de la proyección del CER usa la mediana mes a mes y completa cada año para cerrar en la anual del REM (decisión de Agustin).

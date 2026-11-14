@@ -7,7 +7,8 @@ Hoy carga los feriados (datos/feriados.db) y el calendario de publicaciones
 (datos/publicaciones.db): las del INDEC desde sus PDF, las que siguen una regla de días
 hábiles (ISM, recaudación) y las de EE. UU. desde FRED. También suma los cierres nuevos
 de los activos seguidos a la base de precios (datos/precios.db) y los valores nuevos del CER
-la TAMAR y el A3500 a la base de series (datos/series.db).
+la TAMAR y el A3500 a la base de series (datos/series.db), y las expectativas del REM
+(Excel en fuentes/rem/) a datos/rem.db.
 Conviene correrlo después de actualizar la librería holidays, de editar
 calendarios/feriados_ajustes.toml o calendarios/publicaciones.toml, de agregar un PDF
 del INDEC en calendarios/indec/, y una vez por semana para traer las fechas nuevas de FRED.
@@ -15,7 +16,7 @@ del INDEC en calendarios/indec/, y una vez por semana para traer las fechas nuev
 import sys
 
 import config
-from carga_datos import catalogo, feriados, precios, publicaciones_fred, publicaciones_indec, publicaciones_regla, series
+from carga_datos import catalogo, feriados, precios, publicaciones_fred, publicaciones_indec, publicaciones_regla, rem, series
 from admin_datos.feriados import NOMBRES_CALENDARIO
 from conexiones.http import ErrorAPI
 
@@ -52,6 +53,7 @@ def main():
 
     _publicaciones_fred()
     _series()
+    _rem()
     _precios()
 
 
@@ -70,6 +72,19 @@ def _publicaciones_fred():
         print(f"  {codigo:<18} próxima: {datos['proxima'] or '(sin fecha)'}")
     for aviso in eeuu["avisos"]:
         print(f"  Aviso: {aviso}")
+
+
+def _rem():
+    print("\nREM del BCRA (Excel en fuentes/rem/):")
+    try:
+        resumen = rem.cargar()
+    except (ValueError, OSError) as e:
+        print(f"  error: {e}")
+        return
+    if not resumen:
+        print("  no hay Excel cargados: bajá las tablas del REM del sitio del BCRA a fuentes/rem/")
+    for relevamiento, filas in resumen.items():
+        print(f"  relevamiento {relevamiento}: {filas} valores")
 
 
 def _series():

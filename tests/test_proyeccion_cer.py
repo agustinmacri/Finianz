@@ -97,9 +97,39 @@ def test_escenarios_del_archivo():
     assert isinstance(proyeccion_cer.escenarios(), dict)                 # el archivo de ejemplo no trae activos
 
 
+def test_rem_del_excel():
+    """El Excel de octubre de 2026 (fuentes/rem/) se lee bien y arma el camino de inflación del escenario REM."""
+    import tempfile
+    from pathlib import Path
+    import config
+    from admin_datos import rem as db_rem
+    from carga_datos import rem
+    original = config.DATOS_DIR
+    with tempfile.TemporaryDirectory() as tmp:
+        config.DATOS_DIR = Path(tmp)
+        try:
+            assert rem.cargar().get("2026-10", 0) > 50
+            ipc = db_rem.valores("IPC")
+            assert ipc["2027-01"] == 1.7 and ipc["2027"] == 21.9 and ipc["2026-11"] == 1.7 and ipc["prox12"] == 21.8
+            assert db_rem.valores("TIPO_CAMBIO")["2026-12"] == 1590 and db_rem.valores("TAMAR")["2027-01"] == 23.95
+            mensuales = {(int(p[:4]), int(p[5:7])): v / 100 for p, v in ipc.items() if len(p) == 7 and p[4] == "-"}
+            anuales = {int(p): v / 100 for p, v in ipc.items() if p.isdigit()}
+            publicadas = {(2026, m): 0.02 for m in range(1, 10)} | {(2026, 10): 0.022}
+            c = pc.camino(publicadas, mensuales, anuales, (2026, 11), (2029, 12))
+            assert c[(2026, 11)] == (0.017, "mensual") and c[(2027, 4)][1] == "mensual"
+            anio = 1.017 * 1.016 * 1.017 * (1 + ipc["2027-04"] / 100)          # 2027 cierra en 21,9%
+            for m in range(5, 13):
+                anio *= 1 + c[(2027, m)][0]
+            assert abs(anio - 1.219) < 1e-12 and c[(2027, 5)][1] == "anual 2027"
+            assert abs(c[(2028, 3)][0] - (1 + ipc["2028"] / 100) ** (1 / 12) + 1) < 1e-12
+            assert c[(2029, 1)][1] == "anual 2028 (último año con dato)"
+        finally:
+            config.DATOS_DIR = original
+
+
 if __name__ == "__main__":
     for prueba in (test_regla_con_los_datos_del_bcra, test_proyectar, test_camino_mensual_y_anual,
-                   test_inflacion_desde_cer, test_nominal, test_tasa_mensual, test_escenarios_del_archivo):
+                   test_inflacion_desde_cer, test_nominal, test_tasa_mensual, test_escenarios_del_archivo, test_rem_del_excel):
         prueba()
         print(f"OK  {prueba.__name__}")
     print("Todas las pruebas de la proyección del CER pasaron.")

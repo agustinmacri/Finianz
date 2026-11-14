@@ -2,13 +2,16 @@
 
 Fuentes: "breakeven" (la inflación que descuenta la curva CER contra la tasa fija), "rem", "escenario:<nombre>"
 (renta_fija/escenarios/inflacion.toml) y "mensual:<tasa>" (una inflación mensual plana).
-"rem", hasta que esté la carga del Excel del BCRA (mes a mes y por año), usa la mediana de la inflación
-esperada a 12 meses de la API, pasada a mensual y plana, y lo aclara como aproximación. Reglas en renta_fija/calculadoras/proyeccion_cer.py y docs/convenciones-renta-fija.md.
+"rem" usa el último relevamiento cargado (Excel del BCRA en fuentes/rem/, base datos/rem.db): la mediana
+de la inflación de cada mes que trae, y la anual (diciembre contra diciembre) de cada año para completar los
+meses que faltan, de modo que el año cierre en lo que espera el REM. Si no hay ningún Excel cargado, usa la
+mediana a 12 meses de la API, pasada a mensual y plana, y lo aclara como aproximación. Reglas en renta_fija/calculadoras/proyeccion_cer.py y docs/convenciones-renta-fija.md.
 """
 import tomllib
 from datetime import date, timedelta
 from pathlib import Path
 
+from admin_datos import rem as db_rem
 from admin_datos import series as db_series
 from conexiones import bcra
 from conexiones.http import ErrorAPI
@@ -95,13 +98,25 @@ def proyectar_cer(fuente: str = "breakeven", ticker: str | None = None, fecha: s
         puntos_tf = [(p["x"], p["tea"]) for p in curvas["tasa_fija"]]
 
         # Camino de inflación según la fuente
-        if fuente.startswith("mensual:") or fuente == "rem":
+        if fuente == "rem" and db_rem.ultimo():
+            relevamiento = db_rem.ultimo()
+            ipc = db_rem.valores("IPC", relevamiento)
+            mensuales = {(int(p[:4]), int(p[5:7])): v / 100 for p, v in ipc.items() if len(p) == 7 and p[4] == "-"}
+            anuales = {int(p): v / 100 for p, v in ipc.items() if p.isdigit()}
+            caminos = pc.camino(publicadas, mensuales, anuales, desde, hasta_mes)
+            meses_rem = sorted(m for m in mensuales if m >= desde)
+            descripcion = (f"REM del BCRA, relevamiento {relevamiento} (mediana). Mes a mes"
+                           + (f" de {_nombre_mes(meses_rem[0])} a {_nombre_mes(meses_rem[-1])}" if meses_rem else ": ninguno pendiente")
+                           + "; inflación anual " + ", ".join(f"{a} {bonos._pct(v)}" for a, v in sorted(anuales.items()))
+                           + ". Los meses sin dato mensual completan cada año para cerrar en esa anual; después de "
+                           + f"{max(anuales)} se repite la última anual. Los meses ya publicados usan el dato del INDEC")
+        elif fuente.startswith("mensual:") or fuente == "rem":
             if fuente == "rem":
                 anual, fecha_rem = _rem_12_meses()
                 tasa = (1 + anual) ** (1 / 12) - 1
                 descripcion = (f"REM (relevamiento al {fecha_rem}): mediana de la inflación esperada a 12 meses "
-                               f"{bonos._pct(anual)}, pasada a mensual ({bonos._pct(tasa)}) y aplicada plana. Aproximación "
-                               "hasta cargar el REM mes a mes y por año")
+                               f"{bonos._pct(anual)}, pasada a mensual ({bonos._pct(tasa)}) y aplicada plana. Aproximación: "
+                               "no hay ningún Excel del REM en fuentes/rem/")
             else:
                 tasa = tasa_mensual(fuente.split(":", 1)[1])
                 descripcion = f"inflación mensual plana de {bonos._pct(tasa)}"

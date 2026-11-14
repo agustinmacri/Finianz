@@ -104,7 +104,9 @@ Finianz/
 │   ├── publicaciones.db
 │   ├── precios.db       # precios diarios de los activos consultados (respaldar)
 │   ├── series.db        # CER, TAMAR y A3500 del BCRA (regenerable)
+│   ├── rem.db           # expectativas del REM, por relevamiento (regenerable desde fuentes/rem/)
 │   └── cartera.db       # fase B
+├── fuentes/            # archivos oficiales bajados a mano: rem/ con los Excel del REM del BCRA
 ├── calendarios/
 │   ├── feriados_ajustes.toml   # correcciones manuales a los feriados
 │   ├── publicaciones.toml      # catálogo de publicaciones que se siguen, con su importancia
@@ -199,6 +201,8 @@ Qué publicaciones se siguen y con qué importancia se define en `calendarios/pu
 
 **Series (CER, TAMAR y A3500).** `datos/series.db` guarda el CER diario del BCRA desde 2002, la TAMAR de bancos privados (variable 44, % TNA, días hábiles) y el tipo de cambio A3500 (variable 5). La primera vez se baja toda la historia (tarda unos segundos) y después solo los días nuevos; como el BCRA publica el CER por adelantado, se piden también los próximos 60 días. Las calculadoras de bonos toman de acá el CER corriente y el CER inicial de cada bono (el del 10.º día hábil anterior a su emisión), así las fichas solo tienen condiciones de emisión. Se regenera en cualquier momento. Para comparar las bases con las de tus Excel: `python -m tests.verificar_cer_inicial`.
 
+**REM.** El BCRA publica cada mes un Excel con las expectativas del Relevamiento de Expectativas de Mercado (inflación, TAMAR, tipo de cambio, PIB...) mes a mes y por año. La API solo trae la inflación a 12 meses, así que se baja el Excel del sitio del BCRA a `fuentes/rem/` y `python actualizar.py` lo carga en `datos/rem.db`. La proyección del CER lo usa con la fuente `rem`.
+
 **Precios.** Cada activo que consultás queda "seguido": la primera vez se baja todo su histórico de PPI a `datos/precios.db`, y después solo se piden los días que faltan. `python actualizar.py` suma los cierres nuevos de todos los seguidos (el cierre del día se guarda recién después de las 18 h). El precio del momento se consulta en vivo y no se guarda. A diferencia de las otras bases, esta no se puede regenerar del todo: hacele respaldos.
 
 ## Seguridad
@@ -218,7 +222,7 @@ El sistema se construye por fases. El detalle está en [`docs/arquitectura-multi
 
 - [ ] **Fase A** (en curso): router + agentes macro y noticias ✓; calendario de publicaciones del INDEC ✓, de EE. UU. (FRED) ✓ y por regla (ISM, recaudación) ✓; faltan las manuales (BCRA, Tesoro, FOMC).
 - [ ] **Fase B** (en curso): bases de datos locales (✓ feriados, ✓ publicaciones), precios de mercado (✓ consulta en vivo vía PPI; falta la base de precios), cartera y registro de pronósticos.
-- [ ] **Fase C** (en curso): calculadoras de bonos (✓ motor, ✓ CER cupón cero, ✓ CER con cupón: TX28 y TX31, ✓ tasa fija: Lecap/Boncap y TY30P, ✓ TAMAR: Bonos TAMAR y duales TTD26 y TXM, ✓ hard dollar: Bonares y Globales del canje 2020, ✓ dollar linked del Tesoro, ✓ breakevens entre curvas, ✓ proyección del CER y rendimiento nominal; faltan REM y corporativos) y agente de renta fija.
+- [ ] **Fase C** (en curso): calculadoras de bonos (✓ motor, ✓ CER cupón cero, ✓ CER con cupón: TX28 y TX31, ✓ tasa fija: Lecap/Boncap y TY30P, ✓ TAMAR: Bonos TAMAR y duales TTD26 y TXM, ✓ hard dollar: Bonares y Globales del canje 2020, ✓ dollar linked del Tesoro, ✓ breakevens entre curvas, ✓ proyección del CER y rendimiento nominal, ✓ REM; faltan corporativos) y agente de renta fija.
 - [ ] **Fase D:** agente de escenarios y estratega (retornos esperados, estrés, límites regulatorios).
 - [ ] **Fase E:** redactor de informes y revisión humana.
 - [ ] **Fase F:** agente de equity (balances, DCF, comparables).

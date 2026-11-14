@@ -96,6 +96,7 @@ CACHE_NOTICIAS_MINUTOS = _int("CACHE_NOTICIAS_MINUTOS", 15)
 # ---------------------------------------------------------------------------
 DATOS_DIR = BASE_DIR / "datos"               # bases SQLite (no se suben a git): feriados, publicaciones, cartera
 CALENDARIOS_DIR = BASE_DIR / "calendarios"   # sí se sube a git: correcciones manuales
+FUENTES_DIR = BASE_DIR / "fuentes"           # sí se sube a git: archivos oficiales bajados a mano (REM del BCRA)
 
 # Feriados: se cargan desde FERIADOS_DESDE hasta FERIADOS_ANIOS_ADELANTE años después del actual
 # (los bonos necesitan días hábiles hasta su vencimiento: el CUAP vence en 2045)

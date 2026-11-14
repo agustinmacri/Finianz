@@ -5,6 +5,7 @@
     ├── publicaciones.db   fechas de publicación: INDEC, FRED, licitaciones  (regenerable)
     ├── precios.db         precios diarios de los activos consultados       (NO regenerable del todo: respaldar)
     ├── series.db          series diarias oficiales: CER, TAMAR y A3500     (regenerable)
+    ├── rem.db             expectativas del REM del BCRA, por relevamiento  (regenerable desde fuentes/rem/)
     └── cartera.db         posiciones, operaciones y pronósticos propios     (NO regenerable: respaldar)
 
 Acá se definen las tablas de cada base y la forma de conectarse. Las consultas de cada
@@ -83,6 +84,18 @@ ESQUEMAS = {
             valor     REAL NOT NULL,
             fuente    TEXT NOT NULL,            -- bcra
             PRIMARY KEY (variable, fecha)
+        );
+    """,
+    "rem": """
+        CREATE TABLE IF NOT EXISTS rem (
+            relevamiento  TEXT NOT NULL,     -- AAAA-MM del relevamiento
+            variable      TEXT NOT NULL,     -- IPC, IPC_NUCLEO, TAMAR, TIPO_CAMBIO, PIB...
+            periodo       TEXT NOT NULL,     -- AAAA-MM (mes), AAAA (año), prox12, prox24 o el texto del REM (Trim. III-26)
+            referencia    TEXT,              -- como lo publica el REM: "var. % mensual", "var. % i.a.; dic-27"
+            mediana REAL, promedio REAL, desvio REAL, maximo REAL, minimo REAL,
+            p90 REAL, p75 REAL, p25 REAL, p10 REAL, participantes INTEGER,
+            archivo       TEXT NOT NULL,
+            PRIMARY KEY (relevamiento, variable, periodo)
         );
     """,
     "cartera": "",         # fase B: posiciones, operaciones y registro de pronósticos

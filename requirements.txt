@@ -8,6 +8,7 @@ requests>=2.31
 feedparser>=6.0
 holidays>=0.108       # feriados de Argentina, EE. UU. y calendarios de mercado (BYMA, NYSE)
 pypdf>=6.0            # lectura de los calendarios del INDEC en PDF
+openpyxl>=3.1         # lectura del Excel del REM del BCRA
 python-dotenv>=1.0
 pandas
 numpy
