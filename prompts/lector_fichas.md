@@ -21,3 +21,4 @@ Reglas:
 8. "base": base de cálculo de los intereses si el texto la dice (30/360, actual/365 o actual/360).
 9. "cita": copiá el fragmento del texto que describe las condiciones del instrumento (como máximo unas 60 palabras), para que se pueda verificar.
 10. Si un dato del texto parece un error (por ejemplo, una fecha que no coincide con el resto), usalo igual y explicalo en "notas".
+11. Resultados de licitación: para cada instrumento, completá "variable_licitada" con lo que se licitó (precio, tasa o margen; la TEM de una LECAP/BONCAP es "tasa"), "valor_corte" con el valor de corte (el precio tal cual figura, por cada 1.000 de valor nominal; la tasa o el margen en fracción) y "tirea" con la TIREA de corte en fracción. Si el instrumento es nuevo y lo licitado es la TEM o el margen, poné también ese valor en "cupon" o "margen". Un precio de corte nunca va en "cupon". Si un instrumento nuevo no trae ticker, anotá "ticker: no figura en el resultado" en "pendiente".

@@ -92,6 +92,69 @@ def test_borradores_aprobacion():
             leer_fichas.CARPETA, fd.BORRADORES = original_carpeta, original_borradores
 
 
+# Resultado del 11/11/2026 (argentina.gob.ar): reaperturas por precio y una letra TAMAR nueva licitada por margen.
+RESULTADO_NOV = fd.Documento(tipo_documento="resultado de licitación", fecha_documento="2026-11-11", instrumentos=[
+    fd.Instrumento(nombre="LECAP 29/01/2027", ticker="S29E7", reapertura=True, familia="tasa_fija_capitalizable",
+                   tipo="LECAP", vencimiento="2027-01-29", variable_licitada="precio", valor_corte=1060.0, tirea=0.2808),
+    fd.Instrumento(nombre="BONCER 30/06/2028", ticker="TZX28", reapertura=True, familia="cer_cero_cupon",
+                   tipo="BONCER", vencimiento="2028-06-30", variable_licitada="precio", valor_corte=3650.0, tirea=0.105),
+    fd.Instrumento(nombre="Letra TAMAR 30/04/2027 (nueva)", familia="tamar_capitalizable", tipo="LETRA TAMAR",
+                   emision="2026-11-13", vencimiento="2027-04-30", variable_licitada="margen", valor_corte=0.025,
+                   tirea=0.2987, pendiente=["ticker: no figura en el resultado"]),
+    # Inventado para la prueba: un documento que dice otro margen para un bono ya aprobado.
+    fd.Instrumento(nombre="TAMAR 26/02/2027", ticker="TMF27", reapertura=True, familia="tamar_capitalizable",
+                   tipo="BONO TAMAR", vencimiento="2027-02-26", margen=0.07),
+    fd.Instrumento(nombre="TAMAR 31/08/2027", ticker="TMG27", reapertura=True, familia="tamar_capitalizable",
+                   tipo="BONO TAMAR", vencimiento="2027-08-31", margen=0.05),
+])
+
+
+def test_resultado_y_cambios():
+    original_carpeta, original_borradores = leer_fichas.CARPETA, fd.BORRADORES
+    with tempfile.TemporaryDirectory() as tmp:
+        carpeta = Path(tmp) / "fichas"
+        shutil.copytree(original_carpeta, carpeta, ignore=shutil.ignore_patterns("borradores"))
+        leer_fichas.CARPETA, fd.BORRADORES = carpeta, carpeta / "borradores" / "borradores.toml"
+        documento = Path(tmp) / "resultado.txt"
+        documento.write_text("Resultado de la licitación. " * 20, encoding="utf-8")
+        hoy = date(2026, 11, 14)
+        try:
+            antes_s29e7 = leer_fichas.ficha("S29E7")
+            r = fd.leer(str(documento), extractor=lambda texto: RESULTADO_NOV, hoy=hoy)
+            assert {"S29E7", "TZX28", "TMF27", "TMG27"} <= set(r["ya_cargados"])
+            assert any("S29E7: precio de corte 1.060,00, TIREA 28,08%" == c for c in r["cortes"]), r["cortes"]
+            assert leer_fichas.ficha("S29E7") == antes_s29e7                     # un precio de corte no cambia la ficha
+            # La letra TAMAR nueva: borrador con el margen de corte y el ticker pendiente.
+            letra = next(b for b in fd.pendientes() if b["clave"] == "tamar_capitalizable-2027-04-30")
+            assert letra["margen"] == 0.025 and letra["pendiente"] == ["ticker: no figura en el resultado"]
+            # Datos distintos de fichas aprobadas: propuestos, sin tocar la ficha.
+            assert sorted(r["cambios"]) == ["TMF27 margen: 0.065 → 0.07", "TMG27 margen: 0.06 → 0.05"]
+            assert leer_fichas.ficha("TMF27")["margen"] == 0.065
+            assert "TMF27 (tamar_capitalizable) margen: 0.065 → 0.07" in fd.describir_cambios()
+            # Leer dos veces el mismo documento no duplica las propuestas.
+            fd.leer(str(documento), extractor=lambda texto: RESULTADO_NOV, hoy=hoy)
+            assert len(fd.cambios_propuestos()) == 2
+
+            # Aplicar (desde el agente) y rechazar.
+            salida = lector_fichas.aplicar_cambio("TMF27")
+            assert "TMF27 (tamar_capitalizable): margen = 0.07" in salida, salida
+            tmf27 = leer_fichas.ficha("TMF27")
+            assert tmf27["margen"] == 0.07 and "aprobado por Agustin (vía agente de renta fija)" in tmf27["fuente"]
+            assert tmf27["revisado"] is True and leer_fichas.ficha("TML27")["margen"] == 0.054   # el resto, igual
+            assert "Rechazado: TMG27 margen" in fd.rechazar("TMG27")
+            assert leer_fichas.ficha("TMG27")["margen"] == 0.06 and fd.cambios_propuestos() == []
+            assert "No hay cambios" in _error(lambda: fd.aplicar("TMG27"))
+
+            # Completar el ticker que no vino y aprobar.
+            assert "ticker = M30A7" in lector_fichas.completar_borrador("tamar_capitalizable-2027-04-30", "ticker", "m30a7")
+            letra = next(b for b in fd.pendientes() if b["clave"] == "M30A7")
+            assert "pendiente" not in letra
+            assert "M30A7 aprobado" in fd.aprobar("M30A7", hoy=hoy)
+            assert leer_fichas.ficha("M30A7")["margen"] == 0.025
+        finally:
+            leer_fichas.CARPETA, fd.BORRADORES = original_carpeta, original_borradores
+
+
 def _error(funcion) -> str:
     try:
         funcion()
@@ -115,7 +178,7 @@ def test_toml_ida_y_vuelta():
 
 
 if __name__ == "__main__":
-    for prueba in (test_borradores_aprobacion, test_texto_html, test_toml_ida_y_vuelta):
+    for prueba in (test_borradores_aprobacion, test_resultado_y_cambios, test_texto_html, test_toml_ida_y_vuelta):
         prueba()
         print(f"OK  {prueba.__name__}")
     print("Todas las pruebas del lector de fichas pasaron.")

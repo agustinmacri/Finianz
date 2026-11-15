@@ -12,11 +12,21 @@ Flujo:
 3. aprobar(ticker): valida la ficha con las mismas reglas que las demás y la pasa al archivo de su familia con
    revisado = true. Los borradores no los usa ninguna calculadora.
 
+Resultados de licitación: de cada instrumento se lee qué se licitó (precio, tasa/TEM o margen) y el valor de corte.
+   - Un precio de corte es un dato de mercado: se informa y la ficha no cambia.
+   - La TEM o el margen de un instrumento nuevo completa su borrador (que después aprobás).
+   - Si un bono que ya tiene ficha trae un dato de condiciones distinto del cargado, queda como CAMBIO PROPUESTO en
+     renta_fija/fichas/borradores/cambios.toml; la ficha cambia solo si lo aplicás (aplicar <TICKER>).
+
 Desde la terminal:
     python -m carga_datos.fichas_documentos leer <url o archivo>
     python -m carga_datos.fichas_documentos pendientes
     python -m carga_datos.fichas_documentos aprobar <TICKER>
     python -m carga_datos.fichas_documentos descartar <TICKER o clave>
+    python -m carga_datos.fichas_documentos completar <TICKER o clave> campo=valor   (ej.: ticker=TMY27)
+    python -m carga_datos.fichas_documentos cambios
+    python -m carga_datos.fichas_documentos aplicar <TICKER> [campo]
+    python -m carga_datos.fichas_documentos rechazar <TICKER> [campo]
 """
 import re
 import sys
@@ -37,6 +47,8 @@ ARCHIVO_DE_FAMILIA = {
     "tasa_fija_cupon": "tasa_fija.toml", "tasa_fija_descuento": "tasa_fija.toml", "tamar_capitalizable": "tamar.toml",
     "dolar_linked_bullet": "dolar_linked.toml", "dolar_linked_cupon": "dolar_linked.toml", "hard_dollar": "hard_dollar.toml",
 }
+CAMBIOS = None   # se resuelve en tiempo de ejecución: carpeta de borradores / cambios.toml
+CAMPOS_COMPARABLES = ("emision", "vencimiento", "cupon", "margen", "frecuencia", "base", "ley")   # escalares de condiciones
 ORDEN = ["ticker", "tipo", "familia", "ley", "par", "emision", "vencimiento", "cupon", "margen", "frecuencia", "base",
          "tramos", "pagos", "tipo_cambio_pago", "revisado", "fuente", "nota", "pendiente", "cita", "clave"]
 Familia = Literal["cer_cero_cupon", "cer_cupon", "tasa_fija_capitalizable", "tasa_fija_cupon", "tasa_fija_descuento",
@@ -71,6 +83,11 @@ class Instrumento(BaseModel):
     pagos: list[Pago] = Field(default_factory=list)
     tramos: list[Tramo] = Field(default_factory=list)
     tipo_cambio_pago: str | None = Field(None, description="Tipo de cambio con el que se paga (dollar linked)")
+    variable_licitada: Literal["precio", "tasa", "margen"] | None = Field(
+        None, description="Solo en resultados: qué se licitó (precio, tasa/TEM o margen sobre la TAMAR)")
+    valor_corte: float | None = Field(None, description="Solo en resultados: el valor de corte de la variable licitada. "
+                                      "Precio tal cual figura (por 1.000 VNO); tasa o margen en fracción")
+    tirea: float | None = Field(None, description="Solo en resultados: TIREA de corte, en fracción")
     pendiente: list[str] = Field(default_factory=list, description="Datos que faltan o se definen en la licitación")
     notas: str | None = None
     cita: str = Field("", description="Fragmento del texto con las condiciones")
@@ -158,6 +175,11 @@ def _fecha(texto: str | None) -> date | None:
 
 def a_ficha(ins: Instrumento, origen: str, tipo_documento: str, fecha_documento: str | None) -> dict:
     """Convierte lo extraído en una ficha borrador."""
+    if ins.valor_corte is not None and not ins.reapertura:      # la TEM o el margen de corte de un instrumento nuevo
+        if ins.variable_licitada == "margen" and ins.margen is None:
+            ins.margen = ins.valor_corte
+        elif ins.variable_licitada == "tasa" and ins.cupon is None:
+            ins.cupon = ins.valor_corte
     ficha = {"ticker": (ins.ticker or "").upper() or None, "tipo": ins.tipo, "familia": ins.familia, "ley": ins.ley,
              "emision": _fecha(ins.emision), "vencimiento": _fecha(ins.vencimiento), "cupon": ins.cupon,
              "margen": ins.margen, "frecuencia": ins.frecuencia, "base": ins.base,
@@ -211,6 +233,71 @@ def _guardar_borradores(borradores: list[dict], ruta: Path | None = None):
     ruta.write_text(encabezado + "\n".join(a_toml(b) for b in borradores), encoding="utf-8")
 
 
+def _ruta_cambios() -> Path:
+    return CAMBIOS or BORRADORES.parent / "cambios.toml"
+
+
+def _leer_cambios() -> list[dict]:
+    ruta = _ruta_cambios()
+    return tomllib.loads(ruta.read_text(encoding="utf-8")).get("cambio", []) if ruta.exists() else []
+
+
+def _guardar_cambios(cambios: list[dict]):
+    ruta = _ruta_cambios()
+    ruta.parent.mkdir(parents=True, exist_ok=True)
+    encabezado = ("# Cambios propuestos a fichas ya aprobadas (datos de un documento que no coinciden con la ficha).\n"
+                  "# La ficha no cambia hasta que los aplicás:  python -m carga_datos.fichas_documentos aplicar <TICKER>\n\n")
+    cuerpo = "\n".join("[[cambio]]\n" + "".join(f"{k} = {_valor_toml(v)}\n" for k, v in c.items() if v is not None)
+                       for c in cambios)
+    ruta.write_text(encabezado + cuerpo, encoding="utf-8")
+
+
+def _iguales(a, b) -> bool:
+    if isinstance(a, (int, float)) and isinstance(b, (int, float)) and not isinstance(a, bool):
+        return abs(a - b) < 1e-9
+    return str(a).strip().upper() == str(b).strip().upper()
+
+
+def _proponer_cambios(ficha_nueva: dict, cargada: dict, cambios: list[dict]) -> list[str]:
+    """Compara los datos de condiciones del documento con la ficha cargada y propone los que difieren."""
+    propuestos = []
+    obligatorios = leer_fichas.CAMPOS.get(cargada["familia"], ())
+    for campo in CAMPOS_COMPARABLES:
+        if campo not in ficha_nueva or (campo not in obligatorios and campo not in cargada):
+            continue
+        actual = cargada.get(campo)
+        if actual is not None and _iguales(actual, ficha_nueva[campo]):
+            continue
+        previo = next((c for c in cambios if c["ticker"] == cargada["ticker"] and c["familia"] == cargada["familia"]
+                       and c["campo"] == campo), None)
+        if previo is not None:
+            cambios.remove(previo)
+        cambios.append({"ticker": cargada["ticker"], "familia": cargada["familia"], "campo": campo,
+                        "actual": actual if actual is not None else "(vacío)", "nuevo": ficha_nueva[campo],
+                        "fuente": ficha_nueva["fuente"].replace("; borrador del lector de fichas", ""),
+                        "cita": ficha_nueva.get("cita")})
+        propuestos.append(f"{cargada['ticker']} {campo}: {actual if actual is not None else '(vacío)'} → {ficha_nueva[campo]}")
+    return propuestos
+
+
+def _numero_ar(x: float, decimales: int = 2) -> str:
+    return f"{x:,.{decimales}f}".replace(",", "X").replace(".", ",").replace("X", ".")
+
+
+def _texto_corte(ins: Instrumento) -> str | None:
+    if ins.valor_corte is None and ins.tirea is None:
+        return None
+    nombre = ins.ticker or ins.nombre
+    partes = []
+    if ins.variable_licitada == "precio" and ins.valor_corte is not None:
+        partes.append(f"precio de corte {_numero_ar(ins.valor_corte)}")
+    elif ins.variable_licitada in ("tasa", "margen") and ins.valor_corte is not None:
+        partes.append(f"{'TEM' if ins.variable_licitada == 'tasa' else 'margen'} de corte {_numero_ar(ins.valor_corte * 100)}%")
+    if ins.tirea is not None:
+        partes.append(f"TIREA {_numero_ar(ins.tirea * 100)}%")
+    return f"{nombre}: " + ", ".join(partes)
+
+
 def _mismo(a: dict, b: dict) -> bool:
     if a.get("ticker") and b.get("ticker"):
         return a["ticker"].upper() == b["ticker"].upper() and a.get("familia") == b.get("familia")
@@ -232,20 +319,28 @@ def leer(fuente: str, extractor=extraer_con_modelo, hoy: date | None = None) -> 
     documento = extractor(texto)
     existentes = leer_fichas.leer_todas()
     borradores = _leer_borradores()
+    cambios = _leer_cambios()
     resumen = {"documento": documento.tipo_documento, "fecha": documento.fecha_documento, "ya_cargados": [],
-               "vencidos": [], "nuevos": [], "completados": [], "sin_familia": [], "descartados": []}
+               "vencidos": [], "nuevos": [], "completados": [], "sin_familia": [], "descartados": [],
+               "cortes": [], "cambios": []}
     for b in [b for b in borradores if _vencido(b, hoy)]:
         borradores.remove(b)
         resumen["vencidos"].append(f"{b['clave']} (borrador, venció el {b['vencimiento']:%d/%m/%Y})")
     origen = fuente if re.match(r"https?://", fuente) else Path(fuente).name
     for ins in documento.instrumentos:
+        corte = _texto_corte(ins)
         ficha = a_ficha(ins, origen, documento.tipo_documento, documento.fecha_documento)
         ticker = ficha.get("ticker")
+        if corte:
+            resumen["cortes"].append(corte)
         if _vencido(ficha, hoy):
             resumen["vencidos"].append(f"{ticker or ins.nombre} (venció el {ficha['vencimiento']:%d/%m/%Y})")
             continue
-        if ticker and any(f["familia"] == ficha.get("familia") or not ficha.get("familia") for f in existentes.get(ticker, [])):
+        cargadas = [f for f in existentes.get(ticker, []) if f["familia"] == ficha.get("familia") or not ficha.get("familia")] if ticker else []
+        if cargadas:
             resumen["ya_cargados"].append(ticker)
+            for cargada in cargadas if ficha.get("familia") else []:
+                resumen["cambios"] += _proponer_cambios(ficha, cargada, cambios)
             sobrantes = [b for b in borradores if _mismo(b, {**ficha, "ticker": None})]   # el del llamado, sin ticker
             for b in sobrantes:
                 borradores.remove(b)
@@ -270,6 +365,8 @@ def leer(fuente: str, extractor=extraer_con_modelo, hoy: date | None = None) -> 
             previo["clave"] = previo["ticker"]
         resumen["completados"].append((previo["clave"], agregados))
     _guardar_borradores(borradores)
+    if cambios or _ruta_cambios().exists():
+        _guardar_cambios(cambios)
     return resumen
 
 
@@ -302,12 +399,123 @@ def aprobar(clave: str, carpeta: Path | None = None, por: str = "Agustin", hoy: 
     return f"{ficha['ticker']} aprobado y agregado a {destino.name}."
 
 
+def _convertir(valor: str):
+    v = valor.strip()
+    try:
+        return date.fromisoformat(v)
+    except ValueError:
+        pass
+    try:
+        numero = float(v.replace(",", "."))
+        return int(numero) if numero.is_integer() and "." not in v and "," not in v else numero
+    except ValueError:
+        return v.upper() if v.isalnum() and len(v) <= 6 else v
+
+
+def completar(clave: str, campo: str, valor) -> str:
+    """Completa o corrige un dato de un borrador (por ejemplo, el ticker que no venía en el resultado)."""
+    campo = campo.strip()
+    if campo not in CAMPOS_COMPARABLES + ("ticker", "tipo", "familia", "tipo_cambio_pago", "nota"):
+        raise ValueError(f"'{campo}' no se completa así; editá el archivo de borradores.")
+    valor = _convertir(valor) if isinstance(valor, str) else valor
+    borradores = _leer_borradores()
+    elegido = next((b for b in borradores if b.get("clave", "").upper() == clave.upper()
+                    or (b.get("ticker") or "").upper() == clave.upper()), None)
+    if elegido is None:
+        raise ValueError(f"No hay ningún borrador '{clave}'.")
+    elegido[campo] = valor
+    if elegido.get("pendiente"):
+        elegido["pendiente"] = [p for p in elegido["pendiente"] if p.split(":")[0].strip() != campo] or None
+        if elegido["pendiente"] is None:
+            del elegido["pendiente"]
+    if campo == "ticker":
+        elegido["clave"] = valor
+    _guardar_borradores(borradores)
+    return f"Borrador {elegido['clave']}: {campo} = {valor}."
+
+
+def cambios_propuestos() -> list[dict]:
+    return _leer_cambios()
+
+
+def describir_cambios() -> str:
+    lista = _leer_cambios()
+    if not lista:
+        return "No hay cambios propuestos a fichas aprobadas."
+    return "\n".join(f"{c['ticker']} ({c['familia']}) {c['campo']}: {c['actual']} → {c['nuevo']} | {c['fuente']}"
+                     + (f" | cita: {c['cita']}" if c.get("cita") else "") for c in lista)
+
+
+def _elegir_cambios(ticker: str, campo: str | None) -> tuple[list[dict], list[dict]]:
+    todos = _leer_cambios()
+    elegidos = [c for c in todos if c["ticker"].upper() == ticker.upper() and (campo is None or c["campo"] == campo)]
+    if not elegidos:
+        raise ValueError(f"No hay cambios propuestos para {ticker}{' en ' + campo if campo else ''}.")
+    return elegidos, [c for c in todos if c not in elegidos]
+
+
+def _reemplazar_en_bloque(texto: str, ticker: str, familia: str, nuevos: dict, agregado_fuente: str) -> str:
+    """Cambia campos escalares del [[bono]] de ese ticker en el texto del archivo, sin tocar el resto."""
+    lineas = texto.split("\n")
+    inicios = [i for i, l in enumerate(lineas) if l.strip() == "[[bono]]"] + [len(lineas)]
+    for a, b in zip(inicios, inicios[1:]):
+        bloque = lineas[a:b]
+        if f'ticker = "{ticker}"' in bloque and f'familia = "{familia}"' in bloque:
+            break
+    else:
+        raise leer_fichas.ErrorFicha(f"No encontré la ficha de {ticker} ({familia}) en el archivo.")
+    for campo, valor in {**nuevos, "fuente": None}.items():
+        posicion = next((i for i in range(a, b) if lineas[i].startswith(f"{campo} = ")), None)
+        if campo == "fuente":
+            actual = tomllib.loads(lineas[posicion])["fuente"] if posicion is not None else ""
+            linea = f"fuente = {_valor_toml((actual + '; ' if actual else '') + agregado_fuente)}"
+        else:
+            linea = f"{campo} = {_valor_toml(valor)}"
+        if posicion is not None:
+            lineas[posicion] = linea
+        else:
+            ultimo = max(i for i in range(a, b) if lineas[i].strip())
+            lineas.insert(ultimo + 1, linea)
+            b += 1
+    return "\n".join(lineas)
+
+
+def aplicar(ticker: str, campo: str | None = None, carpeta: Path | None = None, por: str = "Agustin",
+            hoy: date | None = None) -> str:
+    """Aplica a la ficha aprobada los cambios propuestos de ese ticker (o solo uno), y los valida."""
+    hoy = hoy or date.today()
+    elegidos, resto = _elegir_cambios(ticker, campo)
+    mensajes = []
+    for familia in dict.fromkeys(c["familia"] for c in elegidos):
+        delta = {c["campo"]: c["nuevo"] for c in elegidos if c["familia"] == familia}
+        fuentes = "; ".join(dict.fromkeys(c["fuente"] for c in elegidos if c["familia"] == familia))
+        archivo = (carpeta or leer_fichas.CARPETA) / ARCHIVO_DE_FAMILIA[familia]
+        original = archivo.read_text(encoding="utf-8")
+        nuevo = _reemplazar_en_bloque(original, elegidos[0]["ticker"], familia, delta,
+                                      f"{', '.join(delta)} según {fuentes}, aprobado por {por} el {hoy:%d/%m/%Y}")
+        archivo.write_text(nuevo, encoding="utf-8")
+        try:
+            leer_fichas.validar(leer_fichas.ficha(elegidos[0]["ticker"], familia), f"{archivo.name}, {ticker}")
+            leer_fichas.leer_todas()
+        except Exception:
+            archivo.write_text(original, encoding="utf-8")
+            raise
+        mensajes.append(f"{elegidos[0]['ticker']} ({familia}): " + ", ".join(f"{k} = {v}" for k, v in delta.items()))
+    _guardar_cambios(resto)
+    return "Aplicado: " + "; ".join(mensajes) + "."
+
+
+def rechazar(ticker: str, campo: str | None = None) -> str:
+    elegidos, resto = _elegir_cambios(ticker, campo)
+    _guardar_cambios(resto)
+    return f"Rechazado{'s' if len(elegidos) > 1 else ''}: " + ", ".join(f"{c['ticker']} {c['campo']}" for c in elegidos) + ". La ficha no cambia."
+
+
 def describir_borradores() -> str:
     """Texto con cada borrador completo, para revisarlo antes de aprobar."""
     lista = pendientes()
-    if not lista:
-        return "No hay borradores pendientes."
-    return "\n\n".join(a_toml(b) for b in lista)
+    texto = "\n\n".join(a_toml(b) for b in lista) if lista else "No hay borradores pendientes."
+    return texto + "\n\nCambios propuestos a fichas aprobadas:\n" + describir_cambios()
 
 
 def descartar(clave: str) -> str:
@@ -324,6 +532,12 @@ def describir(resumen: dict) -> str:
     lineas = [f"Documento: {resumen['documento']}{' del ' + resumen['fecha'] if resumen['fecha'] else ''}"]
     if resumen["ya_cargados"]:
         lineas.append("Ya tienen ficha (no se tocan): " + ", ".join(resumen["ya_cargados"]))
+    if resumen.get("cortes"):
+        lineas.append("Resultado de la licitación: " + "; ".join(resumen["cortes"])
+                      + ". Los precios de corte son datos de mercado: no cambian las fichas.")
+    if resumen.get("cambios"):
+        lineas.append("Datos distintos de fichas ya aprobadas (cambios propuestos, la ficha NO cambia hasta que los apliques): "
+                      + "; ".join(resumen["cambios"]))
     if resumen["vencidos"]:
         lineas.append("Ya vencidos, no se cargan: " + ", ".join(resumen["vencidos"]))
     if resumen["nuevos"]:
@@ -337,6 +551,8 @@ def describir(resumen: dict) -> str:
     for b in pendientes():
         if b.get("pendiente"):
             lineas.append(f"  {b['clave']}: pendiente → " + "; ".join(b["pendiente"]))
+    if resumen.get("cambios"):
+        lineas.append("Aplicalos con: python -m carga_datos.fichas_documentos aplicar <TICKER> (o rechazar <TICKER>)")
     if pendientes():
         lineas.append(f"Revisá {BORRADORES.relative_to(leer_fichas.CARPETA.parent.parent)} y aprobá con: "
                       "python -m carga_datos.fichas_documentos aprobar <TICKER> (o pedíselo al agente de renta fija)")
@@ -344,7 +560,8 @@ def describir(resumen: dict) -> str:
 
 
 def main(argv: list[str]):
-    if len(argv) < 1 or argv[0] not in ("leer", "pendientes", "aprobar", "descartar"):
+    if len(argv) < 1 or argv[0] not in ("leer", "pendientes", "aprobar", "descartar", "completar", "cambios",
+                                        "aplicar", "rechazar"):
         print(__doc__)
         return
     try:
@@ -357,8 +574,17 @@ def main(argv: list[str]):
                             for b in lista) or "No hay borradores pendientes.")
         elif argv[0] == "aprobar":
             print(aprobar(argv[1]))
-        else:
+        elif argv[0] == "descartar":
             print(descartar(argv[1]))
+        elif argv[0] == "completar":
+            campo, _, valor = argv[2].partition("=")
+            print(completar(argv[1], campo, valor))
+        elif argv[0] == "cambios":
+            print(describir_cambios())
+        elif argv[0] == "aplicar":
+            print(aplicar(argv[1], argv[2] if len(argv) > 2 else None))
+        else:
+            print(rechazar(argv[1], argv[2] if len(argv) > 2 else None))
     except (ValueError, leer_fichas.ErrorFicha, IndexError) as e:
         print(f"Error: {e}")
 
