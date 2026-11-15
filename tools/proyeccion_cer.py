@@ -22,7 +22,6 @@ from renta_fija.calculadoras import proyeccion_cer as pc
 from tools import bonos, breakevens
 
 ESCENARIOS = Path(__file__).resolve().parent.parent / "renta_fija" / "escenarios" / "inflacion.toml"
-MESES_DETALLE = 15        # meses que se muestran uno por uno; después, el resumen anual
 MESES = ("ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic")
 
 
@@ -180,6 +179,41 @@ def camino_inflacion(fuente: str, liquidacion: date, hasta_mes: pc.Mes, curvas: 
     return caminos, descripcion, serie, publicadas
 
 
+def _tabla_inflacion(fuente, caminos, publicadas, desde, hasta, liquidacion, curvas, operacion, fecha_precios) -> list[str]:
+    """El camino usado mes a mes (hasta diciembre del año que viene) y por año, contra el breakeven y el REM."""
+    from tools import caminos as tc
+    columnas_fuentes = [("usada", fuente, caminos)]
+    for otra in ("breakeven", "rem"):
+        if fuente == otra:
+            continue
+        try:
+            otro, _, _, _ = camino_inflacion(otra, liquidacion, hasta, curvas, operacion, fecha_precios)
+            columnas_fuentes.append((otra, otra, otro))
+        except (ErrorAPI, ValueError):
+            columnas_fuentes.append((otra, otra, {}))
+    columnas = []
+    for rol, nombre, camino in columnas_fuentes:
+        mensual = (lambda c: lambda mes: c[mes][0] if mes in c else None)(camino)
+        extendido = (lambda c: lambda mes: mes in c and "extendida" in c[mes][1])(camino)
+        titulo = {"usada": f"usada ({_titulo_fuente(nombre)})", "breakeven": "breakeven (mercado)", "rem": "REM"}[rol]
+        columnas.append(tc.Columna(titulo, mensual, tc.inflacion_anual(mensual, publicadas, desde), extendido))
+    lineas = ["Inflación mensual: la usada y, para contrastar, la que descuenta el mercado (breakeven) y la del REM "
+              "(* = la curva ya no tiene bonos: se repite la última):"]
+    lineas += tc.tabla("Mes", columnas, desde, hasta, operacion.year, nota_anual="dic/dic, con lo ya publicado")
+    acumuladas = [(c.titulo, tc.acumulado(c.mensual, desde, hasta)) for c in columnas]
+    lineas.append(f"Acumulada {_nombre_mes(desde)} a {_nombre_mes(hasta)}: "
+                  + " | ".join(f"{t} {tc.pct(v)}" for t, v in acumuladas))
+    return lineas
+
+
+def _titulo_fuente(fuente: str) -> str:
+    if fuente.startswith("camino:"):
+        return "camino indicado"
+    if fuente.startswith("escenario:"):
+        return f"escenario {fuente.split(':', 1)[1]}"
+    return fuente
+
+
 def proyectar_cer(fuente: str = "breakeven", ticker: str | None = None, fecha: str | None = None) -> str:
     try:
         operacion = date.fromisoformat(fecha) if fecha else date.today()
@@ -217,24 +251,11 @@ def proyectar_cer(fuente: str = "breakeven", ticker: str | None = None, fecha: s
              f"Último CER publicado: {ultimo} = {serie[ultimo]:,.4f} (incluye la inflación de {_nombre_mes(max(publicadas))}: "
              f"{bonos._pct(publicadas[max(publicadas)])})"]
     if caminos:
-        meses = list(caminos.items())
-        texto.append("Inflación mensual usada: " + "; ".join(
-            f"{_nombre_mes(m)} {bonos._pct(v)}" + ("" if o in ("mensual", "plana", "breakeven") else f" ({o})")
-            for m, (v, o) in meses[:MESES_DETALLE]) + ("; …" if len(meses) > MESES_DETALLE else ""))
-        extendidos = [m for m, (_, o) in meses if "extendida" in o]
+        texto += _tabla_inflacion(fuente, caminos, publicadas, desde, max(caminos), liquidacion, curvas, operacion,
+                                  fecha_precios)
+        extendidos = [m for m, (_, o) in caminos.items() if "extendida" in o]
         if extendidos:
             texto.append(f"Desde {_nombre_mes(extendidos[0])} la curva no tiene más bonos: se repite la última inflación mensual.")
-        anios = sorted({m[0] for m in caminos})
-        resumen = []
-        for a in anios:
-            meses = [publicadas.get((a, k)) if (a, k) < desde else caminos.get((a, k), (None,))[0] for k in range(1, 13)]
-            if all(v is not None for v in meses) and a > max(publicadas)[0] - 1:
-                acumulada = 1.0
-                for v in meses:
-                    acumulada *= 1 + v
-                resumen.append(f"{a}: {bonos._pct(acumulada - 1)}")
-        if resumen:
-            texto.append("Inflación anual (dic/dic) que resulta: " + " | ".join(resumen))
 
     texto.append(f"\nRendimiento nominal con ese CER (liquidación {liquidacion}, precios de mercado):")
     texto.append("Bono | vence | CER final (fecha) | pago final o TIR | TNA | TIR nominal | TEA tasa fija al plazo")

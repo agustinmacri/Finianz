@@ -12,6 +12,18 @@ Flujo:
 3. aprobar(ticker): valida la ficha con las mismas reglas que las demás y la pasa al archivo de su familia con
    revisado = true. Los borradores no los usa ninguna calculadora.
 
+Reaperturas: si el bono ya tiene ficha, se ignora. Si no la tiene, queda como borrador SIN fecha de emisión (la del
+   aviso es la de esta licitación, no la original) y con la emisión original como pendiente: se completa leyendo la
+   resolución o el prospecto de la primera emisión.
+
+Posibles duplicados: un borrador cuya familia, vencimiento y cupón o margen coinciden con un bono ya cargado (pasa con
+   emisiones viejas en las que el bono todavía no tenía ticker) no se aprueba solo: o es el mismo (vincular) o es otro
+   y lo confirmás como nuevo (aprobar --nuevo).
+
+Tickers: el Tesoro asigna el ticker cerca de la liquidación. Para los borradores sin ticker se prueban los nombres
+   que salen de la convención del Tesoro (S14G6, X29E7, D31M7, TZXD7, M30A7...) contra el buscador de PPI (solo
+   datos de mercado); si aparece uno solo, se completa y queda anotado para que lo verifiques al aprobar.
+
 Resultados de licitación: de cada instrumento se lee qué se licitó (precio, tasa/TEM o margen) y el valor de corte.
    - Un precio de corte es un dato de mercado: se informa y la ficha no cambia.
    - La TEM o el margen de un instrumento nuevo completa su borrador (que después aprobás).
@@ -24,6 +36,9 @@ Desde la terminal:
     python -m carga_datos.fichas_documentos aprobar <TICKER>
     python -m carga_datos.fichas_documentos descartar <TICKER o clave>
     python -m carga_datos.fichas_documentos completar <TICKER o clave> campo=valor   (ej.: ticker=TMY27)
+    python -m carga_datos.fichas_documentos aprobar <TICKER> --nuevo   (si parece un bono ya cargado y no lo es)
+    python -m carga_datos.fichas_documentos vincular <clave> <TICKER>  (el borrador es un bono ya cargado: se descarta)
+    python -m carga_datos.fichas_documentos tickers                    (busca en PPI el ticker de los borradores sin ticker)
     python -m carga_datos.fichas_documentos cambios
     python -m carga_datos.fichas_documentos aplicar <TICKER> [campo]
     python -m carga_datos.fichas_documentos rechazar <TICKER> [campo]
@@ -31,7 +46,7 @@ Desde la terminal:
 import re
 import sys
 import tomllib
-from datetime import date
+from datetime import date, timedelta
 from html.parser import HTMLParser
 from pathlib import Path
 from typing import Literal
@@ -49,8 +64,12 @@ ARCHIVO_DE_FAMILIA = {
 }
 CAMBIOS = None   # se resuelve en tiempo de ejecución: carpeta de borradores / cambios.toml
 CAMPOS_COMPARABLES = ("emision", "vencimiento", "cupon", "margen", "frecuencia", "base", "ley")   # escalares de condiciones
-ORDEN = ["ticker", "tipo", "familia", "ley", "par", "emision", "vencimiento", "cupon", "margen", "frecuencia", "base",
-         "tramos", "pagos", "tipo_cambio_pago", "revisado", "fuente", "nota", "pendiente", "cita", "clave"]
+MARGEN_EMISION_ORIGINAL = 7   # días: una "emisión" posterior a (aviso − 7 días) en una reapertura es la de esta licitación
+LETRAS_MES = "EFMAYJLGSOND"   # convención del Tesoro: ene=E, feb=F, mar=M, abr=A, may=Y, jun=J, jul=L, ago=G, ...
+BUSCADOR = None               # función ticker -> lista de instrumentos (PPI); se resuelve en tiempo de ejecución
+SOLO_BORRADOR = ("pendiente", "cita", "clave", "reapertura", "posible_duplicado")
+ORDEN = ["ticker", "tipo", "familia", "reapertura", "ley", "par", "emision", "vencimiento", "cupon", "margen", "frecuencia", "base",
+         "tramos", "pagos", "tipo_cambio_pago", "revisado", "fuente", "nota", "pendiente", "posible_duplicado", "cita", "clave"]
 Familia = Literal["cer_cero_cupon", "cer_cupon", "tasa_fija_capitalizable", "tasa_fija_cupon", "tasa_fija_descuento",
                   "tamar_capitalizable", "dolar_linked_bullet", "dolar_linked_cupon", "hard_dollar"]
 
@@ -189,6 +208,15 @@ def a_ficha(ins: Instrumento, origen: str, tipo_documento: str, fecha_documento:
              "tipo_cambio_pago": ins.tipo_cambio_pago, "revisado": False,
              "fuente": f"{tipo_documento}{' del ' + fecha_documento if fecha_documento else ''} ({origen}); borrador del lector de fichas",
              "nota": ins.notas, "pendiente": ins.pendiente or None, "cita": ins.cita or None}
+    if ins.reapertura:
+        ficha["reapertura"] = True
+        emision, aviso = ficha.get("emision"), _fecha(fecha_documento) if fecha_documento else None
+        # La fecha de esta licitación no es la emisión original: se descarta salvo que sea claramente anterior al aviso.
+        if emision is None or aviso is None or emision >= aviso - timedelta(days=MARGEN_EMISION_ORIGINAL):
+            ficha["emision"] = None
+            ficha["pendiente"] = [p for p in (ficha["pendiente"] or []) if p.split(":")[0].strip() != "emision"] + [
+                "emision: es una reapertura; falta la fecha de emisión original (leé la resolución o el prospecto de la "
+                "primera emisión, o completala a mano)"]
     ficha = {k: v for k, v in ficha.items() if v not in (None, "", [])}
     ficha["clave"] = ficha.get("ticker") or f"{ficha.get('familia', 'sin_familia')}-{ficha.get('vencimiento', 'sin_vto')}"
     return ficha
@@ -304,6 +332,124 @@ def _mismo(a: dict, b: dict) -> bool:
     return a.get("familia") == b.get("familia") and a.get("vencimiento") == b.get("vencimiento")
 
 
+def posibles_duplicados(ficha: dict, existentes: dict[str, list[dict]]) -> list[str]:
+    """Bonos ya cargados con la misma familia y vencimiento (y, si ambos lo tienen, el mismo cupón y margen)."""
+    salida = []
+    for ticker, lista in existentes.items():
+        if ficha.get("ticker") and ficha["ticker"].upper() == ticker.upper():
+            continue
+        for f in lista:
+            if f["familia"] != ficha.get("familia") or f["vencimiento"] != ficha.get("vencimiento"):
+                continue
+            if any(c in ficha and c in f and not _iguales(ficha[c], f[c]) for c in ("cupon", "margen")):
+                continue
+            salida.append(ticker)
+    return sorted(set(salida))
+
+
+def candidatos_ticker(familia: str | None, vencimiento: date | None) -> list[str]:
+    """Tickers posibles según la convención de nombres del Tesoro (día, letra del mes y año del vencimiento)."""
+    if not familia or not isinstance(vencimiento, date):
+        return []
+    d, l, y, yy = f"{vencimiento.day:02d}", LETRAS_MES[vencimiento.month - 1], vencimiento.year % 10, f"{vencimiento.year % 100:02d}"
+    junio = vencimiento.month == 6
+    por_familia = {
+        "tasa_fija_capitalizable": [f"S{d}{l}{y}", f"T{d}{l}{y}"],
+        "tasa_fija_descuento": [f"S{d}{l}{y}"],
+        "tasa_fija_cupon": [f"T{d}{l}{y}"],
+        "cer_cero_cupon": [f"X{d}{l}{y}", f"TZX{l}{y}"] + ([f"TZX{yy}"] if junio else []),
+        "cer_cupon": [f"TX{yy}"],
+        "dolar_linked_bullet": [f"D{d}{l}{y}", f"TZV{l}{y}"] + ([f"TZV{yy}"] if junio else []),
+        "dolar_linked_cupon": [f"D{d}{l}{y}"],
+        "tamar_capitalizable": [f"M{d}{l}{y}", f"TM{l}{yy}"],
+    }
+    return por_familia.get(familia, [])
+
+
+def _buscar(ticker: str) -> list[dict]:
+    if BUSCADOR is not None:
+        return BUSCADOR(ticker)
+    from conexiones import ppi
+    return ppi.buscar_instrumento(ticker)
+
+
+def actualizar_borradores(hoy: date | None = None) -> list[str]:
+    """Para cada borrador: busca el ticker si no lo tiene y marca si parece un bono ya cargado. Devuelve lo que hizo."""
+    borradores = _leer_borradores()
+    if not borradores:
+        return []
+    existentes = leer_fichas.leer_todas()
+    usados = set(existentes)
+    avisos, sin_conexion = [], None
+    for b in borradores:
+        if not b.get("ticker") and sin_conexion is None:
+            encontrados = []
+            for candidato in candidatos_ticker(b.get("familia"), b.get("vencimiento")):
+                if candidato in usados:
+                    continue      # ya tiene ficha: si es este mismo bono, lo marca el chequeo de duplicados de abajo
+                try:
+                    hallados = [i for i in _buscar(candidato) if str(i.get("ticker", "")).upper() == candidato]
+                except Exception as e:           # sin credenciales o sin conexión: se reintenta la próxima vez
+                    sin_conexion = str(e)
+                    break
+                if hallados:
+                    encontrados.append((candidato, hallados[0].get("description") or ""))
+            if len(encontrados) == 1:
+                ticker, descripcion = encontrados[0]
+                b["ticker"], b["clave"] = ticker, ticker
+                nota = (f"ticker {ticker} encontrado en PPI por la convención de nombres"
+                        + (f" ({descripcion})" if descripcion else "") + ": verificalo antes de aprobar")
+                b["nota"] = f"{b['nota']}. {nota}" if b.get("nota") else nota
+                if b.get("pendiente"):
+                    b["pendiente"] = [p for p in b["pendiente"] if p.split(":")[0].strip() != "ticker"]
+                avisos.append(f"{ticker}: ticker encontrado en PPI{' (' + descripcion + ')' if descripcion else ''}")
+            elif len(encontrados) > 1:
+                opciones = ", ".join(t for t, _ in encontrados)
+                b["pendiente"] = [p for p in b.get("pendiente", []) if p.split(":")[0].strip() != "ticker"] + [
+                    f"ticker: más de un candidato en PPI ({opciones}); elegí con completar"]
+                avisos.append(f"{b['clave']}: varios tickers posibles ({opciones})")
+        if not b.get("pendiente"):
+            b.pop("pendiente", None)
+        duplicados = posibles_duplicados(b, existentes)
+        if duplicados:
+            if b.get("posible_duplicado") != duplicados:
+                avisos.append(f"{b['clave']}: parece el mismo bono que {', '.join(duplicados)} (misma familia, vencimiento y "
+                              "condiciones). Si lo es: vincular; si es otro: aprobar --nuevo")
+            b["posible_duplicado"] = duplicados
+        else:
+            b.pop("posible_duplicado", None)
+    _guardar_borradores(borradores)
+    if sin_conexion:
+        avisos.append(f"No se pudo buscar tickers en PPI ({sin_conexion}); se reintenta en la próxima lectura.")
+    return avisos
+
+
+def vincular(clave: str, ticker: str) -> str:
+    """El borrador es un bono que ya tiene ficha: se descarta y, si algún dato difiere, queda como cambio propuesto."""
+    borradores = _leer_borradores()
+    elegido = _elegir_borrador(borradores, clave)
+    cargadas = [f for f in leer_fichas.fichas_de(ticker.upper()) if f["familia"] == elegido.get("familia")]
+    if not cargadas:
+        raise ValueError(f"{ticker.upper()} no tiene ficha en la familia {elegido.get('familia')}.")
+    cambios = _leer_cambios()
+    propuestos = _proponer_cambios(elegido, cargadas[0], cambios)
+    if propuestos:
+        _guardar_cambios(cambios)
+    _guardar_borradores([b for b in borradores if b is not elegido])
+    return (f"Borrador {elegido['clave']} vinculado a {ticker.upper()} y descartado."
+            + (f" Datos distintos, quedan como cambios propuestos: {'; '.join(propuestos)}." if propuestos else
+               " Las condiciones coinciden con la ficha."))
+
+
+def _elegir_borrador(borradores: list[dict], clave: str) -> dict:
+    elegido = next((b for b in borradores if b.get("clave", "").upper() == clave.upper()
+                    or (b.get("ticker") or "").upper() == clave.upper()), None)
+    if elegido is None:
+        raise ValueError(f"No hay ningún borrador '{clave}'. Pendientes: "
+                         f"{', '.join(b.get('clave', '?') for b in borradores) or 'ninguno'}.")
+    return elegido
+
+
 def _vencido(ficha: dict, hoy: date) -> bool:
     vto = ficha.get("vencimiento")
     return isinstance(vto, date) and vto < hoy
@@ -322,7 +468,7 @@ def leer(fuente: str, extractor=extraer_con_modelo, hoy: date | None = None) -> 
     cambios = _leer_cambios()
     resumen = {"documento": documento.tipo_documento, "fecha": documento.fecha_documento, "ya_cargados": [],
                "vencidos": [], "nuevos": [], "completados": [], "sin_familia": [], "descartados": [],
-               "cortes": [], "cambios": []}
+               "cortes": [], "cambios": [], "reaperturas": [], "avisos": []}
     for b in [b for b in borradores if _vencido(b, hoy)]:
         borradores.remove(b)
         resumen["vencidos"].append(f"{b['clave']} (borrador, venció el {b['vencimiento']:%d/%m/%Y})")
@@ -348,6 +494,8 @@ def leer(fuente: str, extractor=extraer_con_modelo, hoy: date | None = None) -> 
             continue
         if not ficha.get("familia"):
             resumen["sin_familia"].append(ins.nombre)
+        if ficha.get("reapertura"):
+            resumen["reaperturas"].append(ficha["clave"])
         previo = next((b for b in borradores if _mismo(b, ficha)), None)
         if previo is None:
             borradores.append(ficha)
@@ -367,6 +515,7 @@ def leer(fuente: str, extractor=extraer_con_modelo, hoy: date | None = None) -> 
     _guardar_borradores(borradores)
     if cambios or _ruta_cambios().exists():
         _guardar_cambios(cambios)
+    resumen["avisos"] = actualizar_borradores(hoy)
     return resumen
 
 
@@ -374,24 +523,33 @@ def pendientes() -> list[dict]:
     return _leer_borradores()
 
 
-def aprobar(clave: str, carpeta: Path | None = None, por: str = "Agustin", hoy: date | None = None) -> str:
-    """Valida el borrador y lo pasa al archivo de su familia con revisado = true."""
+def aprobar(clave: str, carpeta: Path | None = None, por: str = "Agustin", hoy: date | None = None,
+            nuevo: bool = False) -> str:
+    """Valida el borrador y lo pasa al archivo de su familia con revisado = true.
+
+    nuevo=True confirma que no es ninguno de los bonos ya cargados con las mismas condiciones."""
     hoy = hoy or date.today()
     borradores = _leer_borradores()
-    elegido = next((b for b in borradores if b.get("clave", "").upper() == clave.upper()
-                    or (b.get("ticker") or "").upper() == clave.upper()), None)
-    if elegido is None:
-        raise ValueError(f"No hay ningún borrador '{clave}'. Pendientes: {', '.join(b.get('clave', '?') for b in borradores) or 'ninguno'}.")
-    ficha = {k: v for k, v in elegido.items() if k not in ("pendiente", "cita", "clave")}
+    elegido = _elegir_borrador(borradores, clave)
+    ficha = {k: v for k, v in elegido.items() if k not in SOLO_BORRADOR}
     if not ficha.get("ticker"):
         raise leer_fichas.ErrorFicha("Al borrador le falta el ticker: completalo en el archivo de borradores.")
     if _vencido(ficha, hoy):
         raise leer_fichas.ErrorFicha(f"{ficha['ticker']} ya venció ({ficha['vencimiento']:%d/%m/%Y}): no hace falta cargarlo. Descartalo.")
+    if elegido.get("reapertura") and not ficha.get("emision"):
+        raise leer_fichas.ErrorFicha(f"{ficha['ticker']} es una reapertura y falta su fecha de emisión original: leé la "
+                                     "resolución o el prospecto de la primera emisión, o completala (completar ... emision=AAAA-MM-DD).")
     leer_fichas.validar(ficha, f"borrador {clave}")
     if any(f["familia"] == ficha["familia"] for f in leer_fichas.fichas_de(ficha["ticker"])):
         raise leer_fichas.ErrorFicha(f"{ficha['ticker']} ya tiene ficha en la familia {ficha['familia']}.")
+    duplicados = posibles_duplicados(ficha, leer_fichas.leer_todas())
+    if duplicados and not nuevo:
+        raise leer_fichas.ErrorFicha(
+            f"{ficha['ticker']} parece el mismo bono que {', '.join(duplicados)} (misma familia, vencimiento y condiciones). "
+            f"Si es el mismo: vincular {elegido['clave']} {duplicados[0]}. Si es otro bono: aprobar {elegido['clave']} --nuevo.")
     ficha["revisado"] = True
-    ficha["fuente"] = f"{ficha.get('fuente', '')}; aprobado por {por} el {hoy:%d/%m/%Y}"
+    confirmacion = f"; confirmado como bono distinto de {', '.join(duplicados)}" if duplicados else ""
+    ficha["fuente"] = f"{ficha.get('fuente', '')}{confirmacion}; aprobado por {por} el {hoy:%d/%m/%Y}"
     destino = (carpeta or leer_fichas.CARPETA) / ARCHIVO_DE_FAMILIA[ficha["familia"]]
     with open(destino, "a", encoding="utf-8") as archivo:
         archivo.write("\n" + a_toml(ficha))
@@ -546,6 +704,11 @@ def describir(resumen: dict) -> str:
         lineas.append(f"Borrador {clave} completado" + (f" con: {', '.join(campos)}" if campos else " (sin datos nuevos)"))
     if resumen["descartados"]:
         lineas.append("Borradores descartados porque el bono ya tiene ficha: " + ", ".join(resumen["descartados"]))
+    if resumen.get("reaperturas"):
+        lineas.append("Reaperturas de bonos que no teníamos: quedan como borrador sin la emisión original (pendiente): "
+                      + ", ".join(resumen["reaperturas"]))
+    for aviso in resumen.get("avisos", []):
+        lineas.append(aviso)
     if resumen["sin_familia"]:
         lineas.append("Sin familia reconocida (revisar a mano): " + ", ".join(resumen["sin_familia"]))
     for b in pendientes():
@@ -561,19 +724,27 @@ def describir(resumen: dict) -> str:
 
 def main(argv: list[str]):
     if len(argv) < 1 or argv[0] not in ("leer", "pendientes", "aprobar", "descartar", "completar", "cambios",
-                                        "aplicar", "rechazar"):
+                                        "aplicar", "rechazar", "vincular", "tickers"):
         print(__doc__)
         return
     try:
         if argv[0] == "leer":
             print(describir(leer(argv[1])))
+        elif argv[0] == "tickers":
+            print("\n".join(actualizar_borradores()) or "Nada nuevo: no aparecieron tickers ni posibles duplicados.")
+        elif argv[0] == "vincular":
+            print(vincular(argv[1], argv[2]))
         elif argv[0] == "pendientes":
+            for aviso in actualizar_borradores():
+                print(aviso)
             lista = pendientes()
             print("\n".join(f"{b['clave']}: {b.get('tipo', '?')} {b.get('familia', '?')} vence {b.get('vencimiento', '?')}"
+                            + (" | REAPERTURA" if b.get("reapertura") else "")
+                            + (f" | ¿es {', '.join(b['posible_duplicado'])}?" if b.get("posible_duplicado") else "")
                             + (f" | pendiente: {'; '.join(b['pendiente'])}" if b.get("pendiente") else "")
                             for b in lista) or "No hay borradores pendientes.")
         elif argv[0] == "aprobar":
-            print(aprobar(argv[1]))
+            print(aprobar(argv[1], nuevo="--nuevo" in argv[2:]))
         elif argv[0] == "descartar":
             print(descartar(argv[1]))
         elif argv[0] == "completar":

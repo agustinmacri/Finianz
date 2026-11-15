@@ -16,14 +16,15 @@ def leer_documento_bonos(fuente: str) -> str:
 
 def ver_borradores() -> str:
     try:
-        return fichas_documentos.describir_borradores()
+        avisos = fichas_documentos.actualizar_borradores()
+        return ("\n".join(avisos) + "\n\n" if avisos else "") + fichas_documentos.describir_borradores()
     except Exception as e:
         return f"Error al leer los borradores: {e}"
 
 
-def aprobar_ficha(ticker: str) -> str:
+def aprobar_ficha(ticker: str, nuevo: bool = False) -> str:
     try:
-        return fichas_documentos.aprobar(ticker, por="Agustin (vía agente de renta fija)")
+        return fichas_documentos.aprobar(ticker, por="Agustin (vía agente de renta fija)", nuevo=bool(nuevo))
     except (ValueError, leer_fichas.ErrorFicha) as e:
         return f"No se aprobó {ticker}: {e}"
 
@@ -47,6 +48,13 @@ def rechazar_cambio(ticker: str, campo: str | None = None) -> str:
         return fichas_documentos.rechazar(ticker, campo or None)
     except ValueError as e:
         return f"No se rechazó: {e}"
+
+
+def vincular_borrador(ticker: str, ticker_cargado: str) -> str:
+    try:
+        return fichas_documentos.vincular(ticker, ticker_cargado)
+    except ValueError as e:
+        return f"No se vinculó: {e}"
 
 
 def descartar_borrador(ticker: str) -> str:
@@ -83,7 +91,20 @@ APROBAR_FICHA = {
         "Aprueba un borrador: lo valida y lo pasa a las fichas definitivas, donde lo usan las calculadoras. Usala SOLO si "
         "el usuario te pidió explícitamente aprobar ese bono (o todos) en este pedido; nunca por iniciativa propia."
     ),
-    "parameters": _TICKER,
+    "parameters": {"type": "object", "properties": {
+        "ticker": {"type": "string", "description": "Ticker del borrador"},
+        "nuevo": {"type": "boolean", "description": (
+            "true solo si el borrador parece un bono ya cargado (posible duplicado) y el usuario confirmó que es OTRO bono")},
+    }, "required": ["ticker"]},
+}
+VINCULAR_BORRADOR = {
+    "name": "vincular_borrador",
+    "description": ("El borrador es un bono que ya tiene ficha (posible duplicado confirmado por el usuario): lo descarta y, "
+                    "si algún dato difiere, lo deja como cambio propuesto. Usala SOLO si el usuario te lo pidió."),
+    "parameters": {"type": "object", "properties": {
+        "ticker": {"type": "string", "description": "Clave o ticker del borrador"},
+        "ticker_cargado": {"type": "string", "description": "Ticker del bono ya cargado al que corresponde"},
+    }, "required": ["ticker", "ticker_cargado"]},
 }
 DESCARTAR_BORRADOR = {
     "name": "descartar_borrador",
@@ -119,4 +140,4 @@ RECHAZAR_CAMBIO = {
 
 HERRAMIENTAS = [(LEER_DOCUMENTO_BONOS, leer_documento_bonos), (VER_BORRADORES, ver_borradores),
                 (APROBAR_FICHA, aprobar_ficha), (DESCARTAR_BORRADOR, descartar_borrador),
-                (COMPLETAR_BORRADOR, completar_borrador), (APLICAR_CAMBIO, aplicar_cambio), (RECHAZAR_CAMBIO, rechazar_cambio)]
+                (COMPLETAR_BORRADOR, completar_borrador), (VINCULAR_BORRADOR, vincular_borrador), (APLICAR_CAMBIO, aplicar_cambio), (RECHAZAR_CAMBIO, rechazar_cambio)]

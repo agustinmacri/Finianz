@@ -14,6 +14,7 @@ from renta_fija import leer_fichas
 from tools import lector_fichas
 
 HOY = date(2026, 4, 15)   # el día del llamado: todavía no venció nada
+fd.BUSCADOR = lambda ticker: []   # las pruebas no consultan PPI: por defecto, ningún ticker existe
 
 LLAMADO = fd.Documento(tipo_documento="llamado a licitación", fecha_documento="2026-04-13", instrumentos=[
     fd.Instrumento(nombre="LECAP capitalizable con vencimiento 14 de agosto de 2026", familia="tasa_fija_capitalizable",
@@ -59,7 +60,7 @@ def test_borradores_aprobacion():
             assert lecap["cupon"] == 0.0215 and lecap.get("pendiente") is None    # ya no queda nada pendiente
 
             assert "No hay ningún borrador" in _error(lambda: fd.aprobar("TMF28", hoy=HOY))
-            assert "falta el campo 'emision'" in _error(lambda: fd.aprobar("AO27", hoy=HOY))
+            assert "es una reapertura y falta su fecha de emisión original" in _error(lambda: fd.aprobar("AO27", hoy=HOY))
             assert "S14G6 aprobado" in fd.aprobar("S14G6", hoy=HOY)
             nueva = leer_fichas.ficha("S14G6")
             assert nueva["revisado"] is True and nueva["cupon"] == 0.0215 and "cita" not in nueva
@@ -155,6 +156,86 @@ def test_resultado_y_cambios():
             leer_fichas.CARPETA, fd.BORRADORES = original_carpeta, original_borradores
 
 
+def test_reaperturas_duplicados_y_tickers():
+    original_carpeta, original_borradores, original_buscador = leer_fichas.CARPETA, fd.BORRADORES, fd.BUSCADOR
+    listados = {"S14Y7": "LECAP V14/05/27", "M30A7": "LETRA TAMAR V30/04/27", "TMA27": "BONO TAMAR V30/04/27"}
+    with tempfile.TemporaryDirectory() as tmp:
+        carpeta = Path(tmp) / "fichas"
+        shutil.copytree(original_carpeta, carpeta, ignore=shutil.ignore_patterns("borradores"))
+        leer_fichas.CARPETA, fd.BORRADORES = carpeta, carpeta / "borradores" / "borradores.toml"
+        fd.BUSCADOR = lambda t: [{"ticker": t, "description": listados[t]}] if t in listados else []
+        documento = Path(tmp) / "aviso.txt"
+        documento.write_text("Aviso del Tesoro. " * 20, encoding="utf-8")
+        hoy = date(2026, 11, 14)
+        try:
+            # 1. Reaperturas: el AO28 con la fecha de liquidación de esta licitación como "emisión" (lo que pasaba).
+            llamado = fd.Documento(tipo_documento="llamado a licitación", fecha_documento="2026-11-09", instrumentos=[
+                fd.Instrumento(nombre="BONAR 2028", ticker="AO28", reapertura=True, familia="hard_dollar", tipo="BONAR",
+                               ley="AR", emision="2026-11-13", vencimiento="2028-10-30"),
+                fd.Instrumento(nombre="BONCER TZXD7", ticker="TZXD7", reapertura=True, familia="cer_cero_cupon",
+                               tipo="BONCER", emision="2026-11-13", vencimiento="2027-12-15"),
+                fd.Instrumento(nombre="LECAP 14/05/2027", familia="tasa_fija_capitalizable", tipo="LECAP",
+                               emision="2026-11-13", vencimiento="2027-05-14", cupon=0.019,
+                               pendiente=["ticker: no figura en el llamado"]),
+                fd.Instrumento(nombre="Letra TAMAR 30/04/2027", familia="tamar_capitalizable", tipo="LETRA TAMAR",
+                               emision="2026-11-13", vencimiento="2027-04-30", margen=0.025),
+            ])
+            r = fd.leer(str(documento), extractor=lambda texto: llamado, hoy=hoy)
+            assert "TZXD7" in r["ya_cargados"]                                  # reapertura de un bono cargado: se ignora
+            assert leer_fichas.ficha("TZXD7")["emision"] == date(2024, 3, 15)   # y su emisión original no se toca
+            ao28 = next(b for b in fd.pendientes() if b["clave"] == "AO28")
+            assert "emision" not in ao28 and ao28["reapertura"] is True and r["reaperturas"] == ["AO28"]
+            assert any(p.startswith("emision: es una reapertura") for p in ao28["pendiente"])
+            # Una reapertura que sí trae la emisión original (anterior al aviso) la conserva.
+            assert fd.a_ficha(fd.Instrumento(nombre="x", ticker="AO27", reapertura=True, familia="hard_dollar",
+                                             emision="2025-10-29", vencimiento="2027-10-29"),
+                              "x", "llamado", "2026-11-09")["emision"] == date(2025, 10, 29)
+            # El prospecto de la primera emisión completa la emisión original y saca el pendiente.
+            prospecto = fd.Documento(tipo_documento="resolución de emisión", fecha_documento="2025-10-27", instrumentos=[
+                fd.Instrumento(nombre="BONAR 2028", ticker="AO28", familia="hard_dollar", tipo="BONAR", ley="AR",
+                               emision="2025-10-30", vencimiento="2028-10-30")])
+            fd.leer(str(documento), extractor=lambda texto: prospecto, hoy=hoy)
+            ao28 = next(b for b in fd.pendientes() if b["clave"] == "AO28")
+            assert ao28["emision"] == date(2025, 10, 30)
+            assert not any(p.startswith("emision") for p in ao28.get("pendiente", []))
+            assert "reapertura" not in fd.a_toml({k: v for k, v in ao28.items() if k not in fd.SOLO_BORRADOR})
+
+            # 2. Tickers por la convención de nombres: uno solo listado → se completa; dos → queda pendiente.
+            lecap = next(b for b in fd.pendientes() if b.get("ticker") == "S14Y7")
+            assert "verificalo antes de aprobar" in lecap["nota"] and "pendiente" not in lecap
+            assert any("S14Y7: ticker encontrado en PPI (LECAP V14/05/27)" == a for a in r["avisos"])
+            letra = next(b for b in fd.pendientes() if b["clave"] == "tamar_capitalizable-2027-04-30")
+            assert any("M30A7, TMA27" in p for p in letra["pendiente"])
+            assert fd.candidatos_ticker("cer_cero_cupon", date(2028, 6, 30)) == ["X30J8", "TZXJ8", "TZX28"]
+            assert fd.candidatos_ticker("dolar_linked_bullet", date(2027, 3, 31)) == ["D31M7", "TZVM7"]
+
+            # 3. Emisión vieja sin ticker con las condiciones de un bono cargado: posible duplicado, decide un humano.
+            viejo = fd.Documento(tipo_documento="llamado a licitación", fecha_documento="2024-03-11", instrumentos=[
+                fd.Instrumento(nombre="BONCER cero cupón 15/12/2027", familia="cer_cero_cupon", tipo="BONCER",
+                               emision="2024-03-15", vencimiento="2027-12-15"),
+                fd.Instrumento(nombre="BONCAP 30/04/2027", familia="tasa_fija_capitalizable", tipo="BONCAP",
+                               emision="2025-10-31", vencimiento="2027-04-30", cupon=0.0255)])
+            r = fd.leer(str(documento), extractor=lambda texto: viejo, hoy=hoy)
+            boncer = next(b for b in fd.pendientes() if b["clave"] == "cer_cero_cupon-2027-12-15")
+            assert boncer["posible_duplicado"] == ["TZXD7"]
+            assert any("parece el mismo bono que TZXD7" in a for a in r["avisos"])
+            # El TZXD7 ya tiene ficha: la convención no lo asigna como ticker del borrador.
+            assert "ticker" not in boncer
+            boncap = next(b for b in fd.pendientes() if b["clave"] == "tasa_fija_capitalizable-2027-04-30")
+            assert boncap["posible_duplicado"] == ["T30A7"]
+            fd.completar("tasa_fija_capitalizable-2027-04-30", "ticker", "T30A7X")
+            error = _error(lambda: fd.aprobar("T30A7X", hoy=hoy))
+            assert "parece el mismo bono que T30A7" in error and "--nuevo" in error
+            assert "No se aprobó" in lector_fichas.aprobar_ficha("T30A7X")
+            salida = fd.vincular("cer_cero_cupon-2027-12-15", "TZXD7")
+            assert "vinculado a TZXD7" in salida and "coinciden" in salida
+            assert "cer_cero_cupon-2027-12-15" not in [b["clave"] for b in fd.pendientes()]
+            assert "T30A7X aprobado" in lector_fichas.aprobar_ficha("T30A7X", nuevo=True)    # el humano dice que es otro
+            assert "confirmado como bono distinto de T30A7" in leer_fichas.ficha("T30A7X")["fuente"]
+        finally:
+            leer_fichas.CARPETA, fd.BORRADORES, fd.BUSCADOR = original_carpeta, original_borradores, original_buscador
+
+
 def _error(funcion) -> str:
     try:
         funcion()
@@ -178,7 +259,7 @@ def test_toml_ida_y_vuelta():
 
 
 if __name__ == "__main__":
-    for prueba in (test_borradores_aprobacion, test_resultado_y_cambios, test_texto_html, test_toml_ida_y_vuelta):
+    for prueba in (test_borradores_aprobacion, test_resultado_y_cambios, test_reaperturas_duplicados_y_tickers, test_texto_html, test_toml_ida_y_vuelta):
         prueba()
         print(f"OK  {prueba.__name__}")
     print("Todas las pruebas del lector de fichas pasaron.")

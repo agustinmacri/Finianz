@@ -267,9 +267,17 @@ def _comparar(puntos_tf, dias) -> str:
     return bonos._pct(tf) if tf is not None else "fuera de la curva"
 
 
+def _otro_camino_tamar(fuente: str, operacion: date):
+    try:
+        return camino_tamar(fuente, operacion)[0]
+    except (ErrorAPI, ValueError):
+        return None
+
+
 def proyectar_tamar(fuente: str = "rem", ticker: str | None = None, fecha: str | None = None) -> str:
     from renta_fija import leer_fichas as fichas
-    from renta_fija.calculadoras import tamar
+    from renta_fija.calculadoras import motor, tamar
+    from tools import caminos as tc
     try:
         operacion, liquidacion, fecha_precios = _contexto(fecha)
         camino, descripcion = camino_tamar(fuente, operacion)
@@ -280,21 +288,50 @@ def proyectar_tamar(fuente: str = "rem", ticker: str | None = None, fecha: str |
         puntos_tf = _tasa_fija(operacion, liquidacion, fecha_precios)
     except (ErrorAPI, ValueError) as e:
         return f"Error: {e}"
-    texto = [f"Proyección de bonos TAMAR – calculadora de Finianz – {descripcion}",
-             f"Liquidación {liquidacion}. Los días de TAMAR ya publicados entran con su valor; los que faltan, con este camino.",
-             "Bono | vence | TAMAR del bono | pago final | TNA | TEA (TIR) | TEA tasa fija al plazo"]
+    rem = camino if fuente == "rem" else _otro_camino_tamar("rem", operacion)
+    actual = camino if fuente == "actual" else _otro_camino_tamar("actual", operacion)
+
+    filas, fin = [], (operacion.year, operacion.month)
     for f in sorted(lista, key=lambda f: f["vencimiento"]):
         t = f["ticker"].upper()
         try:
             precio, _ = bonos._precio(t, fecha_precios)
             tamar_bono, d = tamar_del_bono(f, operacion, camino)
             r = tamar.calcular(precio, tamar_bono, f["margen"], f["emision"], f["vencimiento"], liquidacion, d["referencia"])
+            dias = bonos.feriados.dias_habiles_entre(d["desde_estimar"], d["fin"], bonos.CALENDARIO_HABILES)
+            fin = max(fin, (d["fin"].year, d["fin"].month))
+            promedio = lambda c: sum(c((x.year, x.month)) for x in dias) / len(dias) if dias and c else None
+            tf = be.interpolar(puntos_tf, r["plazo_residual"])
+            implicita = (be.tamar_implicita(tf, precio, r["plazo_residual"], motor.dias_30_360(f["emision"], f["vencimiento"]),
+                                            f["margen"], d["conocidas"], d["a_estimar"]) if tf is not None else None)
             dual = " (dual: pata TAMAR)" if "DUAL" in f["tipo"].upper() else ""
-            texto.append(f"{t}{dual} | {f['vencimiento']} | {bonos._pct(tamar_bono)} | {r['pago_final']:.4f} | {bonos._pct(r['tna'])} | "
-                         f"{bonos._pct(r['tea'])} | {_comparar(puntos_tf, r['plazo_residual'])}")
+            filas.append(f"{t}{dual} | {f['vencimiento']} | {tc.pct(promedio(camino))} | {tc.pct(promedio(rem))} | "
+                         f"{tc.pct(implicita)} | {bonos._pct(tamar_bono)} | {r['pago_final']:.4f} | {bonos._pct(r['tna'])} | "
+                         f"{bonos._pct(r['tea'])} | {bonos._pct(tf) if tf is not None else 'fuera de la curva'}")
         except (ErrorAPI, ValueError) as e:
-            texto.append(f"{t} | error: {e}")
+            filas.append(f"{t} | error: {e}")
+
+    texto = [f"Proyección de bonos TAMAR – calculadora de Finianz – {descripcion}",
+             f"Liquidación {liquidacion}. Los días de TAMAR ya publicados entran con su valor; los que faltan, con este camino.",
+             "Bono | vence | TAMAR de los días por publicar: usada | REM | implícita (breakeven contra la tasa fija) | "
+             "TAMAR del bono (con la usada) | pago final | TNA | TEA (TIR) | TEA tasa fija al plazo"] + filas
+    columnas = [tc.Columna(f"usada ({_titulo(fuente)})", camino, tc.promedio(camino))]
+    if fuente != "rem":
+        columnas.append(tc.Columna("REM", rem or (lambda mes: None), tc.promedio(rem or (lambda mes: None))))
+    if fuente != "actual":
+        columnas.append(tc.Columna("actual (plana)", actual or (lambda mes: None), tc.promedio(actual or (lambda mes: None))))
+    texto.append("\nCamino de la TAMAR (TNA), el usado contra el REM y la TAMAR actual. El mercado no da un camino mes a mes: "
+                 "su contraste es la TAMAR implícita de cada bono en la tabla de arriba.")
+    texto += tc.tabla("Mes", columnas, (operacion.year, operacion.month), fin, operacion.year, nota_anual="promedio")
     return "\n".join(texto)
+
+
+def _titulo(fuente: str) -> str:
+    if fuente.startswith("camino:"):
+        return "camino indicado"
+    if fuente.startswith("escenario:"):
+        return f"escenario {fuente.split(':', 1)[1]}"
+    return fuente
 
 
 def proyectar_dolar(tipo: str = "oficial", fuente: str = "rem", ticker: str | None = None, fecha: str | None = None) -> str:
@@ -312,11 +349,20 @@ def proyectar_dolar(tipo: str = "oficial", fuente: str = "rem", ticker: str | No
         puntos_tf = _tasa_fija(operacion, liquidacion, fecha_precios)
     except (ErrorAPI, ValueError) as e:
         return f"Error: {e}"
+    otros = {}
+    if tipo == "oficial":
+        for otra in ("breakeven", "rem"):
+            if otra != fuente:
+                try:
+                    otros[otra] = camino_dolar(tipo, otra, operacion, fecha_precios)[0]
+                except (ErrorAPI, ValueError):
+                    otros[otra] = None
     texto = [f"Rendimiento en pesos con el {TIPOS_DOLAR[tipo]} proyectado – calculadora de Finianz – {descripcion}",
              f"{TIPOS_DOLAR[tipo]} de hoy: {hoy:,.2f} ({origen_hoy}) | liquidación {liquidacion}"]
     if tipo == "oficial":
         texto.append("Pago en pesos = 100 × tipo de cambio proyectado al vencimiento (aproxima el tipo de cambio de pago del prospecto).")
-        texto.append("Bono | vence | A3500 proyectado | pago en pesos | TNA en pesos | TEA en pesos | TEA tasa fija al plazo")
+        texto.append("Bono | vence | A3500 proyectado | pago en pesos | TNA en pesos | TEA en pesos | TEA tasa fija al plazo"
+                     + "".join(f" | A3500 {'breakeven' if o == 'breakeven' else 'REM'} al vencimiento" for o in otros))
     else:
         texto.append(f"Flujos en dólares de cada pago × {TIPOS_DOLAR[tipo]} proyectado en esa fecha, contra el precio en pesos.")
         texto.append(f"Bono | vence | {TIPOS_DOLAR[tipo]} al vencimiento | TIR en pesos (TEA) | duration en pesos | TEA tasa fija a esa duration")
@@ -331,8 +377,9 @@ def proyectar_dolar(tipo: str = "oficial", fuente: str = "rem", ticker: str | No
                 plazo = (f["vencimiento"] - liquidacion).days
                 tna = (pago / precio - 1) * 365 / plazo
                 tea = (pago / precio) ** (365 / plazo) - 1
+                contraste = "".join(f" | {_nivel_seguro(c, f['vencimiento'])}" for c in otros.values())
                 texto.append(f"{t} | {f['vencimiento']} | {tc:,.2f} | {pago:,.2f} | {bonos._pct(tna)} | {bonos._pct(tea)} | "
-                             f"{_comparar(puntos_tf, plazo)}")
+                             f"{_comparar(puntos_tf, plazo)}{contraste}")
             else:
                 filas = hard_dollar.cronograma(f["pagos"], f["tramos"], f["emision"])
                 flujos = [motor.Flujo(ajustar(x["fecha"]), x["renta"] * nivel(ajustar(x["fecha"])),
@@ -344,7 +391,54 @@ def proyectar_dolar(tipo: str = "oficial", fuente: str = "rem", ticker: str | No
                              f"{_comparar(puntos_tf, dur * 365)}")
         except (ErrorAPI, ValueError) as e:
             texto.append(f"{t} | error: {e}")
+    texto += _tabla_dolar(tipo, fuente, nivel, otros, hoy, operacion, max(f["vencimiento"] for f in lista))
     return "\n".join(texto)
+
+
+def _nivel_seguro(nivel, dia: date) -> str:
+    try:
+        return f"{nivel(dia):,.2f}" if nivel else "sin dato"
+    except (ValueError, TypeError):
+        return "sin dato"
+
+
+def _fin_de_mes(mes: tuple[int, int]) -> date:
+    siguiente = (mes[0] + mes[1] // 12, mes[1] % 12 + 1)
+    return date(*siguiente, 1) - timedelta(days=1)
+
+
+def _tabla_dolar(tipo, fuente, nivel, otros, hoy, operacion, ultimo_vencimiento) -> list[str]:
+    """Nivel a fin de cada mes (y su variación mensual) del camino usado, contra el breakeven y el REM."""
+    from renta_fija.calculadoras import proyeccion_cer as pc
+    from tools import caminos as tc
+
+    def columna(titulo, funcion):
+        def mensual(mes):
+            if funcion is None:
+                return None
+            anterior = hoy if mes == (operacion.year, operacion.month) else funcion(_fin_de_mes(pc.sumar_meses(mes, -1)))
+            valor = funcion(_fin_de_mes(mes))
+            return valor, valor / anterior - 1
+
+        def anual(anio, primero, ultimo):
+            if funcion is None:
+                return None
+            base = hoy if anio == operacion.year else funcion(_fin_de_mes((anio - 1, 12)))
+            valor = funcion(_fin_de_mes(ultimo))
+            return valor, valor / base - 1
+        return tc.Columna(titulo, mensual, anual)
+
+    formato = lambda x: "–" if x is None else f"{tc.pesos(x[0])} ({'+' if x[1] >= 0 else ''}{tc.pct(x[1], 1)})"
+    columnas = [columna(f"usada ({_titulo(fuente)})", nivel)]
+    columnas += [columna("breakeven (mercado)" if o == "breakeven" else "REM", c) for o, c in otros.items()]
+    desde = (operacion.year, operacion.month)
+    hasta = (ultimo_vencimiento.year, ultimo_vencimiento.month)
+    lineas = [f"\nCamino del {TIPOS_DOLAR[tipo]}: nivel a fin de mes (variación mensual)"
+              + (", el usado contra el que descuenta el mercado (breakeven) y el del REM:" if otros else
+                 ". Para el MEP y el CCL no hay breakeven ni REM con qué contrastar:")]
+    lineas += tc.tabla("Mes", columnas, desde, hasta, operacion.year, formato=formato,
+                       nota_anual="fin de año; variación en el año, el primero desde hoy")
+    return lineas
 
 
 PROYECTAR_TAMAR = {
