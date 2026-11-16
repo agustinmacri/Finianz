@@ -15,6 +15,7 @@ from tools import lector_fichas
 
 HOY = date(2026, 4, 15)   # el día del llamado: todavía no venció nada
 fd.BUSCADOR = lambda ticker: []   # las pruebas no consultan PPI: por defecto, ningún ticker existe
+fd.BUSCADOR_WEB = lambda consulta: []   # ni buscan en la web
 
 LLAMADO = fd.Documento(tipo_documento="llamado a licitación", fecha_documento="2026-04-13", instrumentos=[
     fd.Instrumento(nombre="LECAP capitalizable con vencimiento 14 de agosto de 2026", familia="tasa_fija_capitalizable",
@@ -236,6 +237,79 @@ def test_reaperturas_duplicados_y_tickers():
             leer_fichas.CARPETA, fd.BORRADORES, fd.BUSCADOR = original_carpeta, original_borradores, original_buscador
 
 
+def test_emision_original():
+    """AO27: reapertura en el llamado de marzo; la primera emisión está en el aviso de febrero (sin ticker)."""
+    original_carpeta, original_borradores, original_web = leer_fichas.CARPETA, fd.BORRADORES, fd.BUSCADOR_WEB
+    with tempfile.TemporaryDirectory() as tmp:
+        carpeta = Path(tmp) / "fichas"
+        shutil.copytree(original_carpeta, carpeta, ignore=shutil.ignore_patterns("borradores"))
+        leer_fichas.CARPETA, fd.BORRADORES = carpeta, carpeta / "borradores" / "borradores.toml"
+        marzo, febrero, otro = Path(tmp) / "marzo.txt", Path(tmp) / "febrero.txt", Path(tmp) / "otro.txt"
+        marzo.write_text("Llamado de marzo. BONAR con vencimiento 29/10/2027. " * 10 + "y del “Bono del Tesoro Nacional en "
+                         "dólares estadounidenses 6% con vencimiento 29 de octubre de 2027”, emitido\noriginalmente mediante "
+                         "el artículo 8° de la resolución conjunta 11 del 24 de febrero de 2026 de la Secretaría", encoding="utf-8")
+        febrero.write_text("Llamado de febrero. BONO 6% CON VENCIMIENTO 29 DE OCTUBRE DE 2027. " * 10, encoding="utf-8")
+        otro.write_text("Resolución sobre otro tema, sin bonos. " * 20, encoding="utf-8")
+        cupones = [date(2026, m, d) for m, d in ((3, 31), (4, 30), (5, 29), (6, 30))] + [date(2027, 10, 29)]
+        docs = {
+            "marzo": fd.Documento(tipo_documento="llamado a licitación", fecha_documento="2026-03-25", instrumentos=[
+                fd.Instrumento(nombre="BONAR 2027 6% (AO27, reapertura)", ticker="AO27", reapertura=True,
+                               familia="hard_dollar", tipo="BONAR", ley="AR", emision="2026-03-31", vencimiento="2027-10-29",
+                               cita="BONO DEL TESORO NACIONAL EN DOLARES ESTADOUNIDENSES 6% CON VENCIMIENTO 29 DE OCTUBRE DE 2027"),
+                fd.Instrumento(nombre="LECAP 17/07/2026", familia="tasa_fija_capitalizable", tipo="LECAP",
+                               emision="2026-03-31", vencimiento="2026-07-17")]),
+            "febrero": fd.Documento(tipo_documento="llamado a licitación", fecha_documento="2026-02-23", instrumentos=[
+                fd.Instrumento(nombre="BONAR 2027 (nuevo)", familia="hard_dollar", tipo="BONAR", ley="AR",
+                               emision="2026-02-27", vencimiento="2027-10-29", base="30/360",
+                               tramos=[fd.Tramo(desde="2026-02-27", tasa=0.06)],
+                               pagos=[fd.Pago(fecha=d.isoformat(), amortizacion=100 if d.year == 2027 else 0) for d in cupones]),
+                fd.Instrumento(nombre="Dollar linked 30/06/2028 (nuevo)", familia="dolar_linked_bullet", tipo="BONTE DL",
+                               emision="2026-02-27", vencimiento="2028-06-30")]),
+        }
+        leidos = []
+        extractor = lambda texto: leidos.append(texto[:20]) or docs["marzo" if "marzo" in texto else "febrero"]
+        consultas = []
+        # La búsqueda general no encuentra el aviso de febrero; sí la resolución que cita el de marzo
+        fd.BUSCADOR_WEB = lambda consulta: consultas.append(consulta) or (
+            [str(febrero)] if "Resolución Conjunta 11 del 24 de febrero de 2026" in consulta else [str(otro), str(marzo)])
+        hoy = date(2026, 11, 15)
+        try:
+            assert not any(fd.leer(str(marzo), extractor=extractor, hoy=hoy)["avisos"])   # en pausa: no busca sola
+            fd.descartar("AO27")
+            r = fd.leer(str(marzo), extractor=extractor, hoy=hoy, buscar_emision=True)
+            assert r["reaperturas"] == ["AO27"]
+            assert 'site:argentina.gob.ar/noticias "llamado a licitación" "vencimiento 29 de octubre de 2027"' in consultas[0]
+            assert "PRIMERA emisión" in consultas[0] and "filetype" not in consultas[0]
+            assert "anterior al 25 de marzo de 2026" in consultas[0]          # antes del aviso en que ya era reapertura
+            assert not any("otro tema" in l for l in leidos) and len(leidos) == 4   # el que no nombra la fecha, sin modelo
+            assert "RESFC-2026-11-APN-SH#MEC" in consultas[1] and len(consultas) == 2   # siguió la resolución citada
+            assert 'site:boletinoficial.gob.ar "Resolución Conjunta 11/2026"' in consultas[1]
+            assert fd.menciona_vencimiento("CON VENCIMIENTO EL 29 DE OCTUBRE  DE 2027", date(2027, 10, 29))
+            assert fd.menciona_vencimiento("vto. 09/07/2030", date(2030, 7, 9))
+            assert not fd.menciona_vencimiento("vence el 29 de octubre de 2028", date(2027, 10, 29))
+            aviso = next(a for a in r["avisos"] if a.startswith("AO27"))
+            assert "encontré la primera emisión en" in aviso and "febrero.txt" in aviso, aviso
+            ao27 = next(b for b in fd.pendientes() if b["clave"] == "AO27")
+            assert ao27["emision"] == date(2026, 2, 27) and ao27["base"] == "30/360" and len(ao27["pagos"]) == 5
+            assert not any(p.startswith("emision") for p in ao27.get("pendiente", []))
+            # Del aviso de febrero no se cargó nada más (el dollar linked 2028 no aparece como borrador nuevo)
+            assert not any(b.get("familia") == "dolar_linked_bullet" for b in fd.pendientes())
+            # Con la emisión original, se aprueba
+            assert "AO27 aprobado" in fd.aprobar("AO27", hoy=hoy)
+            assert leer_fichas.ficha("AO27")["emision"] == date(2026, 2, 27)
+
+            # Si la búsqueda no encuentra nada, queda anotado y se indica cómo pasar el link
+            fd.BUSCADOR_WEB = lambda consulta: []
+            fd._guardar_borradores(fd.pendientes() + [{"ticker": "AO28", "tipo": "BONAR", "familia": "hard_dollar",
+                                                         "vencimiento": date(2028, 10, 31), "revisado": False,
+                                                         "fuente": "x", "pendiente": ["emision", "precio"], "clave": "AO28"}])
+            salida = lector_fichas.buscar_emision_original("AO28")
+            assert "no encontré la primera emisión" in salida and "--solo AO28" in salida
+            assert next(b for b in fd.pendientes() if b["clave"] == "AO28")["emision_buscada"] == hoy
+        finally:
+            leer_fichas.CARPETA, fd.BORRADORES, fd.BUSCADOR_WEB = original_carpeta, original_borradores, original_web
+
+
 def _error(funcion) -> str:
     try:
         funcion()
@@ -259,7 +333,7 @@ def test_toml_ida_y_vuelta():
 
 
 if __name__ == "__main__":
-    for prueba in (test_borradores_aprobacion, test_resultado_y_cambios, test_reaperturas_duplicados_y_tickers, test_texto_html, test_toml_ida_y_vuelta):
+    for prueba in (test_borradores_aprobacion, test_resultado_y_cambios, test_reaperturas_duplicados_y_tickers, test_emision_original, test_texto_html, test_toml_ida_y_vuelta):
         prueba()
         print(f"OK  {prueba.__name__}")
     print("Todas las pruebas del lector de fichas pasaron.")

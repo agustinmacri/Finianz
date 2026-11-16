@@ -7,9 +7,9 @@ from carga_datos import fichas_documentos
 from renta_fija import leer_fichas
 
 
-def leer_documento_bonos(fuente: str) -> str:
+def leer_documento_bonos(fuente: str, solo: str | None = None) -> str:
     try:
-        return fichas_documentos.describir(fichas_documentos.leer(fuente))
+        return fichas_documentos.describir(fichas_documentos.leer(fuente, solo=solo or None))
     except Exception as e:
         return f"Error al leer el documento: {e}"
 
@@ -57,6 +57,13 @@ def vincular_borrador(ticker: str, ticker_cargado: str) -> str:
         return f"No se vinculó: {e}"
 
 
+def buscar_emision_original(ticker: str) -> str:
+    try:
+        return fichas_documentos.buscar_emision_original(ticker)
+    except ValueError as e:
+        return f"No se buscó: {e}"
+
+
 def descartar_borrador(ticker: str) -> str:
     try:
         return fichas_documentos.descartar(ticker)
@@ -77,6 +84,8 @@ LEER_DOCUMENTO_BONOS = {
     ),
     "parameters": {"type": "object", "properties": {
         "fuente": {"type": "string", "description": "URL del documento o ruta del archivo (PDF, HTML o TXT)"},
+        "solo": {"type": "string", "description": ("Opcional: ticker o clave de un borrador. Del documento se toman solo "
+                                                   "los datos de ese bono (para completarlo desde un aviso viejo)")},
     }, "required": ["fuente"]},
 }
 VER_BORRADORES = {
@@ -105,6 +114,13 @@ VINCULAR_BORRADOR = {
         "ticker": {"type": "string", "description": "Clave o ticker del borrador"},
         "ticker_cargado": {"type": "string", "description": "Ticker del bono ya cargado al que corresponde"},
     }, "required": ["ticker", "ticker_cargado"]},
+}
+BUSCAR_EMISION_ORIGINAL = {
+    "name": "buscar_emision_original",
+    "description": ("Para un borrador sin fecha de emisión (típicamente una reapertura de un bono que no teníamos): busca "
+                    "en argentina.gob.ar o el Boletín Oficial el documento de la primera emisión y completa de ahí solo "
+                    "los datos de ese bono (emisión, pagos, tramos, base). No aprueba nada."),
+    "parameters": _TICKER,
 }
 DESCARTAR_BORRADOR = {
     "name": "descartar_borrador",
@@ -140,4 +156,5 @@ RECHAZAR_CAMBIO = {
 
 HERRAMIENTAS = [(LEER_DOCUMENTO_BONOS, leer_documento_bonos), (VER_BORRADORES, ver_borradores),
                 (APROBAR_FICHA, aprobar_ficha), (DESCARTAR_BORRADOR, descartar_borrador),
-                (COMPLETAR_BORRADOR, completar_borrador), (VINCULAR_BORRADOR, vincular_borrador), (APLICAR_CAMBIO, aplicar_cambio), (RECHAZAR_CAMBIO, rechazar_cambio)]
+                (COMPLETAR_BORRADOR, completar_borrador), (VINCULAR_BORRADOR, vincular_borrador),
+                (BUSCAR_EMISION_ORIGINAL, buscar_emision_original), (APLICAR_CAMBIO, aplicar_cambio), (RECHAZAR_CAMBIO, rechazar_cambio)]

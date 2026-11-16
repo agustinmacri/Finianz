@@ -57,6 +57,12 @@ def preguntar(grafo, pregunta: str | None, hilo: str) -> str:
                         for llamada in mensaje.tool_calls:
                             args = ", ".join(f"{k}={v!r}" for k, v in llamada["args"].items())
                             print(f"  🔧 [{agente}] {llamada['name']}({args})")
+                elif nodo == "herramientas" and agente:
+                    # Si una herramienta falló, se ve en la traza (antes solo lo veía el modelo)
+                    for mensaje in cambios.get("messages", []):
+                        texto = str(mensaje.content).strip()
+                        if texto.startswith(("Error", "No se ")):
+                            print(f"  ⚠️  [{agente}] {mensaje.name}: {texto.splitlines()[0][:300]}")
                 elif nodo == "responder":
                     respuesta = cambios["messages"][-1].text
     except GraphRecursionError:

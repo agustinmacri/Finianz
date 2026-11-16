@@ -16,6 +16,9 @@ Reaperturas: si el bono ya tiene ficha, se ignora. Si no la tiene, queda como bo
    aviso es la de esta licitación, no la original) y con la emisión original como pendiente: se completa leyendo la
    resolución o el prospecto de la primera emisión.
 
+   La búsqueda del documento de la primera emisión (búsqueda web con el modelo) está en pausa: corre solo a pedido
+   (emision <clave>). Lo que funciona: leer <URL> --solo <clave> con el link de la primera emisión.
+
 Posibles duplicados: un borrador cuya familia, vencimiento y cupón o margen coinciden con un bono ya cargado (pasa con
    emisiones viejas en las que el bono todavía no tenía ticker) no se aprueba solo: o es el mismo (vincular) o es otro
    y lo confirmás como nuevo (aprobar --nuevo).
@@ -39,6 +42,8 @@ Desde la terminal:
     python -m carga_datos.fichas_documentos aprobar <TICKER> --nuevo   (si parece un bono ya cargado y no lo es)
     python -m carga_datos.fichas_documentos vincular <clave> <TICKER>  (el borrador es un bono ya cargado: se descarta)
     python -m carga_datos.fichas_documentos tickers                    (busca en PPI el ticker de los borradores sin ticker)
+    python -m carga_datos.fichas_documentos emision <clave> [--detalle] (busca y lee el documento de la primera emisión)
+    python -m carga_datos.fichas_documentos leer <URL> --solo <clave>  (de ese documento, solo los datos de ese bono)
     python -m carga_datos.fichas_documentos cambios
     python -m carga_datos.fichas_documentos aplicar <TICKER> [campo]
     python -m carga_datos.fichas_documentos rechazar <TICKER> [campo]
@@ -56,7 +61,7 @@ from pydantic import BaseModel, Field
 from renta_fija import leer_fichas
 
 BORRADORES = leer_fichas.CARPETA / "borradores" / "borradores.toml"
-MAX_CARACTERES = 80_000
+MAX_CARACTERES = 300_000   # los avisos con muchos instrumentos y cupones mensuales pasan los 100.000
 ARCHIVO_DE_FAMILIA = {
     "cer_cero_cupon": "cer.toml", "cer_cupon": "cer_cupon.toml", "tasa_fija_capitalizable": "tasa_fija.toml",
     "tasa_fija_cupon": "tasa_fija.toml", "tasa_fija_descuento": "tasa_fija.toml", "tamar_capitalizable": "tamar.toml",
@@ -67,9 +72,20 @@ CAMPOS_COMPARABLES = ("emision", "vencimiento", "cupon", "margen", "frecuencia",
 MARGEN_EMISION_ORIGINAL = 7   # días: una "emisión" posterior a (aviso − 7 días) en una reapertura es la de esta licitación
 LETRAS_MES = "EFMAYJLGSOND"   # convención del Tesoro: ene=E, feb=F, mar=M, abr=A, may=Y, jun=J, jul=L, ago=G, ...
 BUSCADOR = None               # función ticker -> lista de instrumentos (PPI); se resuelve en tiempo de ejecución
-SOLO_BORRADOR = ("pendiente", "cita", "clave", "reapertura", "posible_duplicado")
+SOLO_BORRADOR = ("pendiente", "cita", "clave", "reapertura", "posible_duplicado", "emision_buscada")
+BUSCADOR_WEB = None           # función consulta -> lista de URLs; por defecto, el modelo con búsqueda de Google
+DOMINIOS_OFICIALES = ("argentina.gob.ar", "boletinoficial.gob.ar", "economia.gob.ar")
+NAVEGADOR = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) "
+                           "Chrome/126.0 Safari/537.36", "Accept-Language": "es-AR,es;q=0.9"}   # algunos sitios bloquean otros
+MAX_CANDIDATOS = 4
+# En pausa (Agustin, 15/11/2026): el modelo no llega a buscar en Google y escribe links de memoria. Mientras tanto,
+# la búsqueda de la emisión original solo corre a pedido (emision <clave>) y no al leer cada reapertura.
+BUSCAR_EMISION_AUTOMATICA = False
+BUSQUEDAS_REALES: list[int] = []   # cuántos resultados de Google trajo cada pedido (0 = el modelo no buscó)
+MESES_LARGOS = ("enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "septiembre", "octubre",
+                "noviembre", "diciembre")
 ORDEN = ["ticker", "tipo", "familia", "reapertura", "ley", "par", "emision", "vencimiento", "cupon", "margen", "frecuencia", "base",
-         "tramos", "pagos", "tipo_cambio_pago", "revisado", "fuente", "nota", "pendiente", "posible_duplicado", "cita", "clave"]
+         "tramos", "pagos", "tipo_cambio_pago", "revisado", "fuente", "nota", "pendiente", "posible_duplicado", "emision_buscada", "cita", "clave"]
 Familia = Literal["cer_cero_cupon", "cer_cupon", "tasa_fija_capitalizable", "tasa_fija_cupon", "tasa_fija_descuento",
                   "tamar_capitalizable", "dolar_linked_bullet", "dolar_linked_cupon", "hard_dollar"]
 
@@ -156,7 +172,7 @@ def obtener_texto(fuente: str) -> str:
     """Texto de una URL (página o PDF) o de un archivo local (.pdf, .html, .txt)."""
     if re.match(r"https?://", fuente):
         import requests
-        respuesta = requests.get(fuente, timeout=60, headers={"User-Agent": "Mozilla/5.0 (Finianz)"})
+        respuesta = requests.get(fuente, timeout=60, headers=NAVEGADOR)
         respuesta.raise_for_status()
         es_pdf = "pdf" in respuesta.headers.get("content-type", "") or fuente.lower().endswith(".pdf")
         texto = _pdf_a_texto(respuesta.content) if es_pdf else _html_a_texto(respuesta.text)
@@ -249,7 +265,21 @@ def _leer_borradores(ruta: Path | None = None) -> list[dict]:
     ruta = ruta or BORRADORES
     if not ruta.exists():
         return []
-    return tomllib.loads(ruta.read_text(encoding="utf-8")).get("bono", [])
+    return _cargar_toml(ruta).get("bono", [])
+
+
+def _cargar_toml(ruta: Path) -> dict:
+    """Lee un TOML; si está mal escrito (típicamente por una edición a mano), dice dónde y qué renglón."""
+    texto = ruta.read_text(encoding="utf-8")
+    try:
+        return tomllib.loads(texto)
+    except tomllib.TOMLDecodeError as e:
+        linea = re.search(r"line (\d+)", str(e))
+        renglon = texto.splitlines()[int(linea.group(1)) - 1] if linea else ""
+        raise ValueError(
+            f"{ruta.name} está mal escrito en la línea {linea.group(1) if linea else '?'}: «{renglon.strip()}». "
+            "Corregilo a mano: fechas como 2025-10-29 (sin comillas), tasas en fracción con punto (0.06), textos entre "
+            f"comillas, listas como [\"a\", \"b\"]. Detalle: {e}") from None
 
 
 def _guardar_borradores(borradores: list[dict], ruta: Path | None = None):
@@ -267,7 +297,7 @@ def _ruta_cambios() -> Path:
 
 def _leer_cambios() -> list[dict]:
     ruta = _ruta_cambios()
-    return tomllib.loads(ruta.read_text(encoding="utf-8")).get("cambio", []) if ruta.exists() else []
+    return _cargar_toml(ruta).get("cambio", []) if ruta.exists() else []
 
 
 def _guardar_cambios(cambios: list[dict]):
@@ -455,13 +485,17 @@ def _vencido(ficha: dict, hoy: date) -> bool:
     return isinstance(vto, date) and vto < hoy
 
 
-def leer(fuente: str, extractor=extraer_con_modelo, hoy: date | None = None) -> dict:
+def leer(fuente: str, extractor=extraer_con_modelo, hoy: date | None = None, solo: str | None = None,
+         buscar_emision: bool | None = None, texto: str | None = None) -> dict:
     """Lee un documento y actualiza los borradores. Devuelve el resumen de lo que hizo.
 
     Los instrumentos ya vencidos (vencimiento anterior a hoy) no se cargan: se informan y listo. Los borradores que
-    vencieron mientras esperaban aprobación también se sacan."""
+    vencieron mientras esperaban aprobación también se sacan.
+
+    solo: clave o ticker de un borrador; del documento se toman únicamente los datos de ese bono (para completar la
+    emisión original desde un aviso viejo sin cargar el resto de sus instrumentos)."""
     hoy = hoy or date.today()
-    texto = obtener_texto(fuente)
+    texto = texto or obtener_texto(fuente)
     documento = extractor(texto)
     existentes = leer_fichas.leer_todas()
     borradores = _leer_borradores()
@@ -473,10 +507,13 @@ def leer(fuente: str, extractor=extraer_con_modelo, hoy: date | None = None) -> 
         borradores.remove(b)
         resumen["vencidos"].append(f"{b['clave']} (borrador, venció el {b['vencimiento']:%d/%m/%Y})")
     origen = fuente if re.match(r"https?://", fuente) else Path(fuente).name
+    objetivo = _elegir_borrador(borradores, solo) if solo else None
     for ins in documento.instrumentos:
         corte = _texto_corte(ins)
         ficha = a_ficha(ins, origen, documento.tipo_documento, documento.fecha_documento)
         ticker = ficha.get("ticker")
+        if objetivo is not None and not _mismo(objetivo, ficha) and not _mismo({**objetivo, "ticker": None}, ficha):
+            continue
         if corte:
             resumen["cortes"].append(corte)
         if _vencido(ficha, hoy):
@@ -516,7 +553,178 @@ def leer(fuente: str, extractor=extraer_con_modelo, hoy: date | None = None) -> 
     if cambios or _ruta_cambios().exists():
         _guardar_cambios(cambios)
     resumen["avisos"] = actualizar_borradores(hoy)
+    if (BUSCAR_EMISION_AUTOMATICA if buscar_emision is None else buscar_emision) and solo is None:
+        for clave in resumen["reaperturas"]:
+            resumen["avisos"].append(buscar_emision_original(clave, extractor=extractor, hoy=hoy))
     return resumen
+
+
+def _fecha_larga(d: date) -> str:
+    return f"{d.day} de {MESES_LARGOS[d.month - 1]} de {d.year}"
+
+
+def _resolver_redireccion(url: str) -> str | None:
+    """Los resultados de la búsqueda de Google llegan como links de redirección: se lee a dónde apuntan."""
+    import requests
+    try:
+        r = requests.get(url, allow_redirects=False, timeout=20)
+        if r.headers.get("Location"):
+            return r.headers["Location"]
+        return requests.get(url, timeout=20, stream=True).url
+    except Exception:
+        return None
+
+
+def _buscar_en_web(consulta: str, detalle: list | None = None) -> list[str]:
+    """URLs oficiales candidatas para una consulta: el modelo busca en Google y se juntan los resultados."""
+    if BUSCADOR_WEB is not None:
+        return BUSCADOR_WEB(consulta)
+    from graph.nodes import crear_modelos, invocar_con_respaldo
+    from langchain_core.messages import HumanMessage
+    modelos = crear_modelos(preparar=lambda llm: llm.bind_tools([{"google_search": {}}]))
+    respuesta = invocar_con_respaldo(modelos, [HumanMessage(consulta)])
+    metadatos = (respuesta.response_metadata or {}).get("grounding_metadata") or {}
+    trozos = [c.get("web") or {} for c in metadatos.get("grounding_chunks") or []]
+    escritos = re.findall(r"https?://[^\s)\]>\"'<]+", respuesta.text or "")
+    BUSQUEDAS_REALES.append(len(trozos))
+    if detalle is not None:
+        detalle.append(f"Consulta: {consulta}")
+        detalle.append(f"  Búsquedas que hizo el modelo: {metadatos.get('web_search_queries')}")
+        detalle += [f"  Resultado de Google: {w.get('title')} → {w.get('uri')}" for w in trozos]
+        detalle += [f"  Link escrito por el modelo: {u}" for u in escritos]
+    # Primero los resultados reales de la búsqueda; después los links que escribió el modelo (pueden ser inventados)
+    salida = []
+    for url in [w.get("uri") for w in trozos if w.get("uri")] + escritos:
+        if "grounding-api-redirect" in url or "vertexaisearch" in url:
+            url = _resolver_redireccion(url)
+            if detalle is not None:
+                detalle.append(f"  Redirección → {url}")
+            if not url:
+                continue
+        url = url.rstrip(".,;")
+        dominio = re.sub(r"^https?://(www\.)?", "", url).split("/")[0]
+        if any(dominio.endswith(d) for d in DOMINIOS_OFICIALES) and url not in salida:
+            salida.append(url)
+    return salida
+
+
+def _sin_acentos(texto: str) -> str:
+    import unicodedata
+    return "".join(c for c in unicodedata.normalize("NFD", texto.lower()) if unicodedata.category(c) != "Mn")
+
+
+def menciona_vencimiento(texto: str, vencimiento: date) -> bool:
+    """Chequeo barato antes de gastar el modelo: el documento nombra la fecha de vencimiento del bono."""
+    plano = re.sub(r"\s+", " ", _sin_acentos(texto))
+    d, m, a = vencimiento.day, vencimiento.month, vencimiento.year
+    formas = [f"{d} de {MESES_LARGOS[m - 1]} de {a}", f"{d:02d} de {MESES_LARGOS[m - 1]} de {a}",
+              f"{d:02d}/{m:02d}/{a}", f"{d}/{m}/{a}", f"{d:02d}/{m:02d}/{a % 100:02d}", f"{d:02d}-{m:02d}-{a}",
+              f"{a}-{m:02d}-{d:02d}", f"{d:02d}.{m:02d}.{a}"]
+    return any(f in plano for f in formas)
+
+
+def _consultas_emision(b: dict) -> list[str]:
+    """Pedidos al modelo con las búsquedas de Google ya armadas (operadores site: y frases exactas): así no busca
+    "a ojo" ni trae notas de medios. Sin filetype:pdf, porque los llamados y el Boletín Oficial son páginas HTML."""
+    descripcion = (b.get("cita") or f"{b.get('tipo', '')} {b.get('ticker', '')}").split("(")[0].strip()
+    ticker = b.get("ticker")
+    vto = b.get("vencimiento") if isinstance(b.get("vencimiento"), date) else None
+    frase_vto = f'"vencimiento {_fecha_larga(vto)}"' if vto else ""
+    fechas = sorted(re.findall(r"\d{4}-\d{2}-\d{2}", b.get("fuente", "")))
+    antes = (f" El documento correcto es anterior al {_fecha_larga(date.fromisoformat(fechas[0]))} (en esa fecha el bono "
+             "ya era una reapertura)." if fechas else "")
+    pedido = ("Hacé exactamente estas búsquedas en Google, en este orden, y devolvé solo las direcciones (URL) completas "
+              "de los resultados de argentina.gob.ar o boletinoficial.gob.ar que correspondan, una por renglón, la más "
+              f"probable primero. Busco el documento de la PRIMERA emisión (instrumento nuevo, no reapertura) de: "
+              f"{descripcion}{' (' + ticker + ')' if ticker else ''}.{antes}\n")
+    return [
+        pedido + f'1. site:argentina.gob.ar/noticias "llamado a licitación" {frase_vto} "(nuevo)"\n'
+                 f'2. site:argentina.gob.ar "llamado a licitación" {frase_vto}' + (f" {ticker}" if ticker else ""),
+        pedido + f'1. site:boletinoficial.gob.ar "resolución conjunta" "dispónese la emisión" {frase_vto}\n'
+                 f'2. site:argentina.gob.ar/normativa "resolución conjunta" {frase_vto} "fecha de emisión"',
+    ]
+
+
+def resolucion_original(texto: str, vencimiento: date) -> tuple[str, str] | None:
+    """Si el documento amplía el bono, las resoluciones dicen "emitido originalmente mediante el artículo N de la
+    resolución conjunta X del <fecha>": devuelve (X, fecha) para buscar esa resolución."""
+    plano = re.sub(r"\s+", " ", _sin_acentos(texto))
+    vto = f"vencimiento {vencimiento.day} de {MESES_LARGOS[vencimiento.month - 1]} de {vencimiento.year}"
+    patron = (re.escape(vto) + r"\W{0,4}(?:\([^)]{0,30}\)\W{0,3})?,? emitid[oa] originalmente mediante el articulo \d+\W{0,2} "
+              r"de la resolucion conjunta (\d+) del (\d{1,2} de [a-z]+ de \d{4})")
+    m = re.search(patron, plano)
+    return (m.group(1), m.group(2)) if m else None
+
+
+def buscar_emision_original(clave: str, extractor=extraer_con_modelo, hoy: date | None = None,
+                            detalle: list | None = None) -> str:
+    """Busca el documento de la primera emisión de un borrador sin emisión y completa de ahí solo ese bono.
+
+    Hasta dos búsquedas, más una tercera si algún documento cita la resolución que emitió originalmente el bono. De
+    cada link se baja el texto y, si no nombra el vencimiento del bono, se descarta sin llamar al modelo. Solo sirve
+    un documento que traiga el bono como nuevo y con su fecha de emisión. detalle: lista donde se anota todo (diagnóstico)."""
+    hoy = hoy or date.today()
+    borradores = _leer_borradores()
+    b = _elegir_borrador(borradores, clave)
+    if b.get("emision"):
+        return f"{b['clave']}: ya tiene fecha de emisión ({b['emision']})."
+    vencimiento = b.get("vencimiento") if isinstance(b.get("vencimiento"), date) else None
+    consultas = _consultas_emision(b)
+    BUSQUEDAS_REALES.clear()
+    intentos, probados, error, citada = [], set(), None, None
+    while consultas:
+        consulta = consultas.pop(0)
+        try:
+            encontrados = _buscar_en_web(consulta, detalle) if BUSCADOR_WEB is None else _buscar_en_web(consulta)
+        except Exception as e:
+            error = str(e).splitlines()[0][:200]
+            continue
+        for url in [u for u in encontrados if u not in probados][:MAX_CANDIDATOS]:
+            probados.add(url)
+            try:
+                texto = obtener_texto(url)
+            except Exception as e:
+                intentos.append(f"{url} (no se pudo leer: {str(e).splitlines()[0][:80]})")
+                continue
+            if vencimiento and not menciona_vencimiento(texto, vencimiento):
+                intentos.append(f"{url} (no menciona el vencimiento del bono)")
+                continue
+            if vencimiento and citada is None:
+                citada = resolucion_original(texto, vencimiento)
+                if citada:
+                    numero, fecha = citada
+                    consultas.insert(0, (
+                        "Hacé exactamente estas búsquedas en Google y devolvé solo las direcciones (URL) completas de los "
+                        "resultados oficiales, una por renglón. Busco el texto de la Resolución Conjunta "
+                        f"{numero} del {fecha} de la Secretaría de Finanzas y la Secretaría de Hacienda "
+                        f"(RESFC-{fecha[-4:]}-{numero}-APN-SH#MEC).\n"
+                        f'1. site:boletinoficial.gob.ar "Resolución Conjunta {numero}/{fecha[-4:]}" "Secretaría de Finanzas"\n'
+                        f'2. site:argentina.gob.ar/normativa "Resolución Conjunta {numero}/{fecha[-4:]}"'))
+                    if detalle is not None:
+                        detalle.append(f"  {url} cita la emisión original: resolución conjunta {numero} del {fecha}")
+            try:
+                leer(url, extractor=extractor, hoy=hoy, solo=b["clave"], buscar_emision=False, texto=texto)
+            except Exception as e:
+                intentos.append(f"{url} (no se pudo leer: {str(e).splitlines()[0][:80]})")
+                continue
+            actual = next((x for x in _leer_borradores() if _mismo(x, b) or x.get("clave") == b["clave"]), None)
+            if actual and actual.get("emision"):
+                return (f"{actual['clave']}: encontré la primera emisión en {url} y completé el borrador "
+                        f"(emisión {actual['emision']}). Revisalo antes de aprobar.")
+            intentos.append(f"{url} (lo nombra, pero no como emisión nueva)")
+    borradores = _leer_borradores()
+    b = _elegir_borrador(borradores, clave)
+    b["emision_buscada"] = hoy
+    _guardar_borradores(borradores)
+    motivo = ("probé " + "; ".join(intentos) if intentos else
+              f"la búsqueda falló ({error})" if error else "la búsqueda no devolvió documentos oficiales")
+    if BUSQUEDAS_REALES and not any(BUSQUEDAS_REALES):
+        motivo += (". Ojo: Google no devolvió ningún resultado, el modelo no llegó a buscar y los links los escribió "
+                   "de memoria (por eso dan 404)")
+    elif BUSQUEDAS_REALES:
+        motivo += f". Google devolvió {sum(BUSQUEDAS_REALES)} resultados en {len(BUSQUEDAS_REALES)} pedidos"
+    return (f"{b['clave']}: no encontré la primera emisión ({motivo}). Si tenés el link: "
+            f"python -m carga_datos.fichas_documentos leer <URL> --solo {b['clave']}")
 
 
 def pendientes() -> list[dict]:
@@ -724,12 +932,19 @@ def describir(resumen: dict) -> str:
 
 def main(argv: list[str]):
     if len(argv) < 1 or argv[0] not in ("leer", "pendientes", "aprobar", "descartar", "completar", "cambios",
-                                        "aplicar", "rechazar", "vincular", "tickers"):
+                                        "aplicar", "rechazar", "vincular", "tickers", "emision"):
         print(__doc__)
         return
     try:
         if argv[0] == "leer":
-            print(describir(leer(argv[1])))
+            solo = argv[argv.index("--solo") + 1] if "--solo" in argv else None
+            print(describir(leer(argv[1], solo=solo)))
+        elif argv[0] == "emision":
+            detalle = [] if "--detalle" in argv else None
+            salida = buscar_emision_original(argv[1], detalle=detalle)
+            if detalle is not None:
+                print("\n".join(detalle) + "\n")
+            print(salida)
         elif argv[0] == "tickers":
             print("\n".join(actualizar_borradores()) or "Nada nuevo: no aparecieron tickers ni posibles duplicados.")
         elif argv[0] == "vincular":

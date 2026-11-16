@@ -16,7 +16,7 @@ Reglas:
    - hard_dollar: bonos en dólares (BONAR, GLOBAL). Completá ley (AR o NY), tramos de tasa y pagos.
    Si es dual, poné la familia de la pata principal y explicá la otra en "notas".
 5. Si la tasa, el cupón, el margen o el precio se definen en la licitación (son el parámetro que se licita), no los inventes: dejalos vacíos y anotá en "pendiente", por ejemplo, "cupon: se define en la licitación".
-6. "pagos": solo para los instrumentos que pagan intereses o amortizan antes del vencimiento, con todas las fechas de pago y la amortización de cada una (en % del valor nominal original; las que no amortizan, 0). La última fecha es el vencimiento y las amortizaciones suman 100. Para los que pagan todo al vencimiento, dejá la lista vacía.
+6. "pagos": solo para los instrumentos que pagan intereses o amortizan antes del vencimiento, con todas las fechas de pago y la amortización de cada una (en % del valor nominal original; las que no amortizan, 0). La última fecha es el vencimiento y las amortizaciones suman 100. Si el documento enumera las fechas de pago (por ejemplo, cupones mensuales), copialas todas tal como figuran, sin saltear ninguna. Para los que pagan todo al vencimiento, dejá la lista vacía.
 7. "tramos" (solo hard dollar): la tasa anual vigente desde cada fecha; el primer tramo empieza en la emisión. Con tasa fija, un solo tramo.
 8. "base": base de cálculo de los intereses si el texto la dice (30/360, actual/365 o actual/360).
 9. "cita": copiá el fragmento del texto que describe las condiciones del instrumento (como máximo unas 60 palabras), para que se pueda verificar.

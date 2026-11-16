@@ -8,7 +8,8 @@ Hoy carga los feriados (datos/feriados.db) y el calendario de publicaciones
 hábiles (ISM, recaudación) y las de EE. UU. desde FRED. También suma los cierres nuevos
 de los activos seguidos a la base de precios (datos/precios.db) y los valores nuevos del CER
 la TAMAR y el A3500 a la base de series (datos/series.db), y las expectativas del REM
-(Excel en fuentes/rem/) a datos/rem.db.
+(Excel en fuentes/rem/) a datos/rem.db, y lee los llamados y resultados de licitación nuevos del Tesoro
+(borradores de fichas para aprobar; ver carga_datos/avisos_tesoro.py).
 Conviene correrlo después de actualizar la librería holidays, de editar
 calendarios/feriados_ajustes.toml o calendarios/publicaciones.toml, de agregar un PDF
 del INDEC en calendarios/indec/, y una vez por semana para traer las fechas nuevas de FRED.
@@ -55,6 +56,17 @@ def main():
     _series()
     _rem()
     _precios()
+    _avisos_tesoro()
+
+
+def _avisos_tesoro():
+    print("\nAvisos de licitación del Tesoro (llamados y resultados nuevos → borradores de fichas):")
+    if not config.GEMINI_API_KEY:
+        print("  Se omitió: falta GEMINI_API_KEY en el .env (el lector de fichas usa el modelo).")
+        return
+    from carga_datos import avisos_tesoro
+    for renglon in avisos_tesoro.revisar():
+        print("  " + renglon.replace("\n", "\n  "))
 
 
 def _publicaciones_fred():
