@@ -8,9 +8,8 @@ from datetime import date, timedelta
 from admin_datos import rem as db_rem
 from conexiones.http import ErrorAPI
 from renta_fija import leer_fichas as fichas
-from renta_fija.calculadoras import (breakeven as be, cer, cer_cupon, dolar_linked, hard_dollar, motor, tamar,
-                                     tasa_fija)
-from tools import bonos
+from renta_fija.calculadoras import breakeven as be, tamar
+from tools import bonos, metricas
 
 TIPOS = ("inflacion", "devaluacion", "tipo_cambio_real", "brecha", "tamar")
 NOMBRES = {"inflacion": "Inflación implícita (CER vs tasa fija)",
@@ -25,7 +24,6 @@ def _curvas(operacion: date, liquidacion: date, fecha_precios: date | None,
     """TEA y duration (en días) de cada bono a precio de mercado, por curva (solo 'familias', si se indica)."""
     curvas = {"tasa_fija": [], "cer": [], "dl": [], "tamar": [], "hd": []}
     contexto, errores = {}, []
-    ajustar = lambda d: bonos.feriados.proximo_dia_habil(d, bonos.CALENDARIO_HABILES)
     for f in fichas.todas():
         familia, ticker = f["familia"], f["ticker"].upper()
         if familias is not None and familia not in familias:
@@ -34,48 +32,13 @@ def _curvas(operacion: date, liquidacion: date, fecha_precios: date | None,
             continue                                         # vencidos, y duales (tienen opcionalidad)
         if familia == "hard_dollar" and f["ley"] != "AR":
             continue                                         # la brecha se mide con Bonares
+        if familia not in metricas.FAMILIAS_CURVA:
+            continue
         try:
             precio, _ = bonos._precio(ticker + ("D" if familia == "hard_dollar" else ""), fecha_precios)
-            punto = {"ticker": ticker, "vencimiento": f["vencimiento"], "precio": precio}
-            if familia == "tasa_fija_capitalizable":
-                r = tasa_fija.calcular_capitalizable(precio, tasa_fija.pago_final(f["cupon"], f["emision"], f["vencimiento"]),
-                                                     liquidacion, f["vencimiento"])
-                curva, tea, dur = "tasa_fija", r["tea"], r["duration"]
-            elif familia == "tasa_fija_descuento":
-                r = tasa_fija.calcular_descuento(precio, liquidacion, f["vencimiento"])
-                curva, tea, dur = "tasa_fija", r["tea"], r["duration"]
-            elif familia == "tasa_fija_cupon":
-                r = tasa_fija.calcular_cupon(precio, liquidacion, f["pagos"], f["cupon"], f["frecuencia"], f["emision"], ajustar)
-                curva, tea, dur = "tasa_fija", r["tir_real"], r["duration"]
-            elif familia == "cer_cero_cupon":
-                _, f2, cer_corriente = bonos._datos_cer(f, liquidacion)
-                r = cer.calcular(precio, f2["cer_inicial"], cer_corriente, liquidacion, f["vencimiento"])
-                curva, tea, dur = "cer", r["tea_real"], r["duration"]
-            elif familia == "cer_cupon":
-                _, f2, cer_corriente = bonos._datos_cer(f, liquidacion)
-                r = cer_cupon.calcular(precio, f2["cer_inicial"], cer_corriente, liquidacion, f["pagos"], f["cupon"],
-                                       f["frecuencia"], f["emision"], ajustar)
-                curva, tea, dur = "cer", r["tir_real"], r["duration"]
-            elif familia == "dolar_linked_bullet":
-                tc, fecha_tc, estimado = bonos._a3500(operacion)
-                contexto["a3500"] = (tc, fecha_tc, estimado)
-                r = dolar_linked.calcular_bullet(precio, tc, liquidacion, f["vencimiento"])
-                curva, tea, dur = "dl", r["tea"], r["duration"]
-            elif familia == "tamar_capitalizable":
-                d = bonos._datos_tamar(f, operacion)
-                r = tamar.calcular(precio, d["tamar_bono"], f["margen"], f["emision"], f["vencimiento"], liquidacion,
-                                   d["referencia"])
-                contexto["tamar_referencia"] = d["referencia"]
-                punto.update(margen=f["margen"], conocidas=d["conocidas"], a_estimar=d["a_estimar"],
-                             plazo=r["plazo_residual"], dias_30_360=motor.dias_30_360(f["emision"], f["vencimiento"]),
-                             emision=f["emision"], desde_estimar=d["desde_estimar"], fin_ventana=d["fin"])
-                curva, tea, dur = "tamar", r["tea"], r["duration"]
-            elif familia == "hard_dollar":
-                r = hard_dollar.calcular(precio, liquidacion, f["pagos"], f["tramos"], f["emision"], ajustar)
-                curva, tea, dur = "hd", r["tea"], r["duration"]
-            else:
-                continue
-            curvas[curva].append(dict(punto, tea=tea, x=dur * 365))
+            m = metricas.calculadora(f, liquidacion, operacion, contexto)(precio)
+            punto = {"ticker": ticker, "vencimiento": f["vencimiento"], "precio": precio, **m["extra"]}
+            curvas[m["curva"]].append(dict(punto, tea=m["tea"], tna=m["tna"], x=m["duration"] * 365))
         except (ErrorAPI, ValueError) as e:
             errores.append(f"{ticker}: {e}")
     return curvas, contexto, errores

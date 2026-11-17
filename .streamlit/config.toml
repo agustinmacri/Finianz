@@ -1,0 +1,66 @@
+# Apariencia del panel web (web/app.py), Agustin 17/11/2026. Dos modos: Blanco (por defecto, vista asesor /
+# presentación a cliente) y Obsidiana (uso PM / análisis intensivo). Se cambia con el interruptor de la barra lateral.
+#                 Obsidiana   Blanco
+#   fondo         #090C10     #FFFFFF
+#   tarjetas      #12171E     #F4F6F8   (tarjetas, métricas, barra lateral)
+#   bordes        #1F2733     #E2E8F0
+#   esmeralda     #16654A     #11523B   (botones primarios y serie principal; al pasar el mouse #1E8260 / #16654A)
+#   oro mate      #C59B4B     #9E762A   (benchmarks, alertas, destacados)
+#   texto         #F4F5F7     #0F141A
+#   secundario    #8E98A8     #525D6E   (etiquetas y ejes; por CSS en web/app.py)
+[theme]
+base = "light"
+
+[theme.light]
+primaryColor = "#11523B"
+backgroundColor = "#FFFFFF"
+secondaryBackgroundColor = "#F4F6F8"
+textColor = "#0F141A"
+borderColor = "#E2E8F0"
+linkColor = "#9E762A"
+showWidgetBorder = true
+dataframeHeaderBackgroundColor = "#F4F6F8"
+dataframeHeaderTextColor = "#0F141A"
+dataframeBorderColor = "#E2E8F0"
+greenColor = "#11523B"
+yellowColor = "#9E762A"
+orangeColor = "#9E762A"
+grayTextColor = "#525D6E"
+chartCategoricalColors = ["#11523B", "#9E762A", "#525D6E", "#2F6FAB"]
+
+[theme.light.sidebar]
+backgroundColor = "#F4F6F8"
+secondaryBackgroundColor = "#FFFFFF"
+textColor = "#0F141A"
+primaryColor = "#11523B"
+borderColor = "#E2E8F0"
+
+[theme.dark]
+primaryColor = "#16654A"
+backgroundColor = "#090C10"
+secondaryBackgroundColor = "#12171E"
+textColor = "#F4F5F7"
+borderColor = "#1F2733"
+linkColor = "#C59B4B"
+showWidgetBorder = true
+dataframeHeaderBackgroundColor = "#12171E"
+dataframeHeaderTextColor = "#F4F5F7"
+dataframeBorderColor = "#1F2733"
+greenColor = "#16654A"
+yellowColor = "#C59B4B"
+orangeColor = "#C59B4B"
+grayTextColor = "#8E98A8"
+chartCategoricalColors = ["#16654A", "#C59B4B", "#8E98A8", "#4F8FD0"]
+
+[theme.dark.sidebar]
+backgroundColor = "#12171E"
+secondaryBackgroundColor = "#090C10"
+textColor = "#F4F5F7"
+primaryColor = "#16654A"
+borderColor = "#1F2733"
+
+[client]
+toolbarMode = "minimal"   # sin el botón "Deploy" de Streamlit Cloud
+
+[browser]
+gatherUsageStats = false

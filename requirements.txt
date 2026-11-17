@@ -12,3 +12,7 @@ openpyxl>=3.1         # lectura del Excel del REM del BCRA
 python-dotenv>=1.0
 pandas
 numpy
+
+# Panel web (web/app.py): streamlit run web/app.py
+streamlit>=1.50
+plotly>=5.20

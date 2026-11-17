@@ -305,7 +305,7 @@ def test_emision_original():
                                                          "fuente": "x", "pendiente": ["emision", "precio"], "clave": "AO28"}])
             salida = lector_fichas.buscar_emision_original("AO28")
             assert "no encontré la primera emisión" in salida and "--solo AO28" in salida
-            assert next(b for b in fd.pendientes() if b["clave"] == "AO28")["emision_buscada"] == hoy
+            assert next(b for b in fd.pendientes() if b["clave"] == "AO28")["emision_buscada"] == date.today()   # la herramienta usa hoy
         finally:
             leer_fichas.CARPETA, fd.BORRADORES, fd.BUSCADOR_WEB = original_carpeta, original_borradores, original_web
 

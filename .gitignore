@@ -227,3 +227,6 @@ datos/
 # End of https://www.toptal.com/developers/gitignore/api/python,windows,visualstudiocode
 # Borradores del lector de fichas: no se suben hasta aprobarlos
 renta_fija/fichas/borradores/
+
+# Secretos del panel web (cuando se publique): no se suben
+.streamlit/secrets.toml
