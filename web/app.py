@@ -7,7 +7,9 @@ y abrir http://localhost:8501 en el navegador.
 El panel no calcula nada propio: usa las mismas funciones que el agente de renta fija (tools/ y renta_fija/), con los
 mismos precios de PPI y las mismas bases de datos/. Si algo da distinto que en la terminal, es un error del panel.
 """
+import hmac
 import sys
+import time
 from datetime import date
 from pathlib import Path
 
@@ -18,13 +20,18 @@ import plotly.graph_objects as go
 import streamlit as st
 import streamlit.components.v1 as components
 
+import config
 from renta_fija import leer_fichas
 from renta_fija.calculadoras import curva as calc_curva
 from tools import bonos, breakevens, curvas, metricas, proyeccion_cer, proyecciones
 from web import salidas
 
 IMAGENES = Path(__file__).resolve().parent / "imagenes"
-st.set_page_config(page_title="Finianz · Renta fija", page_icon=str(IMAGENES / "icono.svg"), layout="wide")
+# Por ahora el producto se muestra sin nombre (Agustin, 20/11/2026): sin "Finianz" en la pestaña, el logo ni el acceso.
+# Para volver a mostrarlo: MOSTRAR_NOMBRE = True.
+MOSTRAR_NOMBRE = False
+NOMBRE = "Finianz" if MOSTRAR_NOMBRE else ""
+st.set_page_config(page_title=f"{NOMBRE} · Renta fija" if NOMBRE else "Renta fija", page_icon=str(IMAGENES / "icono.svg"), layout="wide")
 NOMBRES_CURVA = {"tasa_fija": "Tasa fija (TEA)", "cer": "CER (TEA real)", "tamar": "TAMAR (TEA)",
                  "dl": "Dollar linked (TEA en USD)", "hd": "Bonares (TEA en USD)"}
 TITULOS = set(breakevens.NOMBRES.values())
@@ -48,7 +55,8 @@ COLORES = {c: ESMERALDA for c in ("tasa_fija", "cer", "tamar", "dl", "hd")}
 SERIES = [ESMERALDA, ORO, GRIS, P["serie_extra"]]      # para varias líneas en un mismo gráfico
 
 # El logo queda fijo arriba a la izquierda (con la barra lateral cerrada, se ve el ícono)
-st.logo(str(IMAGENES / P["logo"]), size="large", icon_image=str(IMAGENES / "icono.svg"))
+st.logo(str(IMAGENES / (P["logo"] if MOSTRAR_NOMBRE else "icono.svg")), size="large",
+        icon_image=str(IMAGENES / "icono.svg"))
 
 # Lo que el tema de Streamlit no cubre: etiquetas y textos secundarios, desplegables y contenedores como tarjetas (sin
 # sombras ni bordes pesados), botones con el esmeralda y su tono al pasar el mouse, encabezado y números tabulares.
@@ -77,7 +85,7 @@ def cambiar_modo(oscuro: bool):
     """Streamlit guarda el tema elegido en el navegador (el mismo ajuste que su menú ⋮ → Light/Dark): se escribe ahí
     y se recarga la página. La primera vez (sin elección guardada, "System") queda el modo Blanco."""
     deseado = "Dark" if oscuro else "Light"
-    components.html(f"""<script>
+    _script(f"""<script>
       const clave = "stActiveTheme-/-v2";
       const actual = JSON.parse(window.parent.localStorage.getItem(clave) || '"System"');
       const deseado = actual === "System" ? "Light" : "{deseado}";
@@ -85,7 +93,15 @@ def cambiar_modo(oscuro: bool):
         window.parent.localStorage.setItem(clave, JSON.stringify(deseado));
         window.parent.location.reload();
       }}
-    </script>""", height=0)
+    </script>""")
+
+
+def _script(codigo: str):
+    """Corre un script en la página del panel (iframe del mismo origen, invisible)."""
+    if hasattr(st, "iframe"):          # Streamlit nuevo: st.iframe reemplaza a components.html
+        st.iframe(codigo, height=1)
+    else:
+        components.html(codigo, height=0)
 
 
 DESCRIPCIONES = {"Curvas": "TEA contra duration por familia, con tabla editable de precio y tasa",
@@ -155,6 +171,52 @@ def grafico_camino(texto: str, titulo: str, porcentaje: bool = True):
         st.plotly_chart(fig, width="stretch", theme=None)
 
 
+# ---------- Acceso ----------
+
+COOKIE_ACCESO = "panel_acceso"
+HORAS_ACCESO = 12
+
+
+def _ficha_de_acceso(clave: str) -> str:
+    """Lo que se guarda en la cookie: deriva de la contraseña pero no la revela."""
+    return hmac.new(clave.encode(), b"panel-renta-fija", "sha256").hexdigest()
+
+
+def pedir_clave():
+    """Si hay PANEL_CLAVE en el .env, el panel pide la contraseña. Al entrar se guarda una cookie por 12 horas en ese
+    navegador, así la recarga del cambio de modo (o volver a abrir el link) no la vuelve a pedir. Sin PANEL_CLAVE abre
+    directo (uso en tu compu), con un aviso en la barra lateral."""
+    clave = config.PANEL_CLAVE
+    if not clave or st.session_state.get("autenticado"):
+        return
+    ficha = _ficha_de_acceso(clave)
+    if hmac.compare_digest(st.context.cookies.get(COOKIE_ACCESO, ""), ficha):
+        st.session_state["autenticado"] = True
+        return
+    _, centro, _ = st.columns([1, 1.2, 1])
+    with centro:
+        st.markdown(f'<div class="encabezado"><div class="titulo">{NOMBRE or "Renta fija"}</div><span>Acceso restringido'
+                    '</span></div>', unsafe_allow_html=True)
+        with st.form("acceso"):
+            intento = st.text_input("Contraseña", type="password")
+            if st.form_submit_button("Entrar", width="stretch"):
+                if hmac.compare_digest(intento.encode(), clave.encode()):
+                    st.session_state["autenticado"] = True
+                    _script(f"""<script>window.parent.document.cookie = "{COOKIE_ACCESO}={ficha}; path=/; """
+                            f"""max-age={HORAS_ACCESO * 3600}; SameSite=Strict" + (window.parent.location.protocol === "https:" ? "; Secure" : "");
+                            </script>""")
+                    time.sleep(0.5)                             # que el navegador llegue a guardar la cookie
+                    st.rerun()
+                time.sleep(1.5)                                 # frena a quien pruebe contraseñas de a muchas
+                st.error("Contraseña incorrecta.")
+    st.stop()
+
+
+# La primera visita (sin modo elegido) recarga la página para dejar el modo Blanco: que pase antes del acceso
+cambiar_modo(MODO == "dark")
+pedir_clave()
+
+
 # ---------- Barra lateral ----------
 
 # Navegación: una sección a la vez (con pestañas, Streamlit calcularía todas en cada actualización)
@@ -186,6 +248,8 @@ oscuro = st.sidebar.toggle("Modo oscuro", value=MODO == "dark",
                                 "para análisis intensivo.")
 cambiar_modo(oscuro)
 st.sidebar.divider()
+if not config.PANEL_CLAVE:
+    st.sidebar.warning("Sin contraseña (PANEL_CLAVE en el .env): no compartas el link así.")
 st.sidebar.caption("Mismos cálculos que el agente de renta fija. Convenciones: T+1 BYMA, por 100 VN original, "
                    "TIR efectiva anual. Fuentes: PPI (precios), BCRA (CER, TAMAR, A3500, REM).")
 

@@ -28,6 +28,8 @@ def _bool(nombre: str, defecto: bool) -> bool:
 # Modelo de IA
 # ---------------------------------------------------------------------------
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+# Contraseña del panel web (web/app.py). Sin ella el panel abre directo: ponela antes de compartir el link.
+PANEL_CLAVE = os.getenv("PANEL_CLAVE")
 GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-3.1-flash-lite")
 # Modelos a usar si el principal está saturado, separados por coma (vacío = sin respaldo)
 GEMINI_MODELOS_RESPALDO = [m.strip() for m in os.getenv("GEMINI_MODELOS_RESPALDO", "").split(",") if m.strip()]
