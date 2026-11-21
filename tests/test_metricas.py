@@ -1,15 +1,15 @@
-"""Pruebas de tools/metricas.py: precio → tasa y tasa → precio (ida y vuelta), con bonos que no necesitan datos
+"""Pruebas de renta_fija/metricas.py: precio → tasa y tasa → precio (ida y vuelta), con bonos que no necesitan datos
 de afuera (Lecap y Bonares/Globales). Correr con:
     python -m tests.test_metricas
 """
 from datetime import date
 
 from renta_fija import leer_fichas
-from tools import bonos, metricas
+from renta_fija import mercado, metricas
 
 LIQUIDACION = date(2026, 11, 17)
 # Sin base de feriados (datos/ puede no existir): las fechas de pago no se corren. No cambia la ida y vuelta.
-bonos.feriados.proximo_dia_habil = lambda d, calendario=None: d
+mercado.feriados.proximo_dia_habil = lambda d, calendario=None: d
 
 
 def _ida_y_vuelta(f: dict, precio: float):

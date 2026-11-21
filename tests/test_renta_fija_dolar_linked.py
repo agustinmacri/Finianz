@@ -33,11 +33,12 @@ def test_a3500_del_dia_o_estimado():
     """Con el A3500 del día de concertación publicado se usa ese; si no, el del día hábil anterior (estimado)."""
     import config
     from admin_datos import series as db_series
+    from renta_fija import mercado
     from tools import bonos
-    original, original_carga = config.DATOS_DIR, bonos.carga_series.actualizar
+    original, original_carga = config.DATOS_DIR, mercado.carga_series.actualizar
     with tempfile.TemporaryDirectory() as tmp:
         config.DATOS_DIR = Path(tmp)
-        bonos.carga_series.actualizar = lambda variable: 0            # sin conexión
+        mercado.carga_series.actualizar = lambda variable: 0            # sin conexión
         try:
             db_series.guardar("A3500", [{"fecha": "2026-11-12", "valor": 1440.0}], "prueba")
             assert bonos._a3500(date(2026, 11, 13)) == (1440.0, date(2026, 11, 12), True)
@@ -46,7 +47,7 @@ def test_a3500_del_dia_o_estimado():
             texto = bonos.calcular_bono("TZV27", precio=140000, fecha="2026-11-13")
             assert "Precio en dólares: 96.5517" in texto and "A3500 del día de concertación, 2026-11-13" in texto
         finally:
-            config.DATOS_DIR, bonos.carga_series.actualizar = original, original_carga
+            config.DATOS_DIR, mercado.carga_series.actualizar = original, original_carga
 
 
 def test_con_cupon():

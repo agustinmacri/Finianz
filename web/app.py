@@ -23,7 +23,8 @@ import streamlit.components.v1 as components
 import config
 from renta_fija import leer_fichas
 from renta_fija.calculadoras import curva as calc_curva
-from tools import bonos, breakevens, curvas, metricas, proyeccion_cer, proyecciones
+from renta_fija import curvas_mercado, mercado, metricas
+from tools import bonos, breakevens, curvas, proyeccion_cer, proyecciones
 from web import salidas
 
 IMAGENES = Path(__file__).resolve().parent / "imagenes"
@@ -125,16 +126,13 @@ def estilo_grafico(fig: go.Figure, alto: int, **ejes):
 # ---------- Datos (con caché: se recalcula al cambiar la fecha o al vencer el intervalo de actualización) ----------
 
 def _contexto(fecha: date | None):
-    operacion = fecha or date.today()
-    bonos._asegurar_feriados(operacion)
-    liquidacion = bonos.feriados.sumar_dias_habiles(operacion, bonos.PLAZO_LIQUIDACION, "BYMA")
-    return operacion, liquidacion, (operacion if fecha else None)
+    return mercado.contexto(fecha)
 
 
 @st.cache_data(ttl=60, show_spinner="Trayendo precios y calculando las curvas…")
 def datos_curvas(fecha: date | None, _marca: int):
     operacion, liquidacion, fecha_precios = _contexto(fecha)
-    puntos, contexto, errores = breakevens._curvas(operacion, liquidacion, fecha_precios)
+    puntos, contexto, errores = curvas_mercado.armar(operacion, liquidacion, fecha_precios)
     return puntos, contexto, errores, liquidacion
 
 
@@ -311,10 +309,10 @@ if seccion == "Curvas":
         c = st.segmented_control("Curva", disponibles, format_func=NOMBRES_CURVA.get, key="curva_elegida") or disponibles[0]
 
         # Mercado y, encima, lo que cargó el usuario en la tabla (precio o tasa de un bono)
-        mercado = sorted(puntos[c], key=lambda p: p["x"])
+        de_mercado = sorted(puntos[c], key=lambda p: p["x"])
         cambios = st.session_state.get("cambios_curva", {})
         filas, avisos = [], []
-        for p in mercado:
+        for p in de_mercado:
             fila = dict(p, editado=None)
             cambio = cambios.get((c, p["ticker"]))
             if cambio:
@@ -327,7 +325,7 @@ if seccion == "Curvas":
         fig = go.Figure()
         editados = [f for f in filas if f["editado"]]
         if editados:                                        # dónde estaban a precio de mercado
-            originales = [p for p in mercado if (c, p["ticker"]) in cambios]
+            originales = [p for p in de_mercado if (c, p["ticker"]) in cambios]
             fig.add_trace(go.Scatter(x=[p["x"] / 365 for p in originales], y=[p["tea"] for p in originales],
                                      mode="markers", name="A precio de mercado", hoverinfo="skip",
                                      marker=dict(size=9, color="rgba(0,0,0,0)", line=dict(color=GRIS, width=1.5))))
@@ -339,10 +337,10 @@ if seccion == "Curvas":
                                              line=dict(color=TEXTO, width=0.6),
                                              symbol=["diamond" if f["editado"] else "circle" for f in filas]),
                                  hovertemplate="%{text}<br>Duration %{x:.2f} años<br>TEA %{y:.2%}<extra></extra>"))
-        if len(mercado) >= 3:                           # la curva ajustada es la de mercado: la referencia
+        if len(de_mercado) >= 3:                           # la curva ajustada es la de mercado: la referencia
             try:
-                xs_mercado = [p["x"] / 365 for p in mercado]
-                ajuste = calc_curva.ajustar_log([(x, p["tea"]) for x, p in zip(xs_mercado, mercado) if x > 0])
+                xs_mercado = [p["x"] / 365 for p in de_mercado]
+                ajuste = calc_curva.ajustar_log([(x, p["tea"]) for x, p in zip(xs_mercado, de_mercado) if x > 0])
                 grilla = [min(xs_mercado) + i * (max(xs_mercado) - min(xs_mercado)) / 60 for i in range(61)]
                 fig.add_trace(go.Scatter(x=grilla, y=[calc_curva.tea_teorica(ajuste, x) for x in grilla], mode="lines",
                                          name=f"Curva de mercado (R² {ajuste['r2']:.2f})", hoverinfo="skip",
@@ -391,7 +389,7 @@ if seccion == "Curvas":
 
 @st.cache_data(ttl=60, show_spinner=False)
 def precio_de_mercado(ticker: str, familia: str, fecha: date | None, _marca: int) -> float:
-    return bonos._precio(ticker + ("D" if familia == "hard_dollar" else ""), fecha)[0]
+    return mercado.precio(ticker + ("D" if familia == "hard_dollar" else ""), fecha)[0]
 
 
 NOMBRES_DETALLE = {"valor_tecnico": "Valor técnico", "paridad": "Paridad", "interes_corrido": "Interés corrido",
@@ -416,20 +414,20 @@ if seccion == "Bono":
         operacion, liquidacion, fecha_precios = _contexto(fecha)
         calc = metricas.calculadora(ficha, liquidacion, operacion)
         try:
-            mercado = precio_de_mercado(ticker, ficha["familia"], fecha_precios, marca)
-            m_mercado = calc(mercado)
+            precio_mkt = precio_de_mercado(ticker, ficha["familia"], fecha_precios, marca)
+            m_mercado = calc(precio_mkt)
         except Exception:
-            mercado, m_mercado = None, None
+            precio_mkt, m_mercado = None, None
         col1, col2, col3 = st.columns([1, 1, 2])
         if modo.startswith("La tasa"):
-            precio = col1.number_input("Precio", value=float(round(mercado, 2)) if mercado else 100.0, min_value=0.0001,
+            precio = col1.number_input("Precio", value=float(round(precio_mkt, 2)) if precio_mkt else 100.0, min_value=0.0001,
                                        step=0.5, format="%.2f", key=f"bono_precio_{ticker}_{ficha['familia']}")
         else:
             tipo = col1.radio("Tasa", ["TEA", "TNA"], horizontal=True, key="bono_tipo")
             base = (m_mercado[tipo.lower()] if m_mercado and m_mercado[tipo.lower()] is not None else 0.30)
             objetivo = col2.number_input(f"{tipo} (%)", value=float(round(base * 100, 2)), step=0.25, format="%.2f",
                                          key=f"bono_tasa_{ticker}_{ficha['familia']}_{tipo}") / 100
-            precio = metricas.precio_para(calc, objetivo, tipo.lower(), referencia=mercado or 100.0)
+            precio = metricas.precio_para(calc, objetivo, tipo.lower(), referencia=precio_mkt or 100.0)
         m = calc(precio)
     except Exception as e:
         st.error(f"No se pudo calcular: {e}")
@@ -437,14 +435,14 @@ if seccion == "Bono":
 
     st.caption(f"{ficha.get('tipo', '')} · {ficha['familia'].replace('_', ' ')} · vence {ficha['vencimiento']:%d/%m/%Y} · "
                f"liquidación {liquidacion:%d/%m/%Y}"
-               + (f" · precio de mercado {mercado:,.2f}" if mercado else " · sin precio de mercado"))
+               + (f" · precio de mercado {precio_mkt:,.2f}" if precio_mkt else " · sin precio de mercado"))
     def _delta(valor, referencia, pb=False):
         if referencia is None or valor is None or abs(valor - referencia) < (5e-5 if pb else 0.005):
             return None
         return (f"{round((valor - referencia) * 1e4) + 0:+d} pb vs mercado" if pb
                 else f"{round(valor - referencia, 2) + 0:+,.2f} vs mercado")
     a, b, c_, d = st.columns(4)
-    a.metric("Precio", f"{precio:,.2f}", _delta(precio, mercado), delta_color="off")
+    a.metric("Precio", f"{precio:,.2f}", _delta(precio, precio_mkt), delta_color="off")
     b.metric("TEA", f"{m['tea']:.2%}", _delta(m["tea"], m_mercado and m_mercado["tea"], True), delta_color="inverse")
     c_.metric("TNA", f"{m['tna']:.2%}" if m["tna"] is not None else "–",
               _delta(m["tna"], m_mercado and m_mercado["tna"], True), delta_color="inverse", help=None)

@@ -83,11 +83,14 @@ Finianz/
 │   └── python_exec.py   # ejecutar_python, con acceso a los datos
 ├── calculos/            # cálculos propios, sin acceso externo
 │   └── series.py        # variaciones de series (mensual, interanual, anualizada, acumulada)
-├── renta_fija/          # todo lo propio de bonos y letras
+├── renta_fija/          # el motor de bonos y letras: calculadoras, fichas, datos de mercado y métricas (no sabe del agente ni del panel)
 │   ├── fichas/          # fichas técnicas (cer.toml, cer_cupon.toml, tasa_fija.toml, tamar.toml, hard_dollar.toml, dolar_linked.toml) y prospectos/
 │   ├── escenarios/      # escenarios propios: inflacion.toml, tamar.toml, dolar_oficial.toml, dolar_mep.toml, dolar_ccl.toml
 │   ├── calculadoras/    # cuentas puras: motor.py (TIR, duration...) y una por familia (cer.py, cer_cupon.py, tasa_fija.py, tamar.py, hard_dollar.py, dolar_linked.py), curva.py y breakeven.py
-│   └── leer_fichas.py   # lee y valida las fichas
+│   ├── leer_fichas.py   # lee y valida las fichas
+│   ├── mercado.py       # datos de mercado de los bonos: precios (PPI), CER, A3500, TAMAR y feriados (base propia y fuentes)
+│   ├── metricas.py      # precio → TEA, TNA, duration y flujo de fondos de un bono, y tasa → precio
+│   └── curvas_mercado.py  # curvas de mercado (tasa fija, CER, TAMAR, dollar linked, Bonares) a precio de mercado
 ├── conexiones/             # acceso a fuentes externas, sin IA
 │   ├── http.py          # timeouts, reintentos y caché comunes
 │   ├── bcra.py          # API del BCRA (Principales Variables v4)

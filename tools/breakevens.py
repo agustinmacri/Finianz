@@ -1,15 +1,15 @@
 """Herramienta de breakevens entre curvas de bonos en pesos y en dólares.
 
-Arma las curvas con la calculadora propia (tools/bonos.py) a precios de mercado y las cruza con
+Arma las curvas a precios de mercado (renta_fija/curvas_mercado.py) y las cruza con
 renta_fija/calculadoras/breakeven.py. Definiciones en docs/convenciones-renta-fija.md.
 """
 from datetime import date, timedelta
 
 from admin_datos import rem as db_rem
 from conexiones.http import ErrorAPI
-from renta_fija import leer_fichas as fichas
 from renta_fija.calculadoras import breakeven as be, tamar
-from tools import bonos, metricas
+from renta_fija import curvas_mercado
+from tools import bonos
 
 TIPOS = ("inflacion", "devaluacion", "tipo_cambio_real", "brecha", "tamar")
 NOMBRES = {"inflacion": "Inflación implícita (CER vs tasa fija)",
@@ -21,27 +21,8 @@ NOMBRES = {"inflacion": "Inflación implícita (CER vs tasa fija)",
 
 def _curvas(operacion: date, liquidacion: date, fecha_precios: date | None,
             familias: set[str] | None = None) -> tuple[dict, dict, list[str]]:
-    """TEA y duration (en días) de cada bono a precio de mercado, por curva (solo 'familias', si se indica)."""
-    curvas = {"tasa_fija": [], "cer": [], "dl": [], "tamar": [], "hd": []}
-    contexto, errores = {}, []
-    for f in fichas.todas():
-        familia, ticker = f["familia"], f["ticker"].upper()
-        if familias is not None and familia not in familias:
-            continue
-        if liquidacion >= f["vencimiento"] or "DUAL" in f.get("tipo", "").upper():
-            continue                                         # vencidos, y duales (tienen opcionalidad)
-        if familia == "hard_dollar" and f["ley"] != "AR":
-            continue                                         # la brecha se mide con Bonares
-        if familia not in metricas.FAMILIAS_CURVA:
-            continue
-        try:
-            precio, _ = bonos._precio(ticker + ("D" if familia == "hard_dollar" else ""), fecha_precios)
-            m = metricas.calculadora(f, liquidacion, operacion, contexto)(precio)
-            punto = {"ticker": ticker, "vencimiento": f["vencimiento"], "precio": precio, **m["extra"]}
-            curvas[m["curva"]].append(dict(punto, tea=m["tea"], tna=m["tna"], x=m["duration"] * 365))
-        except (ErrorAPI, ValueError) as e:
-            errores.append(f"{ticker}: {e}")
-    return curvas, contexto, errores
+    """Las curvas de mercado (renta_fija/curvas_mercado.py). Queda acá para que las pruebas la reemplacen."""
+    return curvas_mercado.armar(operacion, liquidacion, fecha_precios, familias)
 
 
 def _brecha_actual(fecha_precios: date | None, a3500: float) -> float | None:

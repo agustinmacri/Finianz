@@ -15,7 +15,6 @@ Fuentes del tipo de cambio (pesos por dólar), partiendo del valor de hoy:
 Entre puntos, crecimiento geométrico; después del último, sigue con la variación mensual del último tramo
 (o la que indique el escenario en "resto").
 """
-import math
 import tomllib
 from datetime import date, timedelta
 from pathlib import Path

@@ -9,63 +9,23 @@ Ningún número sale de cálculos externos: de afuera vienen solo datos.
 """
 from datetime import date, timedelta
 
-import config
 from admin_datos import feriados
-from admin_datos import precios as db_precios
-from admin_datos import series as db_series
-from carga_datos import feriados as carga_feriados
-from carga_datos import precios as carga_precios
-from carga_datos import series as carga_series
-from conexiones import bcra, fred, ppi
+from conexiones import fred
 from conexiones.http import ErrorAPI
-from renta_fija import leer_fichas as fichas
+from renta_fija import leer_fichas as fichas, mercado
 from renta_fija.calculadoras import breakeven, cer, cer_cupon, dolar_linked, hard_dollar, motor, tamar, tasa_fija
 
-PLAZO_LIQUIDACION = 1          # T+1: precios y cálculos a la fecha de liquidación, salvo que se indique otra cosa
-CALENDARIO_HABILES = "BYMA"    # días hábiles del rezago del CER y de las fechas de pago (decisión de Agustin, 13/11/2026)
-
-
-def _asegurar_feriados(*fechas: date):
-    rango = feriados.rango_cargado()
-    if not rango or any(not rango[0] <= f.year <= rango[1] for f in fechas):
-        anios = [f.year for f in fechas]
-        carga_feriados.cargar(desde=min(anios + [config.FERIADOS_DESDE] + ([rango[0]] if rango else [])),
-                              hasta=max(anios + [date.today().year + config.FERIADOS_ANIOS_ADELANTE]))
-
-
-def _cer(fecha: date) -> float:
-    """CER de una fecha exacta, de la base propia (datos/series.db). Si falta, la actualiza desde el BCRA."""
-    valor = db_series.valor("CER", fecha)
-    if valor is None:
-        carga_series.actualizar("CER")
-        valor = db_series.valor("CER", fecha)
-    if valor is None:
-        raise ErrorAPI(f"no hay CER del {fecha}: no está en la base propia ni lo publicó el BCRA todavía.")
-    return valor
-
-
-def _ultima_inflacion() -> tuple[float, str]:
-    """Último dato de inflación mensual conocido (INDEC vía BCRA): (fracción, mes)."""
-    candidatas = [v for v in bcra.buscar_variables("inflacion mensual")
-                  if "inflacion mensual" in bcra.normalizar(v["descripcion"])]
-    if not candidatas:
-        raise ErrorAPI("no se encontró la inflación mensual en el BCRA.")
-    v = candidatas[0]
-    return float(v["ultimo_valor"]) / 100, str(v["ultima_fecha"])[:7]
-
-
-def _precio(ticker: str, fecha: date | None) -> tuple[float, str]:
-    """Precio por 100 VN y de dónde salió: en vivo (hoy) o el cierre guardado de una fecha."""
-    plazo = config.PPI_PLAZO
-    if fecha is None:
-        datos = carga_precios.registrar(ticker)
-        p = ppi.precio_actual(ticker, datos["tipo"], plazo)
-        return p["price"], f"PPI en vivo, {str(p.get('date'))[:16]}"
-    carga_precios.actualizar(ticker, plazo)
-    cierre = db_precios.entre(ticker, plazo, fecha.isoformat(), fecha.isoformat())
-    if not cierre:
-        raise ValueError(f"no hay cierre guardado de {ticker} el {fecha} (¿fue día hábil?).")
-    return cierre[0]["cierre"], f"cierre del {fecha} (base propia, fuente PPI)"
+# Los datos de mercado (precios, CER, A3500, TAMAR, feriados) viven en renta_fija/mercado.py. Estos nombres quedan
+# como atajos para las demás herramientas (y para las pruebas que los reemplazan por datos inventados).
+PLAZO_LIQUIDACION = mercado.PLAZO_LIQUIDACION
+CALENDARIO_HABILES = mercado.CALENDARIO_HABILES
+_asegurar_feriados = mercado.asegurar_feriados
+_cer = mercado.cer_de
+_ultima_inflacion = mercado.ultima_inflacion
+_precio = mercado.precio
+_datos_cer = mercado.datos_cer
+_a3500 = mercado.a3500
+_datos_tamar = mercado.datos_tamar
 
 
 def _pct(x: float) -> str:
@@ -247,36 +207,6 @@ def _calcular_ficha(f: dict, precio: float, liquidacion: date, operacion: date,
     return _tasa_fija_cupon(f, precio, liquidacion)
 
 
-def _datos_cer(f: dict, liquidacion: date) -> tuple[str, dict, float]:
-    """CER corriente (10.º día hábil anterior a la liquidación) y CER inicial (10.º día hábil anterior a la
-    emisión), ambos de la base propia de series: las fichas no traen valores de CER."""
-    fecha_cer_corriente = feriados.sumar_dias_habiles(liquidacion, -cer.REZAGO_HABILES, CALENDARIO_HABILES)
-    cer_corriente = _cer(fecha_cer_corriente)
-    _asegurar_feriados(f["emision"])
-    fecha_base = feriados.sumar_dias_habiles(f["emision"], -cer.REZAGO_HABILES, CALENDARIO_HABILES)
-    f = dict(f, cer_inicial=_cer(fecha_base))
-    texto = (f"Base (CER inicial): {f['cer_inicial']:,.4f} (al {fecha_base}, 10.º día hábil anterior a la emisión "
-             f"del {f['emision']}) | CER corriente: {cer_corriente:,.5f} "
-             f"(al {fecha_cer_corriente}, 10.º día hábil anterior a la liquidación)\n")
-    return texto, f, cer_corriente
-
-
-def _a3500(operacion: date) -> tuple[float, date, bool]:
-    """A3500 del día de concertación. Si todavía no se publicó (sale alrededor de las 15 h), se estima con el
-    del último día hábil anterior. Devuelve (valor, fecha del dato, estimado)."""
-    valor = db_series.valor("A3500", operacion)
-    if valor is None:
-        carga_series.actualizar("A3500")
-        valor = db_series.valor("A3500", operacion)
-    if valor is not None:
-        return valor, operacion, False
-    anteriores = db_series.entre("A3500", (operacion - timedelta(days=10)).isoformat(),
-                                 (operacion - timedelta(days=1)).isoformat())
-    if not anteriores:
-        raise ErrorAPI(f"no hay A3500 del {operacion} ni de los días anteriores en la base ni en el BCRA.")
-    return anteriores[-1]["valor"], date.fromisoformat(anteriores[-1]["fecha"]), True
-
-
 def _dolar_linked_bullet(f: dict, precio: float, liquidacion: date, operacion: date) -> str:
     tc, fecha_tc, estimado = _a3500(operacion)
     r = dolar_linked.calcular_bullet(precio, tc, liquidacion, f["vencimiento"])
@@ -385,33 +315,6 @@ def _hard_dollar(f: dict, precio: float | None, fecha: date | None, liquidacion:
     if not f.get("revisado"):
         texto += "\nAVISO: la ficha técnica todavía no fue revisada por Agustin; tomá el resultado como preliminar."
     return texto.rstrip("\n")
-
-
-def _datos_tamar(f: dict, corte: date) -> dict:
-    """TAMAR del bono (ventana con la parte estimada) y TAMAR de referencia, con lo publicado hasta 'corte'.
-
-    Ventana: del 10.º día hábil anterior a la emisión al 10.º anterior al vencimiento. Los días hábiles
-    de la ventana posteriores al último dato publicado se estiman con el promedio de los últimos 5.
-    """
-    _asegurar_feriados(f["emision"], f["vencimiento"], corte)
-    rango = db_series.rango("TAMAR")
-    if not rango or date.fromisoformat(rango[1]) < feriados.sumar_dias_habiles(corte, -2, CALENDARIO_HABILES):
-        carga_series.actualizar("TAMAR")           # faltan datos recientes: se piden al BCRA
-    publicadas = db_series.entre("TAMAR", None, corte.isoformat())
-    if len(publicadas) < tamar.DIAS_ESTIMACION:
-        raise ErrorAPI("no hay suficientes datos de TAMAR en la base propia ni en el BCRA.")
-    inicio = feriados.sumar_dias_habiles(f["emision"], -tamar.REZAGO_HABILES, CALENDARIO_HABILES)
-    fin = feriados.sumar_dias_habiles(f["vencimiento"], -tamar.REZAGO_HABILES, CALENDARIO_HABILES)
-    ultimas = publicadas[-tamar.DIAS_ESTIMACION:]
-    referencia = sum(p["valor"] for p in ultimas) / len(ultimas) / 100
-    ultima_fecha = date.fromisoformat(publicadas[-1]["fecha"])
-    conocidas = [p["valor"] / 100 for p in publicadas if inicio.isoformat() <= p["fecha"] <= fin.isoformat()]
-    desde_estimar = max(inicio, ultima_fecha + timedelta(days=1))
-    a_estimar = len(feriados.dias_habiles_entre(desde_estimar, fin, CALENDARIO_HABILES))
-    return {"inicio": inicio, "fin": fin, "conocidas": conocidas, "a_estimar": a_estimar, "referencia": referencia,
-            "desde_estimar": desde_estimar,
-            "tamar_bono": tamar.tamar_del_bono(conocidas, a_estimar, referencia),
-            "ultimas": (ultimas[0]["fecha"], ultimas[-1]["fecha"])}
 
 
 def _tamar_capitalizable(f: dict, precio: float, liquidacion: date, operacion: date) -> str:
