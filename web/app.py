@@ -25,7 +25,7 @@ from renta_fija import leer_fichas
 from renta_fija.calculadoras import curva as calc_curva
 from renta_fija import curvas_mercado, mercado, metricas
 from tools import bonos, breakevens, curvas, proyeccion_cer, proyecciones
-from web import salidas
+from web import carteras_panel, salidas
 
 IMAGENES = Path(__file__).resolve().parent / "imagenes"
 # Por ahora el producto se muestra sin nombre (Agustin, 20/11/2026): sin "Finianz" en la pestaña, el logo ni el acceso.
@@ -109,7 +109,8 @@ DESCRIPCIONES = {"Curvas": "TEA contra duration por familia, con tabla editable 
                  "Bono": "Calculadora de un bono: precio ↔ tasa, métricas y flujo de fondos",
                  "Breakevens": "Inflación, devaluación, tipo de cambio real, brecha y TAMAR implícitos, contra el REM",
                  "Proyecciones": "El camino supuesto contra el breakeven y el REM, y su efecto en cada bono",
-                 "Fichas": "Fichas técnicas aprobadas y borradores del lector de documentos"}
+                 "Fichas": "Fichas técnicas aprobadas y borradores del lector de documentos",
+                 "Carteras": "Carteras de clientes: valuación, edición y consultas a la IA"}
 
 
 def estilo_grafico(fig: go.Figure, alto: int, **ejes):
@@ -218,8 +219,8 @@ pedir_clave()
 # ---------- Barra lateral ----------
 
 # Navegación: una sección a la vez (con pestañas, Streamlit calcularía todas en cada actualización)
-SECCIONES = ["Curvas", "Bono", "Breakevens", "Proyecciones", "Fichas"]
-ICONOS = {"Curvas": "📈", "Bono": "🧮", "Breakevens": "⚖️", "Proyecciones": "🔭", "Fichas": "🗂️"}
+SECCIONES = ["Curvas", "Bono", "Breakevens", "Proyecciones", "Fichas", "Carteras"]
+ICONOS = {"Curvas": "📈", "Bono": "🧮", "Breakevens": "⚖️", "Proyecciones": "🔭", "Fichas": "🗂️", "Carteras": "💼"}
 st.sidebar.markdown('<span class="rotulo-lateral">RENTA FIJA</span>', unsafe_allow_html=True)
 # La sección va en la dirección (?seccion=Bono): así sobrevive a la recarga que hace el cambio de modo
 inicial = st.query_params.get("seccion", "Curvas")
@@ -525,3 +526,11 @@ if seccion == "Fichas":
     except ValueError as e:
         col2.error(str(e))
     col2.caption("Para aprobar: python -m carga_datos.fichas_documentos aprobar <TICKER>, o pedíselo al agente.")
+
+
+# ---------- Carteras ----------
+
+if seccion == "Carteras":
+    carteras_panel.seccion(fecha, marca, estilo_grafico, {"series": SERIES, "texto": TEXTO, "gris": GRIS,
+                                                         "superficie": SUPERFICIE, "grilla": GRILLA,
+                                                         "esmeralda": ESMERALDA})

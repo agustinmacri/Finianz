@@ -16,6 +16,8 @@ from dataclasses import dataclass
 from datetime import date
 
 from carteras.excel import Cartera
+import config
+from admin_datos import precios as db_precios
 from carga_datos import precios as carga_precios
 from conexiones.http import ErrorAPI
 from renta_fija import leer_fichas, mercado, metricas
@@ -33,11 +35,34 @@ REFERENCIA = {"tasa_fija_capitalizable": "", "tasa_fija_descuento": "", "tasa_fi
               "dolar_linked_cupon": "USD", "hard_dollar": "USD"}
 
 
-def tipos_de_cambio(fecha_precios: date | None) -> dict[str, float]:
+def precio(ticker: str, fecha_precios: date | None, avisos: list[str] | None = None) -> float:
+    """Precio de mercado. Si el precio en vivo de PPI falla, usa el último cierre guardado en la base propia y lo
+    anota en avisos (así una caída de PPI no frena la valuación)."""
+    try:
+        return mercado.precio(ticker, fecha_precios)[0]
+    except ErrorAPI as e:
+        if fecha_precios is not None:
+            raise
+        error = e
+    try:
+        carga_precios.actualizar(ticker, config.PPI_PLAZO)
+    except (ErrorAPI, ValueError):
+        pass                                            # si PPI está caído, queda lo que ya estaba guardado
+    cierres = db_precios.entre(ticker, config.PPI_PLAZO)
+    if not cierres:
+        raise ErrorAPI(f"PPI no respondió y no hay cierres guardados de {ticker} ({str(error).splitlines()[0][:120]})")
+    ultimo = cierres[-1]
+    if avisos is not None:
+        avisos.append(f"{ticker}: PPI no respondió el precio en vivo; se usó el cierre del {ultimo['fecha']} "
+                      f"({ultimo['cierre']:,.2f}).")
+    return ultimo["cierre"]
+
+
+def tipos_de_cambio(fecha_precios: date | None, avisos: list[str] | None = None) -> dict[str, float]:
     """MEP y CCL implícitos del AL30 (pesos / dólares), como en las proyecciones."""
-    pesos = mercado.precio("AL30", fecha_precios)[0]
-    return {"mep": pesos / mercado.precio("AL30D", fecha_precios)[0],
-            "ccl": pesos / mercado.precio("AL30C", fecha_precios)[0]}
+    pesos = precio("AL30", fecha_precios, avisos)
+    return {"mep": pesos / precio("AL30D", fecha_precios, avisos),
+            "ccl": pesos / precio("AL30C", fecha_precios, avisos)}
 
 
 @dataclass
@@ -46,6 +71,7 @@ class Contexto:
     liquidacion: date
     fecha_precios: date | None
     fx: dict[str, float]
+    avisos: list[str]
 
 
 class Proyecciones:
@@ -153,12 +179,12 @@ def _renta_fija(pos, fichas: list[dict], ctx: Contexto, proy: Proyecciones) -> d
     hd = principal["familia"] == "hard_dollar"
     tipo_fx = ("ccl" if principal.get("ley") == "NY" else "mep") if hd else None
     # Hard dollar: precio en dólares (D si es ley AR, C si es ley NY), valuado al MEP o al CCL
-    precio = mercado.precio(pos.ticker + ({"mep": "D", "ccl": "C"}[tipo_fx] if hd else ""), ctx.fecha_precios)[0]
-    precio_pesos = precio * ctx.fx[tipo_fx] if hd else precio
+    px = precio(pos.ticker + ({"mep": "D", "ccl": "C"}[tipo_fx] if hd else ""), ctx.fecha_precios, ctx.avisos)
+    precio_pesos = px * ctx.fx[tipo_fx] if hd else px
     resultados = []
     for f in fichas:                                    # un bono común tiene una pata; un dual, dos
-        m = metricas.calculadora(f, ctx.liquidacion, ctx.operacion)(precio)
-        resultados.append((f, m, proy.tir_nominal(f, precio, m)))
+        m = metricas.calculadora(f, ctx.liquidacion, ctx.operacion)(px)
+        resultados.append((f, m, proy.tir_nominal(f, px, m)))
     f, m, tir_proy = max(resultados, key=lambda r: r[2])   # dual: paga la pata que más rinde
     f0, m0, _ = resultados[0]                              # la tasa propia, de la primera pata del nombre
     tir_propia = m0["detalle"]["spread"] if f0["familia"] == "tamar_capitalizable" else m0["tea"]
@@ -172,11 +198,11 @@ def _renta_fija(pos, fichas: list[dict], ctx: Contexto, proy: Proyecciones) -> d
 
 def _renta_variable(pos, ctx: Contexto) -> dict:
     datos = carga_precios.registrar(pos.ticker)
-    precio = mercado.precio(pos.ticker, ctx.fecha_precios)[0]
+    px = precio(pos.ticker, ctx.fecha_precios, ctx.avisos)
     tipo = NOMBRES_RV.get(str(datos.get("tipo", "")).upper(), str(datos.get("tipo", "")).title())
     return {"tipo": pos.tipo or tipo, "descripcion": pos.descripcion or datos.get("descripcion") or pos.ticker,
             "ticker": pos.ticker, "referencia": "", "tir_propia": None, "tir_proyectada": None, "nominales": pos.nominales,
-            "precio_pesos": precio, "total_pesos": pos.nominales * precio, "duration": None, "renta_fija": False,
+            "precio_pesos": px, "total_pesos": pos.nominales * px, "duration": None, "renta_fija": False,
             "pata": None}
 
 
@@ -185,7 +211,12 @@ def valuar(cartera: Cartera, moneda: str = "pesos", fecha: date | None = None) -
     if moneda not in MONEDAS:
         raise ValueError(f"Moneda desconocida '{moneda}'. Opciones: {', '.join(MONEDAS)}.")
     operacion, liquidacion, fecha_precios = mercado.contexto(fecha)
-    ctx = Contexto(operacion, liquidacion, fecha_precios, tipos_de_cambio(fecha_precios))
+    avisos_precios: list[str] = []
+    try:
+        fx = tipos_de_cambio(fecha_precios, avisos_precios)
+    except ErrorAPI as e:
+        raise ValueError(f"no se pudo armar el MEP y el CCL del AL30: {str(e).splitlines()[0]}") from None
+    ctx = Contexto(operacion, liquidacion, fecha_precios, fx, avisos_precios)
     fichas_de = {p.ticker: [f for f in leer_fichas.fichas_de(p.ticker) if f["familia"] in metricas.UNIDAD]
                  for p in cartera.posiciones}
     vencimientos = [f["vencimiento"] for lista in fichas_de.values() for f in lista]
@@ -222,8 +253,8 @@ def valuar(cartera: Cartera, moneda: str = "pesos", fecha: date | None = None) -
     supuestos = {v: proy.descripciones[v] for v in ("inflacion", "tamar", "dolar_oficial", "mep", "ccl")
                  if v in proy.descripciones}
     return {"nombre": cartera.nombre, "fecha": operacion, "moneda": moneda, "nombre_moneda": MONEDAS[moneda],
-            "filas": filas, "totales": totales, "fx": ctx.fx, "supuestos": supuestos, "avisos": avisos,
-            "nota_valuacion": nota, "liquidacion": liquidacion}
+            "filas": filas, "totales": totales, "fx": ctx.fx, "supuestos": supuestos,
+            "nota_valuacion": nota, "liquidacion": liquidacion, "avisos": avisos_precios + avisos}
 
 
 def _pct(x: float | None, referencia: str = "") -> str:

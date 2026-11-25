@@ -1,5 +1,6 @@
 """Carteras de clientes para el agente de renta fija: listarlas y valuarlas (los Excel están en datos/carteras/)."""
 from carteras import excel, valuar
+from conexiones.http import ErrorAPI
 
 
 def listar_carteras() -> str:
@@ -13,7 +14,7 @@ def listar_carteras() -> str:
 def ver_cartera(nombre: str, moneda: str = "pesos", guardar_excel: bool = False) -> str:
     try:
         v = valuar.valuar(excel.leer(nombre), moneda or "pesos")
-    except ValueError as e:
+    except (ValueError, ErrorAPI) as e:
         return f"No se pudo valuar la cartera: {e}"
     salida = valuar.texto(v)
     if guardar_excel:

@@ -102,6 +102,74 @@ def leer(nombre: str) -> Cartera:
     return Cartera(archivo.stem, posiciones, supuestos)
 
 
+PROHIBIDOS = set('<>:"/\\|?*')
+
+
+def validar_nombre(nombre: str) -> str:
+    nombre = " ".join(str(nombre or "").split())
+    if not nombre:
+        raise ValueError("Poné un nombre para la cartera.")
+    if PROHIBIDOS & set(nombre) or nombre.startswith((".", "~")):
+        raise ValueError("El nombre no puede tener < > : \" / \\ | ? * ni empezar con punto.")
+    return nombre
+
+
+def guardar(cartera: Cartera, nombre_anterior: str | None = None) -> Path:
+    """Escribe la cartera (hojas Cartera y Supuestos) en datos/carteras/<nombre>.xlsx. Si se renombró, el archivo
+    anterior pasa a datos/carteras/anteriores/ (no se borra nada)."""
+    from openpyxl import Workbook
+    from openpyxl.styles import Font
+    nombre = validar_nombre(cartera.nombre)
+    posiciones = [Posicion(str(p.ticker).strip().upper(), p.nominales, p.tipo, p.descripcion)
+                  for p in cartera.posiciones if p.ticker and str(p.ticker).strip()]
+    if not posiciones:
+        raise ValueError("La cartera no tiene activos.")
+    vistos = set()
+    for p in posiciones:
+        if p.ticker in vistos:
+            raise ValueError(f"{p.ticker} está repetido: sumá los nominales en una sola fila.")
+        vistos.add(p.ticker)
+    carpeta().mkdir(parents=True, exist_ok=True)
+    destino = carpeta() / f"{nombre}.xlsx"
+    if nombre_anterior is not None and _clave(nombre_anterior) != _clave(nombre) and destino.exists():
+        raise ValueError(f"Ya existe una cartera llamada {nombre}.")
+    libro = Workbook()
+    hoja = libro.active
+    hoja.title = "Cartera"
+    hoja.append(["Tipo Activo", "Descripcion", "Ticker", "Nominales"])
+    for p in posiciones:
+        try:
+            nominales = float(p.nominales)
+        except (TypeError, ValueError):
+            raise ValueError(f"Los nominales de {p.ticker} no son un número.") from None
+        if nominales <= 0:
+            raise ValueError(f"Los nominales de {p.ticker} tienen que ser mayores que cero.")
+        hoja.append([p.tipo or "", p.descripcion or "", p.ticker, nominales])
+    hoja_s = libro.create_sheet("Supuestos")
+    hoja_s.append(["Variable", "Fuente"])
+    for v in SUPUESTOS:
+        hoja_s.append([v, cartera.supuestos.get(v) or "rem"])
+    for h in (hoja, hoja_s):
+        for c in h[1]:
+            c.font = Font(bold=True)
+    hoja.column_dimensions["A"].width = 16
+    hoja.column_dimensions["B"].width = 30
+    libro.save(destino)
+    if nombre_anterior is not None and _clave(nombre_anterior) != _clave(nombre):
+        archivar(nombre_anterior)
+    return destino
+
+
+def archivar(nombre: str) -> Path:
+    """Saca una cartera de la lista sin borrarla: la mueve a datos/carteras/anteriores/ con la fecha y hora."""
+    from datetime import datetime
+    origen = ruta(nombre)
+    destino = carpeta() / "anteriores" / f"{origen.stem}_{datetime.now():%Y%m%d_%H%M%S}.xlsx"
+    destino.parent.mkdir(parents=True, exist_ok=True)
+    origen.rename(destino)
+    return destino
+
+
 def crear_plantilla(destino: Path = PLANTILLA) -> Path:
     from openpyxl import Workbook
     from openpyxl.styles import Font

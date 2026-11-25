@@ -9,6 +9,7 @@ import sys
 from datetime import date
 
 from carteras import excel, valuar
+from conexiones.http import ErrorAPI
 
 
 def main(argv: list[str]):
@@ -37,8 +38,8 @@ def main(argv: list[str]):
     try:
         fecha = date.fromisoformat(opcion("--fecha")) if opcion("--fecha") else None
         v = valuar.valuar(excel.leer(argv[1]), opcion("--moneda", "pesos"), fecha)
-    except ValueError as e:
-        print(f"Error: {e}")
+    except (ValueError, ErrorAPI) as e:
+        print(f"Error: {str(e).splitlines()[0]}")
         return
     print(valuar.texto(v))
     if "--excel" in argv:

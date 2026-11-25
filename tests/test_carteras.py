@@ -144,7 +144,60 @@ def test_errores(d):
         pass
 
 
+@_con_carpeta
+def test_guardar_y_archivar(d):
+    c = excel.Cartera("Gómez", [excel.Posicion(" al30 ", 1000), excel.Posicion("GGAL", 50, "Acción", "Galicia")],
+                      {"inflacion": "mensual:2%"})
+    excel.guardar(c)
+    leida = excel.leer("gomez")
+    assert [p.ticker for p in leida.posiciones] == ["AL30", "GGAL"] and leida.posiciones[1].descripcion == "Galicia"
+    assert leida.supuestos["inflacion"] == "mensual:2%" and leida.supuestos["tamar"] == "rem"
+    c.nombre = "Gómez Ana"                                   # renombrar: el archivo anterior se archiva, no se borra
+    excel.guardar(c, nombre_anterior="Gómez")
+    assert excel.listar() == ["Gómez Ana"] and len(list((d / "anteriores").iterdir())) == 1
+    for mala, motivo in ((excel.Cartera("a/b", c.posiciones), "nombre"), (excel.Cartera("x", []), "vacía"),
+                         (excel.Cartera("x", [excel.Posicion("AL30", 1), excel.Posicion("al30", 2)]), "repetido"),
+                         (excel.Cartera("x", [excel.Posicion("AL30", -5)]), "negativo")):
+        try:
+            excel.guardar(mala)
+            raise AssertionError(f"tendría que rechazar: {motivo}")
+        except ValueError:
+            pass
+    excel.guardar(excel.Cartera("Otra", c.posiciones))
+    try:
+        excel.guardar(excel.Cartera("Otra", c.posiciones), nombre_anterior="Gómez Ana")   # no pisa otra cartera
+        raise AssertionError("tendría que avisar que ya existe")
+    except ValueError:
+        pass
+    excel.archivar("Otra")
+    assert excel.listar() == ["Gómez Ana"]
+
+
+def test_precio_con_ppi_caido():
+    from conexiones.http import ErrorAPI
+    originales = mercado.precio, valuar.carga_precios.actualizar, valuar.db_precios.entre
+
+    def caido(*a, **k):
+        raise ErrorAPI("La API falló 4 veces seguidas")
+    mercado.precio = caido
+    valuar.carga_precios.actualizar = caido
+    try:
+        valuar.db_precios.entre = lambda t, plazo, *a: [{"fecha": "2026-11-20", "cierre": 80.0},
+                                                         {"fecha": "2026-11-23", "cierre": 81.5}]
+        avisos = []
+        assert valuar.precio("AL30D", None, avisos) == 81.5
+        assert "2026-11-23" in avisos[0]
+        valuar.db_precios.entre = lambda *a: []
+        try:
+            valuar.precio("AL30D", None, [])
+            raise AssertionError("sin cierres guardados tendría que fallar")
+        except ErrorAPI:
+            pass
+    finally:
+        mercado.precio, valuar.carga_precios.actualizar, valuar.db_precios.entre = originales
+
+
 if __name__ == "__main__":
-    for prueba in (test_leer, test_valuar_y_monedas, test_errores):
+    for prueba in (test_leer, test_valuar_y_monedas, test_errores, test_guardar_y_archivar, test_precio_con_ppi_caido):
         prueba()
         print(f"OK {prueba.__name__}")

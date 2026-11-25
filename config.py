@@ -30,6 +30,9 @@ def _bool(nombre: str, defecto: bool) -> bool:
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 # Contraseña del panel web (web/app.py). Sin ella el panel abre directo: ponela antes de compartir el link.
 PANEL_CLAVE = os.getenv("PANEL_CLAVE")
+# Segunda contraseña para la sección Carteras del panel (datos de clientes y consultas a la IA). Si el panel tiene
+# PANEL_CLAVE (se comparte) y esta falta, la sección queda cerrada: así los amigos con el link no ven las carteras.
+CARTERAS_CLAVE = os.getenv("CARTERAS_CLAVE")
 GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-3.1-flash-lite")
 # Modelos a usar si el principal está saturado, separados por coma (vacío = sin respaldo)
 GEMINI_MODELOS_RESPALDO = [m.strip() for m in os.getenv("GEMINI_MODELOS_RESPALDO", "").split(",") if m.strip()]
