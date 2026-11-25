@@ -179,7 +179,6 @@ def test_guardar_y_archivar(d):
 @_con_carpeta
 def test_liquidez_cuadros_y_cobros(d):
     from carteras.excel import Liquidez
-    hoy = OPERACION
     c = excel.Cartera("Con liquidez", [excel.Posicion("S30N6", 1_000_000), excel.Posicion("AL30", 10_000),
                                        excel.Posicion("GGAL", 100)], {},
                       [Liquidez("Liquidez", "pesos", 500_000, "Saldo"), Liquidez("Money market", "pesos", 1_000_000, "FCI MM", 0.30),

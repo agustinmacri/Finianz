@@ -222,7 +222,9 @@ def _renta_fija(pos, fichas: list[dict], ctx: Contexto, proy: Proyecciones) -> d
                            else m["ajuste"][0] if m.get("ajuste") else ""})
     return {"categoria": "Renta Fija", "subclase": "Duales" if len(fichas) > 1 else SUBCLASE[familia],
             "moneda_activo": moneda, "emisor": principal.get("emisor") or "Tesoro Nacional", "cobros": cobros,
-            "pondera": True, "tipo": pos.tipo or _nombre_tipo(principal),
+            "pondera": True, "_legs": [(r[0], r[1]) for r in resultados], "_f": f, "_m": m, "_px": px,
+            "_tipo_fx": tipo_fx, "_vencimiento": max(x["vencimiento"] for x in fichas),
+            "tipo": pos.tipo or _nombre_tipo(principal),
             "descripcion": pos.descripcion or f"{_nombre_tipo(principal)} vto {principal['vencimiento']:%d/%m/%Y}",
             "ticker": pos.ticker, "referencia": REFERENCIA[f0["familia"]], "tir_propia": tir_propia,
             "tir_proyectada": tir_proy, "nominales": pos.nominales, "precio_pesos": precio_pesos,
@@ -270,7 +272,7 @@ def _liquidez(x, ctx: Contexto) -> dict:
             "emisor": x.descripcion or x.tipo, "cobros": cobros, "pondera": True, "tipo": x.tipo,
             "descripcion": x.descripcion or x.tipo, "ticker": "", "referencia": "", "tir_propia": tea,
             "tir_proyectada": tea, "nominales": signo * x.monto, "precio_pesos": None, "total_pesos": signo * x.monto * fx,
-            "duration": duration, "renta_fija": False, "pata": None, "liquidez": True}
+            "duration": duration, "renta_fija": False, "pata": None, "liquidez": True, "_liq": x}
 
 
 def cuadros(filas: list[dict], total: float) -> dict:
@@ -372,7 +374,7 @@ def valuar(cartera: Cartera, moneda: str = "pesos", fecha: date | None = None) -
     return {"nombre": cartera.nombre, "fecha": operacion, "moneda": moneda, "nombre_moneda": MONEDAS[moneda],
             "filas": filas, "totales": totales, "fx": ctx.fx, "supuestos": supuestos, "cobros": cobros,
             "cuadros": cuadros(filas, total / divisor), "dias_cobros": DIAS_COBROS,
-            "nota_valuacion": nota, "liquidacion": liquidacion, "avisos": avisos_precios + avisos}
+            "nota_valuacion": nota, "liquidacion": liquidacion, "avisos": avisos_precios + avisos, "_ctx": ctx}
 
 
 def _pct(x: float | None, referencia: str = "") -> str:

@@ -63,6 +63,27 @@ def valuacion(nombre: str, moneda: str, fecha: date | None, marca: int, version:
     return valuar.valuar(excel.leer(nombre), moneda, fecha)
 
 
+@st.cache_data(ttl=600, show_spinner="Calculando las variaciones…")
+def variaciones(nombre: str, moneda: str, fecha: date | None, marca: int, version: float) -> dict:
+    from carteras import historia
+    return historia.variaciones(valuacion(nombre, moneda, fecha, marca, version), moneda)
+
+
+@st.cache_data(ttl=600, show_spinner="Proyectando la cartera…")
+def proyectar(nombre: str, fecha: date | None, marca: int, version: float, hasta: date, elegidos: tuple) -> dict:
+    from carteras import proyeccion
+    cartera = excel.leer(nombre)
+    disponibles = proyeccion.escenarios_disponibles(cartera)
+    return proyeccion.proyectar(valuacion(nombre, "pesos", fecha, marca, version), cartera, hasta,
+                                {e: disponibles[e] for e in elegidos if e in disponibles})
+
+
+@st.cache_data(ttl=600, show_spinner="Corriendo el backtest…")
+def backtest(nombre: str, fecha: date | None, marca: int, version: float, desde: date) -> dict:
+    from carteras import historia
+    return historia.backtest(valuacion(nombre, "pesos", fecha, marca, version), desde)
+
+
 @st.cache_resource(show_spinner="Preparando los agentes…")
 def grafo():
     from graph.builder import construir_grafo
@@ -197,6 +218,118 @@ def _cobros(v: dict):
                    "amortizacion": ("Amortización", "localized"), "monto": ("Monto", "localized"),
                    "monto_vista": (f"En {MONEDAS[v['moneda']].lower()}", "localized"), "nota": ("Nota", None)})
     st.caption("Montos para la tenencia de la cartera. CER y dollar linked: estimados con el CER o el A3500 de hoy.")
+
+
+ANALISIS = ["Composición y cobros", "Variaciones", "Proyección", "Backtest"]
+
+
+def _lineas(series: dict[str, list[tuple]], titulo: str, unidad: str, estilo, paleta: dict):
+    colores = paleta["series"]
+    fig = go.Figure()
+    for i, (nombre, puntos) in enumerate(series.items()):
+        fig.add_trace(go.Scatter(x=[p[0] for p in puntos], y=[p[1] for p in puntos], mode="lines", name=nombre,
+                                 line=dict(color=colores[i % len(colores)], width=2.5),
+                                 hovertemplate=f"%{{x|%d/%m/%Y}}: {unidad} %{{y:,.0f}}<extra>{nombre}</extra>"))
+    estilo(fig, 380, title=dict(text=titulo, font=dict(color=paleta["texto"], size=15)), yaxis_tickformat=",.0f")
+    with st.container(border=True):
+        st.plotly_chart(fig, width="stretch", theme=None)
+
+
+UNIDADES = {"pesos": "$", "mep": "US$ MEP", "ccl": "US$ CCL"}
+
+
+def _variaciones(nombre: str, moneda: str, fecha, marca: int):
+    try:
+        r = variaciones(nombre, moneda, fecha, marca, _version(nombre))
+    except Exception as e:
+        st.error(f"No se pudieron calcular las variaciones: {str(e).splitlines()[0]}")
+        return
+    st.markdown(f"#### Variaciones por activo ({MONEDAS[moneda].lower()})")
+    tipo = st.radio("Medida", ["Variación de precio", "Retorno total"], horizontal=True, key="medida_variaciones",
+                    help="Retorno total: precio más cupones y amortizaciones cobrados en el período, cada uno al tipo "
+                         "de cambio del día de pago.")
+    clave = "precio" if tipo == "Variación de precio" else "total"
+    filas = [{"Ticker": x["ticker"], "Descripcion": x["descripcion"], **{p: x[clave][p] for p in r["periodos"]}}
+             for x in r["filas"] + [r["cartera"]]]
+    st.dataframe(pd.DataFrame(filas), hide_index=True, width="stretch",
+                 column_config={p: st.column_config.NumberColumn(format="percent") for p in r["periodos"]})
+    st.caption("Desde el cierre de cada fecha de referencia (día hábil anterior, 7 y 30 días, 31/12 y 365 días) hasta "
+               "el precio de la valuación. La fila Cartera usa las tenencias de hoy (sin liquidez). Precios de la base "
+               "propia (PPI).")
+    for aviso in r["avisos"]:
+        st.warning(aviso)
+
+
+def _proyeccion(nombre: str, moneda: str, fecha, marca: int, estilo, paleta: dict):
+    from carteras import proyeccion
+    st.markdown("#### Proyección por escenarios")
+    disponibles = list(proyeccion.escenarios_disponibles(excel.leer(nombre)))
+    col1, col2 = st.columns([1, 3])
+    hoy = date.today()
+    hasta = col1.date_input("Hasta", value=date(hoy.year + 1, hoy.month, min(hoy.day, 28)), min_value=hoy,
+                            format="DD/MM/YYYY", key="proyeccion_hasta")
+    elegidos = col2.multiselect("Escenarios", disponibles, default=disponibles[:1], key="proyeccion_escenarios",
+                                help="Los escenarios con nombre se cargan en renta_fija/escenarios/.")
+    if not elegidos:
+        st.info("Elegí al menos un escenario.")
+        return
+    try:
+        r = proyectar(nombre, fecha, marca, _version(nombre), hasta, tuple(elegidos))
+    except Exception as e:
+        st.error(f"No se pudo proyectar: {str(e).splitlines()[0]}")
+        return
+    for aviso in r["avisos"]:
+        st.warning(aviso)
+    if not r["escenarios"]:
+        return
+    unidad = UNIDADES[moneda]
+    _lineas({n: [(p["fecha"], p[moneda]) for p in e["puntos"]] for n, e in r["escenarios"].items()},
+            f"Patrimonio proyectado ({MONEDAS[moneda].lower()})", unidad, estilo, paleta)
+    filas = [{"Escenario": n, "Patrimonio hoy": e["resumen"][moneda]["inicial"],
+              f"Patrimonio al {hasta:%d/%m/%Y}": e["resumen"][moneda]["final"],
+              "Rendimiento": e["resumen"][moneda]["rendimiento"], "Rendimiento anualizado": e["resumen"][moneda]["anualizado"]}
+             for n, e in r["escenarios"].items()]
+    st.dataframe(pd.DataFrame(filas), hide_index=True, width="stretch", column_config={
+        "Patrimonio hoy": st.column_config.NumberColumn(format="localized"),
+        f"Patrimonio al {hasta:%d/%m/%Y}": st.column_config.NumberColumn(format="localized"),
+        "Rendimiento": st.column_config.NumberColumn(format="percent"),
+        "Rendimiento anualizado": st.column_config.NumberColumn(format="percent")})
+    with st.expander("Supuestos de cada escenario"):
+        for n, e in r["escenarios"].items():
+            st.markdown(f"**{n}**")
+            for variable, descripcion in e["supuestos"].items():
+                st.markdown(f"- {NOMBRES_SUPUESTOS.get(variable, variable)}: {descripcion}")
+    st.caption("⚠️ " + r["aclaracion"])
+
+
+def _backtest(nombre: str, moneda: str, fecha, marca: int, estilo, paleta: dict):
+    st.markdown("#### Backtest de la composición actual")
+    hoy = date.today()
+    desde = st.date_input("Desde", value=date(hoy.year - 1, hoy.month, min(hoy.day, 28)), max_value=hoy,
+                          format="DD/MM/YYYY", key="backtest_desde")
+    try:
+        r = backtest(nombre, fecha, marca, _version(nombre), desde)
+    except Exception as e:
+        st.error(f"No se pudo correr el backtest: {str(e).splitlines()[0]}")
+        return
+    pestanas = st.tabs([MONEDAS[m] for m in ("pesos", "mep", "ccl")])
+    for pestana, m in zip(pestanas, ("pesos", "mep", "ccl")):
+        with pestana:
+            _lineas({"Cartera": [(p["fecha"], p[m]) for p in r["puntos"] if p[m]]},
+                    f"Patrimonio ({MONEDAS[m].lower()})", UNIDADES[m], estilo, paleta)
+    filas = [{"Moneda": MONEDAS[m], "Inicial": x["inicial"], "Final": x["final"], "Rendimiento": x["rendimiento"],
+              "Rendimiento anualizado": x["anualizado"]} for m, x in r["resumen"].items()]
+    st.dataframe(pd.DataFrame(filas), hide_index=True, width="stretch", column_config={
+        "Inicial": st.column_config.NumberColumn(format="localized"),
+        "Final": st.column_config.NumberColumn(format="localized"),
+        "Rendimiento": st.column_config.NumberColumn(format="percent"),
+        "Rendimiento anualizado": st.column_config.NumberColumn(format="percent")})
+    st.caption(f"Del {r['desde']:%d/%m/%Y} al {r['hasta']:%d/%m/%Y}: el patrimonio de hoy invertido con la composición "
+               "de hoy. Cupones y amortizaciones reinvertidos en el mismo activo; si un activo se cobra entero, lo "
+               "cobrado se reparte entre los demás. Lo que todavía no cotizaba, liquidez a TAMAR hasta su primer "
+               "precio. Money market, cauciones, créditos y pasivos, a TAMAR; la liquidez sin colocar no rinde.")
+    for aviso in r["avisos"]:
+        st.warning(aviso)
 
 
 def _graficos(v: dict, estilo, paleta: dict, donde):
@@ -341,9 +474,19 @@ def ver_cartera(nombre: str | None, moneda: str, fecha: date | None, marca: int,
             st.caption(v["nota_valuacion"] + " Calculadora de Finianz.")
             for aviso in v["avisos"]:
                 st.warning(aviso)
-            _cobros(v)
-            _cuadros(v, estilo, paleta)
-            _dispersion(v, estilo, paleta)
+            st.divider()
+            analisis = st.radio("Análisis", ANALISIS, horizontal=True, key=f"analisis_{nombre}",
+                                label_visibility="collapsed")
+            if analisis == "Composición y cobros":
+                _cobros(v)
+                _cuadros(v, estilo, paleta)
+                _dispersion(v, estilo, paleta)
+            elif analisis == "Variaciones":
+                _variaciones(nombre, moneda, fecha, marca)
+            elif analisis == "Proyección":
+                _proyeccion(nombre, moneda, fecha, marca, estilo, paleta)
+            else:
+                _backtest(nombre, moneda, fecha, marca, estilo, paleta)
             if v["supuestos"]:
                 with st.expander("Supuestos de la proyección"):
                     for variable, descripcion in v["supuestos"].items():
