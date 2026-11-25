@@ -15,7 +15,9 @@ CCL (precio en dólares × ese tipo de cambio). Se puede ver en dólares MEP o C
 from dataclasses import dataclass
 from datetime import date
 
-from carteras.excel import Cartera
+from datetime import timedelta
+
+from carteras.excel import TIPOS_LIQUIDEZ, Cartera
 import config
 from admin_datos import precios as db_precios
 from carga_datos import precios as carga_precios
@@ -30,6 +32,17 @@ NOMBRES_TIPO = {"LECAP": "Lecap", "BONCAP": "Boncap", "BONTE": "Bonte", "LECER":
                 "BONO DL": "Bono dollar linked", "BONAR": "Bonar", "GLOBAL": "Global",
                 "DUAL CER/TAMAR": "Dual CER/TAMAR", "DUAL TAMAR/TASA FIJA": "Dual TAMAR/tasa fija"}
 NOMBRES_RV = {"ACCIONES": "Acción", "CEDEARS": "CEDEAR", "ACCIONES-USA": "Acción EE. UU.", "FCI": "FCI", "ETF": "ETF"}
+# Clasificación (Agustin, 25/11/2026): categoría (Renta Fija, Renta Variable, Derivados, Liquidez, ...) y subclase
+SUBCLASE = {"tasa_fija_capitalizable": "Tasa fija", "tasa_fija_descuento": "Tasa fija", "tasa_fija_cupon": "Tasa fija",
+            "cer_cero_cupon": "CER", "cer_cupon": "CER", "tamar_capitalizable": "TAMAR",
+            "dolar_linked_bullet": "Dollar linked", "dolar_linked_cupon": "Dollar linked", "hard_dollar": "Hard dollar"}
+SUBCLASE_RV = {"Acción": ("Renta Variable", "Acciones", "Pesos"), "CEDEAR": ("Renta Variable", "CEDEARs", "Pesos ajustables (MEP)"),
+               "Acción EE. UU.": ("Renta Variable", "Acciones EE. UU.", "Dólar CCL"),
+               "ETF": ("Renta Variable", "ETF", "Dólar CCL"), "FCI": ("Fondos comunes", "FCI", "Pesos")}
+MONEDA_LIQUIDEZ = {"pesos": "Pesos", "mep": "Dólar MEP", "ccl": "Dólar CCL"}
+ORDEN_CATEGORIAS = ["Renta Fija", "Renta Variable", "Fondos comunes", "Derivados", "Liquidez", "Créditos", "Pasivos"]
+ORDEN_MONEDAS = ["Pesos", "Pesos ajustables (dólar oficial)", "Pesos ajustables (MEP)", "Dólar MEP", "Dólar CCL"]
+DIAS_COBROS = 30
 REFERENCIA = {"tasa_fija_capitalizable": "", "tasa_fija_descuento": "", "tasa_fija_cupon": "", "cer_cero_cupon": "CER",
               "cer_cupon": "CER", "tamar_capitalizable": "TAMAR", "dolar_linked_bullet": "USD",
               "dolar_linked_cupon": "USD", "hard_dollar": "USD"}
@@ -188,7 +201,28 @@ def _renta_fija(pos, fichas: list[dict], ctx: Contexto, proy: Proyecciones) -> d
     f, m, tir_proy = max(resultados, key=lambda r: r[2])   # dual: paga la pata que más rinde
     f0, m0, _ = resultados[0]                              # la tasa propia, de la primera pata del nombre
     tir_propia = m0["detalle"]["spread"] if f0["familia"] == "tamar_capitalizable" else m0["tea"]
-    return {"tipo": pos.tipo or _nombre_tipo(principal),
+    familia = principal["familia"]
+    moneda = ("Dólar CCL" if tipo_fx == "ccl" else "Dólar MEP") if hd else \
+        "Pesos ajustables (dólar oficial)" if familia.startswith("dolar_linked") else "Pesos"
+    # Cobros: flujos por 100 VN en la unidad del bono, pasados a pesos de hoy (CER, A3500 o el dólar del bono)
+    a_pesos = ctx.fx[tipo_fx] if hd else (m["ajuste"][1] if m.get("ajuste") else 1.0)
+    unidad_pago = "USD" if hd else "$"
+    cobros = []
+    for x in m["flujos"]:
+        if ctx.liquidacion < x["fecha"] <= ctx.operacion + timedelta(days=DIAS_COBROS) and x["total"]:
+            vence = x["fecha"] >= f["vencimiento"]
+            concepto = ("Vencimiento" if vence else "Cupón y amortización" if x["cupon"] and x["amortizacion"]
+                        else "Amortización" if x["amortizacion"] else "Cupón")
+            en_unidad = pos.nominales * x["total"] / 100
+            cobros.append({"fecha": x["fecha"], "ticker": pos.ticker, "concepto": concepto,
+                           "cupon": pos.nominales * x["cupon"] / 100, "amortizacion": pos.nominales * x["amortizacion"] / 100,
+                           "moneda_pago": unidad_pago, "monto": en_unidad if hd else en_unidad * a_pesos,
+                           "monto_pesos": en_unidad * a_pesos,
+                           "nota": "" if hd or familia.startswith("tasa_fija") or familia == "tamar_capitalizable"
+                           else m["ajuste"][0] if m.get("ajuste") else ""})
+    return {"categoria": "Renta Fija", "subclase": "Duales" if len(fichas) > 1 else SUBCLASE[familia],
+            "moneda_activo": moneda, "emisor": principal.get("emisor") or "Tesoro Nacional", "cobros": cobros,
+            "pondera": True, "tipo": pos.tipo or _nombre_tipo(principal),
             "descripcion": pos.descripcion or f"{_nombre_tipo(principal)} vto {principal['vencimiento']:%d/%m/%Y}",
             "ticker": pos.ticker, "referencia": REFERENCIA[f0["familia"]], "tir_propia": tir_propia,
             "tir_proyectada": tir_proy, "nominales": pos.nominales, "precio_pesos": precio_pesos,
@@ -200,10 +234,80 @@ def _renta_variable(pos, ctx: Contexto) -> dict:
     datos = carga_precios.registrar(pos.ticker)
     px = precio(pos.ticker, ctx.fecha_precios, ctx.avisos)
     tipo = NOMBRES_RV.get(str(datos.get("tipo", "")).upper(), str(datos.get("tipo", "")).title())
-    return {"tipo": pos.tipo or tipo, "descripcion": pos.descripcion or datos.get("descripcion") or pos.ticker,
+    categoria, subclase, moneda = SUBCLASE_RV.get(tipo, ("Renta Variable", tipo or "Otros", "Pesos"))
+    descripcion = datos.get("descripcion") or pos.ticker
+    return {"categoria": categoria, "subclase": subclase, "moneda_activo": moneda, "emisor": descripcion, "cobros": [],
+            "pondera": False, "tipo": pos.tipo or tipo, "descripcion": pos.descripcion or datos.get("descripcion") or pos.ticker,
             "ticker": pos.ticker, "referencia": "", "tir_propia": None, "tir_proyectada": None, "nominales": pos.nominales,
             "precio_pesos": px, "total_pesos": pos.nominales * px, "duration": None, "renta_fija": False,
             "pata": None}
+
+
+def tasa_liquidez(x, operacion: date) -> tuple[float, float]:
+    """TEA y duration de una fila de liquidez. La liquidez a la vista (o cualquier tipo sin tasa) rinde 0 con duration
+    0 (decisión de Agustin). Con vencimiento: TEA = (1 + TNA × plazo/365)^(365/plazo) − 1 y duration = plazo/365.
+    Sin vencimiento (money market): capitalización diaria, (1 + TNA/365)^365 − 1, duration 0."""
+    if x.tipo == "Liquidez" or not x.tasa:
+        return 0.0, 0.0
+    if x.vencimiento and x.vencimiento > operacion:
+        plazo = (x.vencimiento - operacion).days
+        return (1 + x.tasa * plazo / 365) ** (365 / plazo) - 1, plazo / 365
+    return (1 + x.tasa / 365) ** 365 - 1, 0.0
+
+
+def _liquidez(x, ctx: Contexto) -> dict:
+    categoria, signo = TIPOS_LIQUIDEZ[x.tipo]
+    tea, duration = tasa_liquidez(x, ctx.operacion)
+    fx = 1.0 if x.moneda == "pesos" else ctx.fx[x.moneda]
+    cobros = []
+    if x.vencimiento and ctx.operacion <= x.vencimiento <= ctx.operacion + timedelta(days=DIAS_COBROS):
+        final = x.monto * (1 + (x.tasa or 0) * max((x.vencimiento - ctx.operacion).days, 0) / 365)
+        cobros.append({"fecha": x.vencimiento, "ticker": x.descripcion or x.tipo,
+                       "concepto": "Vencimiento" + (" (a pagar)" if signo < 0 else ""), "cupon": final - x.monto,
+                       "amortizacion": x.monto, "moneda_pago": "$" if x.moneda == "pesos" else "USD",
+                       "monto": signo * final, "monto_pesos": signo * final * fx, "nota": "con la tasa cargada"})
+    return {"categoria": categoria, "subclase": x.tipo, "moneda_activo": MONEDA_LIQUIDEZ[x.moneda],
+            "emisor": x.descripcion or x.tipo, "cobros": cobros, "pondera": True, "tipo": x.tipo,
+            "descripcion": x.descripcion or x.tipo, "ticker": "", "referencia": "", "tir_propia": tea,
+            "tir_proyectada": tea, "nominales": signo * x.monto, "precio_pesos": None, "total_pesos": signo * x.monto * fx,
+            "duration": duration, "renta_fija": False, "pata": None, "liquidez": True}
+
+
+def cuadros(filas: list[dict], total: float) -> dict:
+    """Cuadros de composición en la moneda de la vista: por categoría y subclase, por moneda, subclase × moneda y
+    por emisor. Cada uno con total y % del patrimonio."""
+    peso = lambda x: x / total if total else None
+    suma = {}
+    for f in filas:
+        suma.setdefault((f["categoria"], f["subclase"]), 0.0)
+        suma[(f["categoria"], f["subclase"])] += f["total"]
+    orden_cat = lambda c: ORDEN_CATEGORIAS.index(c) if c in ORDEN_CATEGORIAS else len(ORDEN_CATEGORIAS)
+    categoria = []
+    for cat in sorted({c for c, _ in suma}, key=orden_cat):
+        subs = sorted(((s, t) for (c, s), t in suma.items() if c == cat), key=lambda x: -abs(x[1]))
+        total_cat = sum(t for _, t in subs)
+        categoria.append({"categoria": cat, "subclase": None, "total": total_cat, "peso": peso(total_cat)})
+        categoria += [{"categoria": cat, "subclase": s, "total": t, "peso": peso(t)} for s, t in subs]
+    por_moneda = {}
+    for f in filas:
+        por_moneda[f["moneda_activo"]] = por_moneda.get(f["moneda_activo"], 0.0) + f["total"]
+    orden_mon = lambda m: ORDEN_MONEDAS.index(m) if m in ORDEN_MONEDAS else len(ORDEN_MONEDAS)
+    monedas = sorted(por_moneda, key=orden_mon)
+    cruce = {}
+    for f in filas:
+        fila = cruce.setdefault((f["categoria"], f["subclase"]), {m: 0.0 for m in monedas})
+        fila[f["moneda_activo"]] += f["total"]
+    por_emisor = {}
+    for f in filas:
+        por_emisor[f["emisor"]] = por_emisor.get(f["emisor"], 0.0) + f["total"]
+    return {"categoria": categoria,
+            "moneda": [{"moneda": m, "total": por_moneda[m], "peso": peso(por_moneda[m])} for m in monedas],
+            "monedas": monedas,
+            "clase_moneda": [{"categoria": c, "subclase": s, **valores, "total": sum(valores.values()),
+                              "peso": peso(sum(valores.values()))}
+                             for (c, s), valores in sorted(cruce.items(), key=lambda x: (orden_cat(x[0][0]), -abs(sum(x[1].values()))))],
+            "emisor": [{"emisor": e, "total": t, "peso": peso(t)}
+                       for e, t in sorted(por_emisor.items(), key=lambda x: -abs(x[1]))]}
 
 
 def valuar(cartera: Cartera, moneda: str = "pesos", fecha: date | None = None) -> dict:
@@ -234,26 +338,40 @@ def valuar(cartera: Cartera, moneda: str = "pesos", fecha: date | None = None) -
             avisos.append(f"{pos.ticker}: no se pudo valuar ({str(e).splitlines()[0][:160]}).")
             continue
         filas.append(fila)
+    for x in cartera.liquidez:
+        filas.append(_liquidez(x, ctx))
     divisor = 1.0 if moneda == "pesos" else ctx.fx[moneda]
     total = sum(f["total_pesos"] for f in filas)
     for f in filas:
-        f["precio"] = f["precio_pesos"] / divisor
+        f["precio"] = f["precio_pesos"] / divisor if f["precio_pesos"] is not None else None
         f["total"] = f["total_pesos"] / divisor
         f["peso"] = f["total_pesos"] / total if total else None
     rf = [f for f in filas if f["renta_fija"]]
     total_rf = sum(f["total_pesos"] for f in rf)
-    ponderar = lambda campo: (sum(f[campo] * f["total_pesos"] for f in rf if f[campo] is not None)
-                              / sum(f["total_pesos"] for f in rf if f[campo] is not None)) if any(f[campo] is not None for f in rf) else None
-    totales = {"total": total / divisor, "total_rf": total_rf / divisor, "total_rv": (total - total_rf) / divisor,
-               "peso_rf": total_rf / total if total else None, "peso_rv": (total - total_rf) / total if total else None,
+    # TIR y duration ponderadas por monto: renta fija, liquidez, créditos y pasivos (estos con monto negativo).
+    # La renta variable no tiene TIR ni duration y queda afuera.
+    ponderan = [f for f in filas if f["pondera"]]
+    def ponderar(campo):
+        con_dato = [f for f in ponderan if f[campo] is not None]
+        base = sum(f["total_pesos"] for f in con_dato)
+        return sum(f[campo] * f["total_pesos"] for f in con_dato) / base if con_dato and base else None
+    por_categoria = lambda cat: sum(f["total_pesos"] for f in filas if f["categoria"] == cat) / divisor
+    totales = {"total": total / divisor, "total_rf": total_rf / divisor, "total_rv": por_categoria("Renta Variable"),
+               "peso_rf": total_rf / total if total else None,
+               "peso_rv": por_categoria("Renta Variable") * divisor / total if total else None,
+               "total_liquidez": por_categoria("Liquidez"), "total_creditos": por_categoria("Créditos"),
+               "total_pasivos": por_categoria("Pasivos"),
                "tir_proyectada_rf": ponderar("tir_proyectada"), "duration_rf": ponderar("duration")}
+    cobros = sorted((c | {"monto_vista": c["monto_pesos"] / divisor} for f in filas for c in f["cobros"]),
+                    key=lambda c: (c["fecha"], c["ticker"]))
     nota = (f"Liquidación {liquidacion:%d/%m/%Y}. Hard dollar ley AR al MEP ({ctx.fx['mep']:,.2f}) y ley NY al CCL "
             f"({ctx.fx['ccl']:,.2f}), implícitos del AL30. Precios por 100 VN (renta variable, por unidad)"
             + ("." if moneda == "pesos" else f"; todo convertido a {MONEDAS[moneda]}."))
     supuestos = {v: proy.descripciones[v] for v in ("inflacion", "tamar", "dolar_oficial", "mep", "ccl")
                  if v in proy.descripciones}
     return {"nombre": cartera.nombre, "fecha": operacion, "moneda": moneda, "nombre_moneda": MONEDAS[moneda],
-            "filas": filas, "totales": totales, "fx": ctx.fx, "supuestos": supuestos,
+            "filas": filas, "totales": totales, "fx": ctx.fx, "supuestos": supuestos, "cobros": cobros,
+            "cuadros": cuadros(filas, total / divisor), "dias_cobros": DIAS_COBROS,
             "nota_valuacion": nota, "liquidacion": liquidacion, "avisos": avisos_precios + avisos}
 
 
@@ -271,16 +389,25 @@ def texto(v: dict) -> str:
                           "Nominales", "Precio", "Total", "% Cartera", "Duration Activo"])]
     for f in v["filas"]:
         lineas.append(" | ".join([f["tipo"], f["descripcion"], f["ticker"], _pct(f["tir_propia"], f["referencia"]),
-                                  _pct(f["tir_proyectada"]), f"{f['nominales']:,.0f}", f"{f['precio']:,.2f}",
+                                  _pct(f["tir_proyectada"]), f"{f['nominales']:,.0f}",
+                                  f"{f['precio']:,.2f}" if f["precio"] is not None else "",
                                   f"{f['total']:,.2f}", _pct(f["peso"]),
                                   f"{f['duration']:.2f}" if f["duration"] is not None else ""]))
     t = v["totales"]
-    lineas.append(f"Total cartera: {t['total']:,.2f} {v['nombre_moneda']}")
-    lineas.append(f"Renta fija: {t['total_rf']:,.2f} ({_pct(t['peso_rf'])}) | TIR nominal proyectada ponderada "
-                  f"{_pct(t['tir_proyectada_rf'])} | duration ponderada "
-                  + (f"{t['duration_rf']:.2f} años" if t["duration_rf"] is not None else "–"))
-    if t["total_rv"]:
-        lineas.append(f"Renta variable: {t['total_rv']:,.2f} ({_pct(t['peso_rv'])})")
+    lineas.append(f"Patrimonio: {t['total']:,.2f} {v['nombre_moneda']}")
+    lineas.append(f"TIR nominal proyectada ponderada {_pct(t['tir_proyectada_rf'])} | duration ponderada "
+                  + (f"{t['duration_rf']:.2f} años" if t["duration_rf"] is not None else "–")
+                  + " (renta fija, liquidez, créditos y pasivos; la liquidez sin colocar rinde 0 con duration 0)")
+    c = v["cuadros"]
+    lineas.append("Por categoría y subclase: " + " | ".join(
+        f"{x['categoria'] if x['subclase'] is None else '  ' + x['subclase']}: {x['total']:,.2f} ({_pct(x['peso'])})"
+        for x in c["categoria"]))
+    lineas.append("Por moneda: " + " | ".join(f"{x['moneda']}: {x['total']:,.2f} ({_pct(x['peso'])})" for x in c["moneda"]))
+    lineas.append("Por emisor: " + " | ".join(f"{x['emisor']}: {x['total']:,.2f} ({_pct(x['peso'])})" for x in c["emisor"]))
+    if v["cobros"]:
+        lineas.append(f"Cobros de los próximos {v['dias_cobros']} días: " + " | ".join(
+            f"{x['fecha']:%d/%m/%Y} {x['ticker']} {x['concepto'].lower()} {x['moneda_pago']} {x['monto']:,.2f}"
+            for x in v["cobros"]))
     duales = [f for f in v["filas"] if f["pata"]]
     if duales:
         lineas.append("Duales: la TIR proyectada es la de la pata que más rinde con los supuestos ("

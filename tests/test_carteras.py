@@ -31,10 +31,13 @@ def _precio(ticker, fecha=None):
         return 60.0, "p"
     if t == LECAP:
         return 101.0, "p"
+    if t in _precio.precios_extra:
+        return _precio.precios_extra[t], "p"
     return PRECIOS[t], "p"
 
 
 _precio.valuando = False
+_precio.precios_extra = {}
 mercado.precio = _precio
 
 
@@ -173,6 +176,61 @@ def test_guardar_y_archivar(d):
     assert excel.listar() == ["Gómez Ana"]
 
 
+@_con_carpeta
+def test_liquidez_cuadros_y_cobros(d):
+    from carteras.excel import Liquidez
+    hoy = OPERACION
+    c = excel.Cartera("Con liquidez", [excel.Posicion("S30N6", 1_000_000), excel.Posicion("AL30", 10_000),
+                                       excel.Posicion("GGAL", 100)], {},
+                      [Liquidez("Liquidez", "pesos", 500_000, "Saldo"), Liquidez("Money market", "pesos", 1_000_000, "FCI MM", 0.30),
+                       Liquidez("Liquidez", "mep", 1_000, "Dólares"),
+                       Liquidez("Caución tomadora", "pesos", 300_000, "Caución", 0.32, date(2026, 11, 23))])
+    excel.guardar(c)
+    leida = excel.leer("con liquidez")
+    assert [x.tipo for x in leida.liquidez] == ["Liquidez", "Money market", "Liquidez", "Caución tomadora"]
+    assert leida.liquidez[1].tasa == 0.30 and leida.liquidez[3].vencimiento == date(2026, 11, 23)
+    _precio.valuando = True
+    valuar.carga_precios.registrar = lambda t: {"tipo": "ACCIONES", "descripcion": "Grupo Financiero Galicia"}
+    _precio.precios_extra = {"S30N6": 99.0}
+    v = valuar.valuar(leida, "pesos")
+    filas = {(f["ticker"] or f["descripcion"]): f for f in v["filas"]}
+    # Liquidez sin colocar: 0 y 0; money market con su tasa; pasivo resta del patrimonio
+    assert filas["Saldo"]["tir_proyectada"] == 0 and filas["Saldo"]["duration"] == 0
+    assert abs(filas["FCI MM"]["tir_proyectada"] - ((1 + 0.30 / 365) ** 365 - 1)) < 1e-12
+    assert filas["Caución"]["total"] == -300_000 and filas["Caución"]["categoria"] == "Pasivos"
+    assert abs(filas["Dólares"]["total"] - 1_000 * MEP) < 1e-9 and filas["Dólares"]["moneda_activo"] == "Dólar MEP"
+    total = sum(f["total"] for f in v["filas"])
+    assert abs(v["totales"]["total"] - total) < 1e-6
+    # La TIR ponderada incluye liquidez y pasivos (con signo) y deja afuera la renta variable
+    pond = [f for f in v["filas"] if f["categoria"] != "Renta Variable"]
+    esperada = sum(f["tir_proyectada"] * f["total"] for f in pond) / sum(f["total"] for f in pond)
+    assert abs(v["totales"]["tir_proyectada_rf"] - esperada) < 1e-12
+    # Clasificación
+    assert (filas["AL30"]["categoria"], filas["AL30"]["subclase"], filas["AL30"]["moneda_activo"]) == \
+        ("Renta Fija", "Hard dollar", "Dólar MEP")
+    assert filas["S30N6"]["subclase"] == "Tasa fija" and filas["S30N6"]["emisor"] == "Tesoro Nacional"
+    assert filas["GGAL"]["categoria"] == "Renta Variable" and filas["GGAL"]["subclase"] == "Acciones"
+    # Cuadros: cada uno suma el patrimonio
+    cu = v["cuadros"]
+    assert abs(sum(x["total"] for x in cu["categoria"] if x["subclase"] is None) - total) < 1e-6
+    assert abs(sum(x["total"] for x in cu["moneda"]) - total) < 1e-6
+    assert abs(sum(x["total"] for x in cu["emisor"]) - total) < 1e-6
+    assert abs(sum(x["total"] for x in cu["clase_moneda"]) - total) < 1e-6
+    assert [x["categoria"] for x in cu["categoria"] if x["subclase"] is None] == \
+        ["Renta Fija", "Renta Variable", "Liquidez", "Pasivos"]
+    # Cobros a 30 días: la Lecap que vence y la caución que hay que pagar
+    conceptos = {(x["ticker"], x["concepto"]) for x in v["cobros"]}
+    assert ("S30N6", "Vencimiento") in conceptos and ("Caución", "Vencimiento (a pagar)") in conceptos
+    lecap = next(x for x in v["cobros"] if x["ticker"] == "S30N6")
+    assert lecap["amortizacion"] == 1_000_000 and lecap["cupon"] > 0
+    caucion = next(x for x in v["cobros"] if x["ticker"] == "Caución")
+    assert abs(caucion["monto"] + 300_000 * (1 + 0.32 * 7 / 365)) < 1e-6
+    assert "Por moneda" in valuar.texto(v)
+    hojas = load_workbook(excel.guardar_valuacion(v)).sheetnames
+    assert {"Cartera", "Composicion", "Cobros"} <= set(hojas)
+    _precio.precios_extra = {}
+
+
 def test_precio_con_ppi_caido():
     from conexiones.http import ErrorAPI
     originales = mercado.precio, valuar.carga_precios.actualizar, valuar.db_precios.entre
@@ -198,6 +256,7 @@ def test_precio_con_ppi_caido():
 
 
 if __name__ == "__main__":
-    for prueba in (test_leer, test_valuar_y_monedas, test_errores, test_guardar_y_archivar, test_precio_con_ppi_caido):
+    for prueba in (test_leer, test_valuar_y_monedas, test_errores, test_guardar_y_archivar, test_liquidez_cuadros_y_cobros,
+                   test_precio_con_ppi_caido):
         prueba()
         print(f"OK {prueba.__name__}")

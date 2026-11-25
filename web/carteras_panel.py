@@ -112,6 +112,8 @@ COLUMNAS_TABLA = {"Tir Nominal en base a proyeccion": st.column_config.NumberCol
                   "% Cartera": st.column_config.NumberColumn(format="percent"),
                   "Duration Activo": st.column_config.NumberColumn(format="%.2f")}
 EDITABLES = ["Tipo Activo", "Descripcion", "Ticker", "Nominales"]
+AYUDA_PONDERADO = ("Promedio ponderado por monto de la renta fija, la liquidez, los créditos y los pasivos (la liquidez "
+                   "sin colocar rinde 0 con duration 0). La renta variable no pondera.")
 
 
 def _filas_tabla(cartera, v: dict | None) -> pd.DataFrame:
@@ -130,13 +132,80 @@ def _filas_tabla(cartera, v: dict | None) -> pd.DataFrame:
     return pd.DataFrame(filas, columns=excel.COLUMNAS).astype({"Tipo Activo": str, "Descripcion": str, "Ticker": str})
 
 
+def _filas_liquidez(v: dict | None) -> pd.DataFrame:
+    filas = [{"Tipo Activo": f["tipo"], "Descripcion": f["descripcion"], "Ticker": "",
+              "Tir Spread/Nominal": f"{f['tir_propia']:.2%}", "Tir Nominal en base a proyeccion": f["tir_proyectada"],
+              "Nominales": f["nominales"], "Precio": None, "Total": f["total"], "% Cartera": f["peso"],
+              "Duration Activo": f["duration"]} for f in (v or {}).get("filas", []) if f.get("liquidez")]
+    return pd.DataFrame(filas, columns=excel.COLUMNAS)
+
+
+def _tabla_simple(filas: list[dict], columnas: dict, alto: int | None = None):
+    """Un cuadro de composición: columnas = {clave del dato: (título, formato o None)}."""
+    df = pd.DataFrame([{titulo: x.get(clave) for clave, (titulo, _) in columnas.items()} for x in filas])
+    config_col = {titulo: st.column_config.NumberColumn(format=formato)
+                  for _, (titulo, formato) in columnas.items() if formato}
+    st.dataframe(df, hide_index=True, width="stretch", column_config=config_col, **({"height": alto} if alto else {}))
+
+
+def _cuadros(v: dict, estilo, paleta: dict):
+    c = v["cuadros"]
+    st.markdown(f"#### Composición ({MONEDAS[v['moneda']].lower()})")
+    izquierda, derecha = st.columns(2)
+    with izquierda:
+        st.markdown("**Por clase de activo**")
+        filas = [{"categoria": x["categoria"] if x["subclase"] is None else "",
+                  "subclase": "" if x["subclase"] is None else x["subclase"], "total": x["total"], "peso": x["peso"]}
+                 for x in c["categoria"]]
+        _tabla_simple(filas, {"categoria": ("Categoría", None), "subclase": ("Subclase", None),
+                              "total": ("Total", "localized"), "peso": ("% Cartera", "percent")})
+    with derecha:
+        st.markdown("**Por moneda**")
+        _tabla_simple(c["moneda"], {"moneda": ("Moneda", None), "total": ("Total", "localized"),
+                                    "peso": ("% Cartera", "percent")})
+        series = paleta["series"]
+        fig = go.Figure(go.Pie(labels=[x["moneda"] for x in c["moneda"]], values=[max(x["total"], 0) for x in c["moneda"]],
+                               hole=0.55, sort=False, textinfo="percent",
+                               marker=dict(colors=[series[i % len(series)] for i in range(len(c["moneda"]))]),
+                               hovertemplate="%{label}: %{value:,.0f} (%{percent})<extra></extra>"))
+        estilo(fig, 260)
+        fig.update_layout(margin=dict(l=10, r=10, t=10, b=10))
+        st.plotly_chart(fig, width="stretch", theme=None)
+    st.markdown("**Clase de activo y moneda**")
+    columnas = {"categoria": ("Categoría", None), "subclase": ("Subclase", None)}
+    columnas |= {m: (m, "localized") for m in c["monedas"]}
+    columnas |= {"total": ("Total", "localized"), "peso": ("% Cartera", "percent")}
+    _tabla_simple([{k: (x[k] if x.get(k) else None) if k in c["monedas"] else x[k] for k in columnas}
+                   for x in c["clase_moneda"]], columnas)
+    st.markdown("**Emisores**")
+    _tabla_simple(c["emisor"], {"emisor": ("Emisor", None), "total": ("Total", "localized"),
+                                "peso": ("% Cartera", "percent")})
+
+
+def _cobros(v: dict):
+    st.markdown(f"#### Cobros y vencimientos de los próximos {v['dias_cobros']} días")
+    if not v["cobros"]:
+        st.caption("Sin cobros de cupón, amortizaciones ni vencimientos en el período.")
+        return
+    vencen = [x for x in v["cobros"] if x["concepto"].startswith("Vencimiento")]
+    for x in vencen:
+        st.warning(f"{x['ticker']}: {x['concepto'].lower()} el {x['fecha']:%d/%m/%Y} "
+                   f"({x['moneda_pago']} {abs(x['monto']):,.2f}).")
+    _tabla_simple([x | {"fecha_txt": f"{x['fecha']:%d/%m/%Y}"} for x in v["cobros"]],
+                  {"fecha_txt": ("Fecha", None), "ticker": ("Ticker", None), "concepto": ("Concepto", None),
+                   "moneda_pago": ("Moneda", None), "cupon": ("Renta", "localized"),
+                   "amortizacion": ("Amortización", "localized"), "monto": ("Monto", "localized"),
+                   "monto_vista": (f"En {MONEDAS[v['moneda']].lower()}", "localized"), "nota": ("Nota", None)})
+    st.caption("Montos para la tenencia de la cartera. CER y dollar linked: estimados con el CER o el A3500 de hoy.")
+
+
 def _graficos(v: dict, estilo, paleta: dict, donde):
     series = paleta["series"]
-    composicion = pd.DataFrame(v["filas"]).groupby("tipo")["total"].sum().sort_values(ascending=False)
+    composicion = pd.DataFrame(v["filas"]).groupby("subclase")["total"].sum().clip(lower=0).sort_values(ascending=False)
     fig = go.Figure(go.Pie(labels=composicion.index, values=composicion.values, hole=0.55, sort=False,
                            marker=dict(colors=[series[i % len(series)] for i in range(len(composicion))]),
                            textinfo="percent", hovertemplate="%{label}: %{value:,.0f} (%{percent})<extra></extra>"))
-    estilo(fig, 330, title=dict(text="Composición por tipo de activo", font=dict(color=paleta["texto"], size=15)))
+    estilo(fig, 330, title=dict(text="Composición por clase de activo", font=dict(color=paleta["texto"], size=15)))
     with donde.container(border=True):
         st.plotly_chart(fig, width="stretch", theme=None)
 
@@ -174,7 +243,22 @@ def _supuestos_editables(cartera, clave: str) -> dict:
     return nuevos
 
 
-def _guardar(editado: pd.DataFrame, automaticos: dict, nombre_nuevo: str, supuestos: dict, nombre: str | None) -> bool:
+def _liquidez_de(df: pd.DataFrame | None) -> list:
+    lista = []
+    for f in ([] if df is None else df.to_dict("records")):
+        if not f.get("Tipo") or pd.isna(f.get("Monto")):
+            continue
+        tasa = f.get("Tasa")
+        venc = f.get("Vencimiento")
+        lista.append(excel.Liquidez(f["Tipo"], f.get("Moneda") or "pesos", f["Monto"],
+                                    str(f.get("Descripcion") or "").strip() or None,
+                                    None if tasa is None or pd.isna(tasa) else tasa / 100,
+                                    None if venc is None or pd.isna(venc) else pd.Timestamp(venc).date()))
+    return lista
+
+
+def _guardar(editado: pd.DataFrame, automaticos: dict, nombre_nuevo: str, supuestos: dict, nombre: str | None,
+             liquidez: pd.DataFrame | None = None) -> bool:
     """Guarda lo editado. Tipo y descripción se guardan solo si los cambiaste (si no, siguen saliendo de la ficha)."""
     posiciones = []
     for f in editado.to_dict("records"):
@@ -188,7 +272,7 @@ def _guardar(editado: pd.DataFrame, automaticos: dict, nombre_nuevo: str, supues
                                          tipo if tipo and tipo not in ("nan", tipo_auto) else None,
                                          desc if desc and desc not in ("nan", desc_auto) else None))
     try:
-        excel.guardar(excel.Cartera(nombre_nuevo, posiciones, supuestos), nombre_anterior=nombre)
+        excel.guardar(excel.Cartera(nombre_nuevo, posiciones, supuestos, _liquidez_de(liquidez)), nombre_anterior=nombre)
     except PermissionError:
         st.error("No se pudo escribir el archivo: cerralo en Excel y volvé a guardar.")
         return False
@@ -242,19 +326,23 @@ def ver_cartera(nombre: str | None, moneda: str, fecha: date | None, marca: int,
         with indicadores:
             _indicador("Patrimonio", f"{unidad} {t['total']:,.2f}", paleta)
             _indicador("TIR nominal proyectada", f"{t['tir_proyectada_rf']:.2%}" if t["tir_proyectada_rf"] is not None
-                       else "–", paleta, "Promedio ponderado por monto de la renta fija")
+                       else "–", paleta, AYUDA_PONDERADO)
             _indicador("Duration", f"{t['duration_rf']:.2f} años" if t["duration_rf"] is not None else "–", paleta,
-                       "Promedio ponderado por monto de la renta fija")
+                       AYUDA_PONDERADO)
         if v["filas"]:
             _graficos(v, estilo, paleta, grafico)
 
     tabla = _filas_tabla(cartera, v)
     if not editando:
-        st.dataframe(tabla, hide_index=True, width="stretch", column_config=COLUMNAS_TABLA)
+        completa = pd.concat([tabla, _filas_liquidez(v)], ignore_index=True) if v and any(
+            f.get("liquidez") for f in v["filas"]) else tabla
+        st.dataframe(completa, hide_index=True, width="stretch", column_config=COLUMNAS_TABLA)
         if v:
             st.caption(v["nota_valuacion"] + " Calculadora de Finianz.")
             for aviso in v["avisos"]:
                 st.warning(aviso)
+            _cobros(v)
+            _cuadros(v, estilo, paleta)
             _dispersion(v, estilo, paleta)
             if v["supuestos"]:
                 with st.expander("Supuestos de la proyección"):
@@ -277,11 +365,27 @@ def ver_cartera(nombre: str | None, moneda: str, fecha: date | None, marca: int,
         column_config=COLUMNAS_TABLA | {
             "Ticker": st.column_config.TextColumn(required=True, help="Ej.: TZXD7, AL30, GD30, GGAL"),
             "Nominales": st.column_config.NumberColumn(required=True, min_value=0, format="localized")})
+    st.markdown("**Liquidez, pasivos y créditos.** Monto en su moneda y siempre positivo (los pasivos se restan solos). "
+                "Tasa: TNA, solo para money market, cauciones, plazos fijos, créditos y pasivos; la liquidez sin colocar "
+                "rinde 0.")
+    liquidez = pd.DataFrame([{"Tipo": x.tipo, "Descripcion": x.descripcion or "", "Moneda": x.moneda, "Monto": x.monto,
+                              "Tasa": x.tasa * 100 if x.tasa is not None else None, "Vencimiento": x.vencimiento}
+                             for x in cartera.liquidez], columns=excel.COLUMNAS_LIQUIDEZ)
+    liquidez = liquidez.astype({"Descripcion": str, "Monto": float, "Tasa": float})
+    liquidez["Vencimiento"] = pd.to_datetime(liquidez["Vencimiento"])
+    liquidez_editada = st.data_editor(
+        liquidez, num_rows="dynamic", hide_index=True, width="stretch", key=f"liquidez_{nombre or NUEVA}",
+        column_config={"Tipo": st.column_config.SelectboxColumn(options=list(excel.TIPOS_LIQUIDEZ), required=True),
+                       "Moneda": st.column_config.SelectboxColumn(options=list(excel.MONEDAS_LIQUIDEZ), required=True,
+                                                                  default="pesos"),
+                       "Monto": st.column_config.NumberColumn(required=True, min_value=0, format="localized"),
+                       "Tasa": st.column_config.NumberColumn("Tasa (TNA %)", min_value=0, format="%.2f%%"),
+                       "Vencimiento": st.column_config.DateColumn(format="DD/MM/YYYY")})
     supuestos = _supuestos_editables(cartera, nombre or NUEVA)
     col_nombre, col_guardar, col_cancelar, col_archivar = st.columns([3, 1, 1, 1], vertical_alignment="bottom")
     nombre_nuevo = col_nombre.text_input("Nombre de la cartera", value=nombre or "", placeholder="Ej.: Pérez Juan")
     if col_guardar.button("Guardar", width="stretch", type="primary"):
-        if _guardar(editado, automaticos, nombre_nuevo, supuestos, nombre):
+        if _guardar(editado, automaticos, nombre_nuevo, supuestos, nombre, liquidez_editada):
             st.session_state.pop(clave_edicion, None)
             st.rerun()
     if nombre:
