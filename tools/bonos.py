@@ -192,8 +192,17 @@ def _calcular_ficha(f: dict, precio: float, liquidacion: date, operacion: date,
     if f["familia"].startswith("cer"):
         texto_cer, f, cer_corriente = _datos_cer(f, liquidacion)
         if f["familia"] == "cer_cupon":
-            return texto_cer + _cer_cupon(f, precio, cer_corriente, liquidacion)
-        return texto_cer + _cer_cero_cupon(f, precio, cer_corriente, liquidacion, inflacion_mensual)
+            futuros = [p for p in f["pagos"] if p["fecha"] > liquidacion]
+            extra = ""
+            if len(futuros) == 1:
+                reales = cer_cupon.calcular(precio, f["cer_inicial"], cer_corriente, liquidacion, f["pagos"], f["cupon"],
+                                            f["frecuencia"], f["emision"],
+                                            lambda d: feriados.proximo_dia_habil(d, CALENDARIO_HABILES))["flujos"]
+                extra = _cer_final_conocido(f, precio, liquidacion, operacion, futuros[0]["fecha"],
+                                            [fl for fl in reales if fl.fecha > liquidacion])
+            return texto_cer + _cer_cupon(f, precio, cer_corriente, liquidacion) + extra
+        return (texto_cer + _cer_cero_cupon(f, precio, cer_corriente, liquidacion, inflacion_mensual)
+                + _cer_final_conocido(f, precio, liquidacion, operacion, f["vencimiento"]))
     if f["familia"] == "tasa_fija_capitalizable":
         return _tasa_fija_capitalizable(f, precio, liquidacion)
     if f["familia"] == "tamar_capitalizable":
@@ -218,12 +227,12 @@ def _dolar_linked_bullet(f: dict, precio: float, liquidacion: date, operacion: d
         f"Paga 100 dólares por 100 VN al vencimiento, en pesos{pago}\n"
         f"Plazo residual: {r['plazo_residual']} días | duration: {r['duration']:.4f}\n"
         f"TNA: {_pct(r['tna'])} | TIR (TEA): {_pct(r['tea'])} | TEM (30 días): {_pct(r['tem'])} (en dólares, actual/365)"
-    ) + _dl_pago_conocido(f, precio, liquidacion)
+    ) + _dl_pago_conocido(f, precio, liquidacion, operacion)
 
 
-def _dl_pago_conocido(f: dict, precio: float, liquidacion: date) -> str:
+def _dl_pago_conocido(f: dict, precio: float, liquidacion: date, operacion: date) -> str:
     """Si ya se publicó el A3500 de pago (3.er día hábil anterior al vencimiento), el bono es de tasa fija."""
-    tc_pago = mercado.a3500_pago_conocido(f)
+    tc_pago = mercado.a3500_pago_conocido(f, operacion)
     if tc_pago is None:
         return ""
     pago = dolar_linked.PAGO_FINAL_USD * tc_pago
@@ -344,7 +353,8 @@ def _tamar_capitalizable(f: dict, precio: float, liquidacion: date, operacion: d
         f"publicados, {d['ultimas'][0]} a {d['ultimas'][1]}; estima los días que faltan) | "
         f"spread sobre TAMAR (TNA 30 d − referencia): {_pct(r['spread'])}"
     ) + ("\nYa se publicó la TAMAR de toda la ventana: el pago final queda fijo en pesos y el bono se valúa como tasa "
-         "fija (la TEA de arriba es nominal y definitiva). Figura en la curva de tasa fija." if d["a_estimar"] == 0 else "")
+         "fija (la TEA de arriba es nominal y definitiva). Figura en la curva de tasa fija."
+         if d["a_estimar"] == 0 and d["fin"] < operacion else "")
 
 
 def _tasa_fija_capitalizable(f: dict, precio: float, liquidacion: date) -> str:
@@ -422,13 +432,15 @@ def _cer_cero_cupon(f: dict, precio: float, cer_corriente: float, liquidacion: d
         f"Duration: {r['duration']:.4f} | duration modificada: {r['duration_modificada']:.4f} | "
         f"convexidad: {r['convexidad']:.4f}\n"
         f"Carry mensual: {_pct(r['carry_mensual'])} (inflación {_pct(inflacion)} [{origen_inflacion}] + TNA / 12)"
-    ) + _cer_final_conocido(f, precio, liquidacion, f["vencimiento"])
+    )
 
 
-def _cer_final_conocido(f: dict, precio: float, liquidacion: date, fecha_pago: date, flujos_reales=None) -> str:
-    """Si el CER del último pago ya está publicado, el bono es de tasa fija: pago en pesos y TIR nominal."""
+def _cer_final_conocido(f: dict, precio: float, liquidacion: date, operacion: date, fecha_pago: date,
+                        flujos_reales=None) -> str:
+    """Si el CER del último pago ya se conocía el día de la operación, el bono es de tasa fija: pago en pesos y TIR
+    nominal."""
     from renta_fija.calculadoras import proyeccion_cer as pc
-    cer_final = mercado.cer_final_conocido(fecha_pago)
+    cer_final = mercado.cer_final_conocido(fecha_pago, operacion)
     if cer_final is None:
         return ""
     if flujos_reales is None:
@@ -456,9 +468,7 @@ def _cer_cupon(f: dict, precio: float, cer_corriente: float, liquidacion: date) 
         f"convexidad: {r['convexidad']:.4f} | PV01: {r['pv01']:.6f} | DD (100 pb): {r['dd']:.4f}\n"
         f"Current yield: {_pct(r['current_yield'])} | cash yield (12 meses): {_pct(r['cash_yield'])}\n"
         f"Próximos flujos reales por 100 VN (renta + amortización, fechas corridas): {proximos}"
-    ) + (_cer_final_conocido(f, precio, liquidacion, futuros[0]["fecha"],
-                             [fl for fl in r["flujos"] if fl.fecha > liquidacion])
-         if len(futuros := [p for p in f["pagos"] if p["fecha"] > liquidacion]) == 1 else "")
+    )
 
 
 CALCULAR_BONO = {

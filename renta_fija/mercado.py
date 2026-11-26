@@ -51,11 +51,33 @@ def cer_de(fecha: date) -> float:
 _cer_refrescado = [0.0]          # momento del último intento de traer CER nuevo del BCRA (una vez por hora)
 
 
-def cer_final_conocido(fecha_pago: date) -> float | None:
-    """CER que ajusta un pago (10.º día hábil anterior) si ya está publicado; si no, None. Cuando se conoce el CER
-    final, el pago queda fijo en pesos y el bono pasa a ser de tasa fija (decisión de Agustin, 26/11/2026)."""
+def publicacion_cer(fecha_cer: date) -> date:
+    """Cuándo se conoció el CER de una fecha. El BCRA arma el CER del 16 de un mes al 15 del siguiente con el IPC del
+    mes anterior a ese período, así que se conoce el día que el INDEC publica ese IPC (en el mes en que empieza el
+    período, antes del 16). Fecha del calendario de publicaciones (código IPC) si está cargada; si no, el 15."""
+    inicio = fecha_cer if fecha_cer.day >= 16 else (fecha_cer.replace(day=1) - timedelta(days=1))
+    desde, hasta = date(inicio.year, inicio.month, 1), date(inicio.year, inicio.month, 16)
+    try:
+        from admin_datos import publicaciones
+        if publicaciones.hay_datos():
+            ipc = [p for p in publicaciones.entre(desde, hasta, "AR", "baja") if p.get("codigo") == "IPC"]
+            if ipc:
+                return date.fromisoformat(ipc[0]["fecha"])
+    except Exception:
+        pass
+    return date(inicio.year, inicio.month, 15)
+
+
+def cer_final_conocido(fecha_pago: date, operacion: date | None = None) -> float | None:
+    """CER que ajusta un pago (10.º día hábil anterior) si ya se conocía el día de 'operacion' (hoy, si no se
+    indica); si no, None. Desde que se conoce, el pago queda fijo en pesos y el bono es de tasa fija (decisión de
+    Agustin, 26/11/2026). Para una fecha pasada en la que todavía no se conocía, sigue siendo un bono CER aunque hoy
+    el dato ya esté en la base."""
     import time
+    operacion = operacion or date.today()
     fecha = feriados.sumar_dias_habiles(fecha_pago, -cer.REZAGO_HABILES, CALENDARIO_HABILES)
+    if publicacion_cer(fecha) > operacion:
+        return None
     valor = db_series.valor("CER", fecha)
     if valor is None and time.time() - _cer_refrescado[0] > 3600:
         _cer_refrescado[0] = time.time()
@@ -71,12 +93,14 @@ REZAGO_TC_PAGO_DL = 3            # Lelink del Tesoro: A3500 del 3.er día hábil
 _a3500_refrescado = [0.0]
 
 
-def a3500_pago_conocido(f: dict) -> float | None:
-    """A3500 con el que paga un dollar linked al vencimiento, si ya está publicado (3.er día hábil anterior al pago,
-    o el rezago de la ficha en 'rezago_tipo_cambio'); si no, None."""
+def a3500_pago_conocido(f: dict, operacion: date | None = None) -> float | None:
+    """A3500 con el que paga un dollar linked al vencimiento (3.er día hábil anterior al pago, o el rezago de la ficha
+    en 'rezago_tipo_cambio'), si ya se conocía el día de 'operacion' (hoy, si no se indica); si no, None."""
     import time
     rezago = int(f.get("rezago_tipo_cambio", REZAGO_TC_PAGO_DL))
     fecha = feriados.sumar_dias_habiles(f["vencimiento"], -rezago, CALENDARIO_HABILES)
+    if fecha > (operacion or date.today()):
+        return None
     valor = db_series.valor("A3500", fecha)
     if valor is None and date.today() >= fecha and time.time() - _a3500_refrescado[0] > 3600:
         _a3500_refrescado[0] = time.time()

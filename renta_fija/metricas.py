@@ -85,15 +85,16 @@ def calculadora(f: dict, liquidacion: date, operacion: date, contexto: dict | No
     # (decisión de Agustin, 26/11/2026). En los que pagan cupón, cuando solo queda el último pago.
     cer_final = None
     if familia == "cer_cero_cupon":
-        cer_final = mercado.cer_final_conocido(f["vencimiento"])
+        cer_final = mercado.cer_final_conocido(f["vencimiento"], operacion)
     elif familia == "cer_cupon":
         futuros = [p for p in f["pagos"] if p["fecha"] > liquidacion]
         if len(futuros) == 1:
-            cer_final = mercado.cer_final_conocido(futuros[0]["fecha"])
+            cer_final = mercado.cer_final_conocido(futuros[0]["fecha"], operacion)
 
-    # Dollar linked con el A3500 de pago ya publicado y TAMAR con toda la ventana publicada: también tasa fija
-    tc_pago = mercado.a3500_pago_conocido(f) if familia == "dolar_linked_bullet" else None
-    tamar_conocida = familia == "tamar_capitalizable" and d["a_estimar"] == 0
+    # Dollar linked con el A3500 de pago ya publicado y TAMAR con toda la ventana publicada: también tasa fija.
+    # Siempre según lo que se conocía el día de la operación: en una fecha pasada, sigue siendo indexado.
+    tc_pago = mercado.a3500_pago_conocido(f, operacion) if familia == "dolar_linked_bullet" else None
+    tamar_conocida = familia == "tamar_capitalizable" and d["a_estimar"] == 0 and d["fin"] < operacion
 
     def metricas(precio: float) -> dict:
         if cer_final is not None:
