@@ -48,6 +48,25 @@ def cer_de(fecha: date) -> float:
     return valor
 
 
+_cer_refrescado = [0.0]          # momento del último intento de traer CER nuevo del BCRA (una vez por hora)
+
+
+def cer_final_conocido(fecha_pago: date) -> float | None:
+    """CER que ajusta un pago (10.º día hábil anterior) si ya está publicado; si no, None. Cuando se conoce el CER
+    final, el pago queda fijo en pesos y el bono pasa a ser de tasa fija (decisión de Agustin, 26/11/2026)."""
+    import time
+    fecha = feriados.sumar_dias_habiles(fecha_pago, -cer.REZAGO_HABILES, CALENDARIO_HABILES)
+    valor = db_series.valor("CER", fecha)
+    if valor is None and time.time() - _cer_refrescado[0] > 3600:
+        _cer_refrescado[0] = time.time()
+        try:
+            carga_series.actualizar("CER")
+        except ErrorAPI:
+            pass
+        valor = db_series.valor("CER", fecha)
+    return valor
+
+
 def ultima_inflacion() -> tuple[float, str]:
     """Último dato de inflación mensual conocido (INDEC vía BCRA): (fracción, mes)."""
     candidatas = [v for v in bcra.buscar_variables("inflacion mensual")

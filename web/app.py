@@ -260,7 +260,9 @@ st.markdown(f'<div class="encabezado"><div class="titulo">{seccion}</div><span>{
 # ---------- Curvas ----------
 
 def _ficha_de_curva(ticker: str, curva: str) -> dict | None:
-    return next((f for f in leer_fichas.fichas_de(ticker) if metricas.FAMILIAS_CURVA.get(f["familia"]) == curva
+    """La ficha del bono en esa curva. Un CER con el CER final conocido figura en la de tasa fija."""
+    return next((f for f in leer_fichas.fichas_de(ticker) if (metricas.FAMILIAS_CURVA.get(f["familia"]) == curva
+                 or (curva == "tasa_fija" and f["familia"].startswith("cer")))
                  and "DUAL" not in f.get("tipo", "").upper()), None)
 
 
@@ -509,6 +511,10 @@ if seccion == "Bono":
     if ficha["familia"] == "tamar_capitalizable":
         st.caption("El pago final usa la TAMAR ya publicada y, para los días que faltan, la última TAMAR. Para otros "
                    "supuestos, la sección Proyecciones.")
+    elif m.get("cer_conocido"):
+        st.caption(f"El CER final ya está publicado ({m['extra']['cer_final']:,.4f}): el pago queda fijo en pesos y el "
+                   "bono se valúa como tasa fija (TEA nominal)."
+                   + (f" TEA real: {m['detalle']['tea_real']:.2%}." if m["detalle"].get("tea_real") is not None else ""))
     elif ficha["familia"] in ("cer_cero_cupon", "cer_cupon"):
         st.caption("Los flujos están en términos reales: se cobran multiplicados por el coeficiente CER del pago. La "
                    "última columna los muestra con el CER de hoy; para proyectarlos, la sección Proyecciones.")

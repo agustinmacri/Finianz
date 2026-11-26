@@ -149,8 +149,8 @@ class Proyecciones:
     # --- TIR nominal en pesos de cada familia ---
     def tir_nominal(self, f: dict, precio: float, m: dict) -> float:
         familia, liq = f["familia"], self.ctx.liquidacion
-        if familia.startswith("tasa_fija"):
-            return m["tea"]
+        if familia.startswith("tasa_fija") or m.get("cer_conocido"):
+            return m["tea"]                                 # CER con el CER final publicado: ya es tasa fija
         if familia in ("cer_cero_cupon", "cer_cupon"):
             cer_en = self.cer()
             _, f2, cer_corriente = mercado.datos_cer(f, liq)
@@ -202,6 +202,7 @@ def _renta_fija(pos, fichas: list[dict], ctx: Contexto, proy: Proyecciones) -> d
     f0, m0, _ = resultados[0]                              # la tasa propia, de la primera pata del nombre
     tir_propia = m0["detalle"]["spread"] if f0["familia"] == "tamar_capitalizable" else m0["tea"]
     familia = principal["familia"]
+    conocido = bool(m0.get("cer_conocido"))
     moneda = ("Dólar CCL" if tipo_fx == "ccl" else "Dólar MEP") if hd else \
         "Pesos ajustables (dólar oficial)" if familia.startswith("dolar_linked") else "Pesos"
     # Cobros: flujos por 100 VN en la unidad del bono, pasados a pesos de hoy (CER, A3500 o el dólar del bono)
@@ -220,13 +221,14 @@ def _renta_fija(pos, fichas: list[dict], ctx: Contexto, proy: Proyecciones) -> d
                            "monto_pesos": en_unidad * a_pesos,
                            "nota": "" if hd or familia.startswith("tasa_fija") or familia == "tamar_capitalizable"
                            else m["ajuste"][0] if m.get("ajuste") else ""})
-    return {"categoria": "Renta Fija", "subclase": "Duales" if len(fichas) > 1 else SUBCLASE[familia],
+    return {"categoria": "Renta Fija",
+            "subclase": "Duales" if len(fichas) > 1 else "Tasa fija" if conocido else SUBCLASE[familia],
             "moneda_activo": moneda, "emisor": principal.get("emisor") or "Tesoro Nacional", "cobros": cobros,
             "pondera": True, "_legs": [(r[0], r[1]) for r in resultados], "_f": f, "_m": m, "_px": px,
             "_tipo_fx": tipo_fx, "_vencimiento": max(x["vencimiento"] for x in fichas),
             "tipo": pos.tipo or _nombre_tipo(principal),
             "descripcion": pos.descripcion or f"{_nombre_tipo(principal)} vto {principal['vencimiento']:%d/%m/%Y}",
-            "ticker": pos.ticker, "referencia": REFERENCIA[f0["familia"]], "tir_propia": tir_propia,
+            "ticker": pos.ticker, "referencia": "" if conocido else REFERENCIA[f0["familia"]], "tir_propia": tir_propia,
             "tir_proyectada": tir_proy, "nominales": pos.nominales, "precio_pesos": precio_pesos,
             "total_pesos": pos.nominales * precio_pesos / 100, "duration": m["duration"], "renta_fija": True,
             "pata": f["familia"] if len(fichas) > 1 else None}

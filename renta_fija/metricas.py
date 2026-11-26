@@ -16,6 +16,7 @@ from datetime import date
 from typing import Callable
 
 from renta_fija.calculadoras import cer, cer_cupon, dolar_linked, hard_dollar, motor, tamar, tasa_fija
+from renta_fija.calculadoras import proyeccion_cer
 from renta_fija import mercado
 
 UNIDAD = {"tasa_fija_capitalizable": "pesos", "tasa_fija_descuento": "pesos", "tasa_fija_cupon": "pesos",
@@ -80,7 +81,19 @@ def calculadora(f: dict, liquidacion: date, operacion: date, contexto: dict | No
 
     plazo = (f["vencimiento"] - liquidacion).days
 
+    # CER con el CER final ya publicado: el pago queda fijo en pesos y el bono pasa a la curva de tasa fija
+    # (decisión de Agustin, 26/11/2026). En los que pagan cupón, cuando solo queda el último pago.
+    cer_final = None
+    if familia == "cer_cero_cupon":
+        cer_final = mercado.cer_final_conocido(f["vencimiento"])
+    elif familia == "cer_cupon":
+        futuros = [p for p in f["pagos"] if p["fecha"] > liquidacion]
+        if len(futuros) == 1:
+            cer_final = mercado.cer_final_conocido(futuros[0]["fecha"])
+
     def metricas(precio: float) -> dict:
+        if cer_final is not None:
+            return _cer_conocido(precio)
         r = calc(precio)
         tea = r[tasa]
         if familia == "hard_dollar":
@@ -114,6 +127,38 @@ def calculadora(f: dict, liquidacion: date, operacion: date, contexto: dict | No
             filas.append({"fecha": fecha, "cupon": cupon, "amortizacion": amortizacion, "total": cupon + amortizacion,
                           "residual": max(residual, 0.0)})
         return filas
+
+    referencia_real = {}
+
+    def _real(precio: float) -> dict | None:
+        """El cálculo real (para el detalle y los flujos reales). Si a ese precio no converge, el del valor técnico."""
+        try:
+            return calc(precio)
+        except (ZeroDivisionError, OverflowError, ValueError, ArithmeticError):
+            if "r" not in referencia_real:
+                referencia_real["r"] = calc(100 * cer_corriente / f2["cer_inicial"])
+            return None
+
+    def _cer_conocido(precio: float) -> dict:
+        coef = cer_final / f2["cer_inicial"]
+        r_precio = _real(precio)
+        r = r_precio or referencia_real["r"]
+        if familia == "cer_cero_cupon":
+            n = proyeccion_cer.nominal_cero_cupon(precio, f2["cer_inicial"], cer_final, liquidacion, f["vencimiento"])
+            tea, tna, duration = n["tir"], n["tna"], plazo / 365
+        else:
+            reales = [fl for fl in r["flujos"] if fl.fecha > liquidacion]
+            n = proyeccion_cer.nominal_con_cupon(precio, f2["cer_inicial"], reales, [cer_final] * len(reales), liquidacion)
+            tea, duration = n["tir"], n["duration"]
+            tna = ((1 + tea) ** (plazo / 365) - 1) * 365 / plazo if plazo > 0 else None
+        flujos = [dict(x, cupon=x["cupon"] * coef, amortizacion=x["amortizacion"] * coef, total=x["total"] * coef)
+                  for x in _flujos(r)]
+        return {"curva": "tasa_fija", "tea": tea, "tna": tna, "duration": duration,
+                "extra": {"cer_final": cer_final, "pago_final": sum(x["total"] for x in flujos)},
+                "detalle": dict(r, tea_real=r_precio[tasa] if r_precio else None, cer_final=cer_final,
+                                coeficiente_final=coef),
+                "flujos": flujos, "unidad": "pesos (CER final conocido: equivale a tasa fija)", "ajuste": None,
+                "cer_conocido": True}
 
     def _ajuste() -> tuple[str, float] | None:
         """Para pasar los flujos a pesos de hoy: el coeficiente CER o el A3500."""

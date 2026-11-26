@@ -409,7 +409,23 @@ def _cer_cero_cupon(f: dict, precio: float, cer_corriente: float, liquidacion: d
         f"Duration: {r['duration']:.4f} | duration modificada: {r['duration_modificada']:.4f} | "
         f"convexidad: {r['convexidad']:.4f}\n"
         f"Carry mensual: {_pct(r['carry_mensual'])} (inflación {_pct(inflacion)} [{origen_inflacion}] + TNA / 12)"
-    )
+    ) + _cer_final_conocido(f, precio, liquidacion, f["vencimiento"])
+
+
+def _cer_final_conocido(f: dict, precio: float, liquidacion: date, fecha_pago: date, flujos_reales=None) -> str:
+    """Si el CER del último pago ya está publicado, el bono es de tasa fija: pago en pesos y TIR nominal."""
+    from renta_fija.calculadoras import proyeccion_cer as pc
+    cer_final = mercado.cer_final_conocido(fecha_pago)
+    if cer_final is None:
+        return ""
+    if flujos_reales is None:
+        n = pc.nominal_cero_cupon(precio, f["cer_inicial"], cer_final, liquidacion, f["vencimiento"])
+        pago = n["pago_final"]
+    else:
+        n = pc.nominal_con_cupon(precio, f["cer_inicial"], flujos_reales, [cer_final] * len(flujos_reales), liquidacion)
+        pago = sum(fl.total for fl in n["flujos"])
+    return (f"\nCER final ya publicado ({cer_final:,.4f}): el pago queda fijo en ${pago:,.4f} por 100 VN y el bono se "
+            f"valúa como tasa fija. TIR nominal (TEA): {_pct(n['tir'])}. Figura en la curva de tasa fija.")
 
 
 def _cer_cupon(f: dict, precio: float, cer_corriente: float, liquidacion: date) -> str:
@@ -427,7 +443,9 @@ def _cer_cupon(f: dict, precio: float, cer_corriente: float, liquidacion: date) 
         f"convexidad: {r['convexidad']:.4f} | PV01: {r['pv01']:.6f} | DD (100 pb): {r['dd']:.4f}\n"
         f"Current yield: {_pct(r['current_yield'])} | cash yield (12 meses): {_pct(r['cash_yield'])}\n"
         f"Próximos flujos reales por 100 VN (renta + amortización, fechas corridas): {proximos}"
-    )
+    ) + (_cer_final_conocido(f, precio, liquidacion, futuros[0]["fecha"],
+                             [fl for fl in r["flujos"] if fl.fecha > liquidacion])
+         if len(futuros := [p for p in f["pagos"] if p["fecha"] > liquidacion]) == 1 else "")
 
 
 CALCULAR_BONO = {

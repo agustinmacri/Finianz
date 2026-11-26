@@ -35,6 +35,27 @@ def test_hard_dollar():
     assert m["curva"] == "hd" and abs((1 + m["tna"] / 2) ** 2 - 1 - m["tea"]) < 1e-12         # TNA semestral
 
 
+def test_cer_con_cer_final_conocido():
+    """CER con el CER final publicado: pago fijo en pesos y curva de tasa fija (Agustin, 26/11/2026)."""
+    f = next(x for x in leer_fichas.todas() if x["familia"] == "cer_cero_cupon" and x["vencimiento"] > LIQUIDACION)
+    originales = mercado.datos_cer, mercado.cer_final_conocido
+    mercado.datos_cer = lambda ficha, liq: ("", dict(ficha, cer_inicial=200.0), 250.0)
+    try:
+        mercado.cer_final_conocido = lambda fecha: None            # todavía no se conoce: curva CER, TEA real
+        m = metricas.calculadora(f, LIQUIDACION, LIQUIDACION)(120.0)
+        assert m["curva"] == "cer" and not m.get("cer_conocido")
+        mercado.cer_final_conocido = lambda fecha: 260.0           # ya publicado
+        m = _ida_y_vuelta(f, 128.0)
+        plazo = (f["vencimiento"] - LIQUIDACION).days
+        pago = 100 * 260 / 200
+        assert m["curva"] == "tasa_fija" and m["cer_conocido"] and m["ajuste"] is None
+        assert abs(m["tea"] - ((pago / 128) ** (365 / plazo) - 1)) < 1e-12
+        assert abs(m["flujos"][-1]["total"] - pago) < 1e-9 and abs(m["extra"]["pago_final"] - pago) < 1e-9
+        assert "tea_real" in m["detalle"]
+    finally:
+        mercado.datos_cer, mercado.cer_final_conocido = originales
+
+
 def test_tasa_imposible():
     f = leer_fichas.ficha("GD30")
     calc = metricas.calculadora(f, LIQUIDACION, LIQUIDACION)
@@ -47,7 +68,7 @@ def test_tasa_imposible():
 
 
 if __name__ == "__main__":
-    for prueba in (test_lecap, test_hard_dollar, test_tasa_imposible):
+    for prueba in (test_lecap, test_hard_dollar, test_cer_con_cer_final_conocido, test_tasa_imposible):
         prueba()
         print(f"OK  {prueba.__name__}")
     print("Todas las pruebas de métricas pasaron.")
