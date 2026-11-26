@@ -64,8 +64,9 @@ def calculadora(f: dict, liquidacion: date, operacion: date, contexto: dict | No
     elif familia == "tamar_capitalizable":
         d = mercado.datos_tamar(f, operacion)
         contexto["tamar_referencia"] = d["referencia"]
-        calc = lambda p: tamar.calcular(p, d["tamar_bono"], f["margen"], f["emision"], f["vencimiento"], liquidacion,
-                                        d["referencia"])
+        escala = mercado.tipo_cambio_inicial(f)   # dual TAMAR/DL: VN en dólares al tipo de cambio inicial
+        calc = lambda p: tamar.calcular(p / escala, d["tamar_bono"], f["margen"], f["emision"], f["vencimiento"],
+                                        liquidacion, d["referencia"])
         tasa = "tea"
     elif familia == "hard_dollar":
         calc = lambda p: hard_dollar.calcular(p, liquidacion, f["pagos"], f["tramos"], f["emision"], ajustar)
@@ -116,10 +117,23 @@ def calculadora(f: dict, liquidacion: date, operacion: date, contexto: dict | No
                          desde_estimar=d["desde_estimar"], fin_ventana=d["fin"])
         if tamar_conocida:                                   # el pago final ya está en pesos y no depende de nada
             return {"curva": "tasa_fija", "tea": tea, "tna": tna, "duration": r["duration"], "extra": extra,
-                    "detalle": r, "flujos": _flujos(r), "unidad": "pesos (TAMAR de toda la ventana publicada: tasa fija)",
+                    "detalle": r, "flujos": _escalar(_flujos(r)),
+                    "unidad": "pesos (TAMAR de toda la ventana publicada: tasa fija)",
                     "ajuste": None, "pago_conocido": True}
         return {"curva": FAMILIAS_CURVA.get(familia), "tea": tea, "tna": tna, "duration": r["duration"], "extra": extra,
-                "detalle": r, "flujos": _flujos(r), "unidad": UNIDAD[familia], "ajuste": _ajuste()}
+                "detalle": r, "flujos": _escalar(_flujos(r)), "unidad": UNIDAD[familia] + (
+                    " por 100 VN en dólares (VN al tipo de cambio inicial)" if _escala() != 1 else ""),
+                "ajuste": _ajuste()}
+
+    def _escala() -> float:
+        return escala if familia == "tamar_capitalizable" else 1.0
+
+    def _escalar(flujos: list[dict]) -> list[dict]:
+        k = _escala()
+        if k == 1:
+            return flujos
+        return [dict(x, cupon=x["cupon"] * k, amortizacion=x["amortizacion"] * k, total=x["total"] * k,
+                     residual=x["residual"] * k) for x in flujos]
 
     def _dl_conocido(precio: float) -> dict:
         pago = dolar_linked.PAGO_FINAL_USD * tc_pago

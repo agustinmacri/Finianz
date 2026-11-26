@@ -89,7 +89,7 @@ BUSQUEDAS_REALES: list[int] = []   # cuántos resultados de Google trajo cada pe
 MESES_LARGOS = ("enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "septiembre", "octubre",
                 "noviembre", "diciembre")
 ORDEN = ["ticker", "tipo", "familia", "reapertura", "ley", "par", "emision", "vencimiento", "cupon", "margen", "frecuencia", "base",
-         "tramos", "pagos", "tipo_cambio_pago", "revisado", "fuente", "nota", "pendiente", "posible_duplicado", "emision_buscada", "cita", "clave"]
+         "tramos", "pagos", "tipo_cambio_pago", "fecha_tipo_cambio_inicial", "revisado", "fuente", "nota", "pendiente", "posible_duplicado", "emision_buscada", "cita", "clave"]
 Familia = Literal["cer_cero_cupon", "cer_cupon", "tasa_fija_capitalizable", "tasa_fija_cupon", "tasa_fija_descuento",
                   "tamar_capitalizable", "dolar_linked_bullet", "dolar_linked_cupon", "hard_dollar"]
 
@@ -124,6 +124,8 @@ class Instrumento(BaseModel):
     pagos: list[Pago] = Field(default_factory=list)
     tramos: list[Tramo] = Field(default_factory=list)
     tipo_cambio_pago: str | None = Field(None, description="Tipo de cambio con el que se paga (dollar linked)")
+    fecha_tipo_cambio_inicial: str | None = Field(None, description="Solo duales TAMAR/dollar linked con VN en dólares: "
+                                                  "fecha AAAA-MM-DD del A3500 del tipo de cambio inicial, si el texto la dice")
     variable_licitada: Literal["precio", "tasa", "margen"] | None = Field(
         None, description="Solo en resultados: qué se licitó (precio, tasa/TEM o margen sobre la TAMAR)")
     valor_corte: float | None = Field(None, description="Solo en resultados: el valor de corte de la variable licitada. "
@@ -227,7 +229,8 @@ def a_ficha(ins: Instrumento, origen: str, tipo_documento: str, fecha_documento:
              "tramos": [{"desde": _fecha(t.desde), "tasa": t.tasa} for t in ins.tramos] or None,
              "pagos": [{"fecha": _fecha(p.fecha), **({"amortizacion": p.amortizacion} if p.amortizacion else {})}
                        for p in ins.pagos] or None,
-             "tipo_cambio_pago": ins.tipo_cambio_pago, "revisado": False,
+             "tipo_cambio_pago": ins.tipo_cambio_pago,
+             "fecha_tipo_cambio_inicial": _fecha(ins.fecha_tipo_cambio_inicial), "revisado": False,
              "fuente": f"{tipo_documento}{' del ' + fecha_documento if fecha_documento else ''} ({origen}); borrador del lector de fichas",
              "nota": ins.notas, "pendiente": ins.pendiente or None, "cita": ins.cita or None}
     if ins.reapertura:
@@ -247,7 +250,7 @@ def a_ficha(ins: Instrumento, origen: str, tipo_documento: str, fecha_documento:
 # Datos de condiciones que usa cada familia (en un dual, cada pata se queda con los suyos)
 DATOS_DE_PATA = {"tasa_fija_capitalizable": {"cupon"}, "tasa_fija_cupon": {"cupon", "frecuencia", "base", "pagos"},
                  "tasa_fija_descuento": set(), "cer_cero_cupon": set(), "cer_cupon": {"cupon", "frecuencia", "pagos"},
-                 "tamar_capitalizable": {"margen"}, "dolar_linked_bullet": {"tipo_cambio_pago"},
+                 "tamar_capitalizable": {"margen", "fecha_tipo_cambio_inicial"}, "dolar_linked_bullet": {"tipo_cambio_pago"},
                  "dolar_linked_cupon": {"cupon", "base", "pagos", "tipo_cambio_pago"},
                  "hard_dollar": {"cupon", "ley", "tramos", "pagos", "base"}}
 

@@ -296,7 +296,8 @@ def proyectar_tamar(fuente: str = "rem", ticker: str | None = None, fecha: str |
         try:
             precio, _ = bonos._precio(t, fecha_precios)
             tamar_bono, d = tamar_del_bono(f, operacion, camino)
-            r = tamar.calcular(precio, tamar_bono, f["margen"], f["emision"], f["vencimiento"], liquidacion, d["referencia"])
+            r = tamar.calcular(precio / bonos.mercado.tipo_cambio_inicial(f), tamar_bono, f["margen"], f["emision"],
+                               f["vencimiento"], liquidacion, d["referencia"])
             dias = bonos.feriados.dias_habiles_entre(d["desde_estimar"], d["fin"], bonos.CALENDARIO_HABILES)
             fin = max(fin, (d["fin"].year, d["fin"].month))
             promedio = lambda c: sum(c((x.year, x.month)) for x in dias) / len(dias) if dias and c else None

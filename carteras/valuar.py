@@ -166,7 +166,8 @@ class Proyecciones:
         if familia == "tamar_capitalizable":
             from tools.proyecciones import tamar_del_bono
             tamar_bono, d = tamar_del_bono(f, self.ctx.operacion, self.tamar())
-            return tamar.calcular(precio, tamar_bono, f["margen"], f["emision"], f["vencimiento"], liq, d["referencia"])["tea"]
+            return tamar.calcular(precio / mercado.tipo_cambio_inicial(f), tamar_bono, f["margen"], f["emision"],
+                                  f["vencimiento"], liq, d["referencia"])["tea"]
         if familia in ("dolar_linked_bullet", "dolar_linked_cupon"):
             return self._tir_en_pesos(m["flujos"], precio, self.oficial())
         if familia == "hard_dollar":

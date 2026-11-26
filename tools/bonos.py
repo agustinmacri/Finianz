@@ -85,6 +85,9 @@ def calcular_bono(ticker: str, precio: float | None = None, fecha: str | None = 
     familias = {f["familia"] for f in lista}
     if {"tasa_fija_capitalizable", "tamar_capitalizable"} <= familias:
         secciones.append(_dual_tasa_fija_tamar(lista, precio, liquidacion, operacion, fuente_tamar))
+    if {"dolar_linked_bullet", "tamar_capitalizable"} <= familias:
+        secciones.append(_dual_dl_tamar(lista, precio, liquidacion, operacion, fuente_tamar,
+                                        date.fromisoformat(fecha) if fecha else None))
     if "cer_cero_cupon" in familias and "tamar_capitalizable" in familias:
         if fuente_inflacion is None:
             from admin_datos import rem as db_rem
@@ -127,6 +130,64 @@ def _dual_tasa_fija_tamar(lista: list[dict], precio: float, liquidacion: date, o
         f"({d['a_estimar']} días por publicar con {desc_tamar})\n"
         f"→ Con estos supuestos paga la pata {gana}. Rendimiento del dual: TNA {_pct(tna)} | TEA (TIR) {_pct(tea)}" + linea_umbral
     )
+
+
+def _dual_dl_tamar(lista: list[dict], precio: float, liquidacion: date, operacion: date, fuente_tamar: str,
+                   fecha_precios: date | None) -> str:
+    """Qué pata paga un dual TAMAR / dollar linked (TMVE8): al vencimiento, el mayor entre el VN en dólares al A3500 de
+    pago (3.er día hábil anterior) y el VN al tipo de cambio inicial capitalizado a TAMAR. Precio y pagos en pesos por
+    100 VN en dólares. Devuelve el A3500 de indiferencia (y la devaluación que implica) y lo compara con el REM y con
+    el breakeven del mercado."""
+    from tools import proyecciones
+    try:
+        pata_dl = next(f for f in lista if f["familia"] == "dolar_linked_bullet")
+        pata_tamar = next(f for f in lista if f["familia"] == "tamar_capitalizable")
+        escala = mercado.tipo_cambio_inicial(pata_tamar)
+        if escala == 1:
+            return ("\n— Qué pata paga —\nFalta el tipo de cambio inicial de la pata TAMAR: agregá "
+                    "fecha_tipo_cambio_inicial (A3500 del día hábil anterior a la licitación original) o "
+                    "tipo_cambio_inicial a su ficha.")
+        camino, desc_tamar = proyecciones.camino_tamar(fuente_tamar, operacion)
+        tamar_bono, d = proyecciones.tamar_del_bono(pata_tamar, operacion, camino)
+        r = tamar.calcular(precio / escala, tamar_bono, pata_tamar["margen"], pata_tamar["emision"],
+                           pata_tamar["vencimiento"], liquidacion, d["referencia"])
+        tc_hoy, fecha_tc, _ = mercado.a3500(operacion)
+    except (ErrorAPI, ValueError, StopIteration, KeyError) as e:
+        return f"\n— Qué pata paga —\nSin dato: {e}"
+    vto = pata_dl["vencimiento"]
+    fecha_pago_tc = feriados.sumar_dias_habiles(vto, -mercado.REZAGO_TC_PAGO_DL, CALENDARIO_HABILES)
+    pago_tamar = r["pago_final"] * escala                      # pesos por 100 VN en dólares
+    tc_indiferencia = pago_tamar / dolar_linked.PAGO_FINAL_USD
+    dias_tc = max((fecha_pago_tc - operacion).days, 1)
+    devaluacion = tc_indiferencia / tc_hoy - 1
+    devaluacion_anual = (1 + devaluacion) ** (365 / dias_tc) - 1
+    plazo = (vto - liquidacion).days
+    tea = lambda pago: (pago / precio) ** (365 / plazo) - 1
+    lineas = [
+        "\n— Qué pata paga (al vencimiento, la de mayor pago; por 100 VN en dólares, en pesos) —",
+        f"Pata TAMAR: VN al tipo de cambio inicial ({escala:,.2f}) capitalizado a TAMAR → pago final "
+        f"${pago_tamar:,.2f} | TEA {_pct(r['tea'])} ({d['a_estimar']} días por publicar con {desc_tamar})",
+        f"Pata dollar linked: USD 100 al A3500 del {fecha_pago_tc:%d/%m/%Y} (3.er día hábil anterior al pago). "
+        f"Con el A3500 de hoy ({tc_hoy:,.2f}, {fecha_tc:%d/%m/%Y}) pagaría ${100 * tc_hoy:,.2f}.",
+        f"Indiferencia: las dos patas pagan lo mismo con un A3500 de {tc_indiferencia:,.2f} al {fecha_pago_tc:%d/%m/%Y}, "
+        f"una devaluación de {_pct(devaluacion)} desde hoy ({_pct(devaluacion_anual)} anual). Por encima paga la pata "
+        "dollar linked; por debajo, la TAMAR."]
+    for fuente, nombre in (("rem", "REM"), ("breakeven", "breakeven del mercado (dollar linked contra tasa fija)")):
+        try:
+            nivel, _, _, _ = proyecciones.camino_dolar("oficial", fuente, operacion, fecha_precios)
+            tc_esperado = nivel(fecha_pago_tc)
+        except (ErrorAPI, ValueError, KeyError, ZeroDivisionError) as e:
+            lineas.append(f"Con el {nombre}: sin dato ({str(e).splitlines()[0][:100]}).")
+            continue
+        pago_dl = dolar_linked.PAGO_FINAL_USD * tc_esperado
+        gana = "dollar linked" if pago_dl > pago_tamar else "TAMAR"
+        dev = tc_esperado / tc_hoy - 1
+        lineas.append(f"Con el {nombre}: A3500 {tc_esperado:,.2f} ({_pct(dev)} desde hoy, "
+                      f"{_pct((1 + dev) ** (365 / dias_tc) - 1)} anual) → paga la pata {gana}; "
+                      f"rendimiento del dual TEA {_pct(tea(max(pago_dl, pago_tamar)))}.")
+    if d["a_estimar"] == 0:
+        lineas.append("La ventana de la TAMAR ya está completa: el pago de la pata TAMAR es definitivo.")
+    return "\n".join(lineas)
 
 
 def _dual_cer_tamar(lista: list[dict], precio: float, liquidacion: date, operacion: date, fuente_inflacion: str,
@@ -340,7 +401,9 @@ def _hard_dollar(f: dict, precio: float | None, fecha: date | None, liquidacion:
 
 def _tamar_capitalizable(f: dict, precio: float, liquidacion: date, operacion: date) -> str:
     d = _datos_tamar(f, operacion)
-    r = tamar.calcular(precio, d["tamar_bono"], f["margen"], f["emision"], f["vencimiento"], liquidacion, d["referencia"])
+    escala = mercado.tipo_cambio_inicial(f)          # dual TAMAR/DL: VN en dólares al tipo de cambio inicial
+    r = tamar.calcular(precio / escala, d["tamar_bono"], f["margen"], f["emision"], f["vencimiento"], liquidacion,
+                       d["referencia"])
     return (
         f"TAMAR del bono: {_pct(r['tamar_bono'])} (promedio del {d['inicio']} al {d['fin']}: "
         f"{len(d['conocidas'])} días publicados y {d['a_estimar']} estimados) + margen {_pct(f['margen'])} → "

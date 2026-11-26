@@ -112,6 +112,28 @@ def a3500_pago_conocido(f: dict, operacion: date | None = None) -> float | None:
     return valor
 
 
+def tipo_cambio_inicial(f: dict) -> float:
+    """Escala de la pata TAMAR de un dual TAMAR/dollar linked (TMVE8): el VN está en dólares y la pata TAMAR
+    capitaliza el VN pasado a pesos al tipo de cambio inicial (A3500 del día hábil anterior a la licitación). Con
+    'tipo_cambio_inicial' (número) o 'fecha_tipo_cambio_inicial' (fecha del A3500) en la ficha; sin ellos, 1 (los
+    TAMAR comunes, con VN en pesos)."""
+    if f.get("tipo_cambio_inicial"):
+        return float(f["tipo_cambio_inicial"])
+    if f.get("fecha_tipo_cambio_inicial"):
+        fecha = f["fecha_tipo_cambio_inicial"]
+        valor = db_series.valor("A3500", fecha)
+        if valor is None:
+            try:
+                carga_series.actualizar("A3500")
+            except ErrorAPI:
+                pass
+            valor = db_series.valor("A3500", fecha)
+        if valor is None:
+            raise ValueError(f"{f['ticker']}: no hay A3500 del {fecha:%d/%m/%Y} (tipo de cambio inicial) en la base.")
+        return valor
+    return 1.0
+
+
 def ultima_inflacion() -> tuple[float, str]:
     """Último dato de inflación mensual conocido (INDEC vía BCRA): (fracción, mes)."""
     candidatas = [v for v in bcra.buscar_variables("inflacion mensual")
