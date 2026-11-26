@@ -149,8 +149,8 @@ class Proyecciones:
     # --- TIR nominal en pesos de cada familia ---
     def tir_nominal(self, f: dict, precio: float, m: dict) -> float:
         familia, liq = f["familia"], self.ctx.liquidacion
-        if familia.startswith("tasa_fija") or m.get("cer_conocido"):
-            return m["tea"]                                 # CER con el CER final publicado: ya es tasa fija
+        if familia.startswith("tasa_fija") or m.get("pago_conocido"):
+            return m["tea"]                                 # pago final ya fijo en pesos (CER, TAMAR o DL): tasa fija
         if familia in ("cer_cero_cupon", "cer_cupon"):
             cer_en = self.cer()
             _, f2, cer_corriente = mercado.datos_cer(f, liq)
@@ -200,11 +200,12 @@ def _renta_fija(pos, fichas: list[dict], ctx: Contexto, proy: Proyecciones) -> d
         resultados.append((f, m, proy.tir_nominal(f, px, m)))
     f, m, tir_proy = max(resultados, key=lambda r: r[2])   # dual: paga la pata que más rinde
     f0, m0, _ = resultados[0]                              # la tasa propia, de la primera pata del nombre
-    tir_propia = m0["detalle"]["spread"] if f0["familia"] == "tamar_capitalizable" else m0["tea"]
+    tir_propia = m0["detalle"]["spread"] if f0["familia"] == "tamar_capitalizable" and not m0.get("pago_conocido") \
+        else m0["tea"]
     familia = principal["familia"]
-    conocido = bool(m0.get("cer_conocido"))
+    conocido = bool(m0.get("pago_conocido"))
     moneda = ("Dólar CCL" if tipo_fx == "ccl" else "Dólar MEP") if hd else \
-        "Pesos ajustables (dólar oficial)" if familia.startswith("dolar_linked") else "Pesos"
+        "Pesos ajustables (dólar oficial)" if familia.startswith("dolar_linked") and not conocido else "Pesos"
     # Cobros: flujos por 100 VN en la unidad del bono, pasados a pesos de hoy (CER, A3500 o el dólar del bono)
     a_pesos = ctx.fx[tipo_fx] if hd else (m["ajuste"][1] if m.get("ajuste") else 1.0)
     unidad_pago = "USD" if hd else "$"

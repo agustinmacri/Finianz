@@ -91,9 +91,15 @@ def calculadora(f: dict, liquidacion: date, operacion: date, contexto: dict | No
         if len(futuros) == 1:
             cer_final = mercado.cer_final_conocido(futuros[0]["fecha"])
 
+    # Dollar linked con el A3500 de pago ya publicado y TAMAR con toda la ventana publicada: también tasa fija
+    tc_pago = mercado.a3500_pago_conocido(f) if familia == "dolar_linked_bullet" else None
+    tamar_conocida = familia == "tamar_capitalizable" and d["a_estimar"] == 0
+
     def metricas(precio: float) -> dict:
         if cer_final is not None:
             return _cer_conocido(precio)
+        if tc_pago is not None:
+            return _dl_conocido(precio)
         r = calc(precio)
         tea = r[tasa]
         if familia == "hard_dollar":
@@ -107,8 +113,21 @@ def calculadora(f: dict, liquidacion: date, operacion: date, contexto: dict | No
             extra = dict(margen=f["margen"], conocidas=d["conocidas"], a_estimar=d["a_estimar"], plazo=r["plazo_residual"],
                          dias_30_360=motor.dias_30_360(f["emision"], f["vencimiento"]), emision=f["emision"],
                          desde_estimar=d["desde_estimar"], fin_ventana=d["fin"])
+        if tamar_conocida:                                   # el pago final ya está en pesos y no depende de nada
+            return {"curva": "tasa_fija", "tea": tea, "tna": tna, "duration": r["duration"], "extra": extra,
+                    "detalle": r, "flujos": _flujos(r), "unidad": "pesos (TAMAR de toda la ventana publicada: tasa fija)",
+                    "ajuste": None, "pago_conocido": True}
         return {"curva": FAMILIAS_CURVA.get(familia), "tea": tea, "tna": tna, "duration": r["duration"], "extra": extra,
                 "detalle": r, "flujos": _flujos(r), "unidad": UNIDAD[familia], "ajuste": _ajuste()}
+
+    def _dl_conocido(precio: float) -> dict:
+        pago = dolar_linked.PAGO_FINAL_USD * tc_pago
+        r = tasa_fija.calcular_capitalizable(precio, pago, liquidacion, f["vencimiento"])
+        return {"curva": "tasa_fija", "tea": r["tea"], "tna": r["tna"], "duration": r["duration"],
+                "extra": {"tipo_cambio_pago": tc_pago, "pago_final": pago}, "detalle": dict(r, tipo_cambio_pago=tc_pago),
+                "flujos": [{"fecha": f["vencimiento"], "cupon": pago - 100, "amortizacion": 100.0, "total": pago,
+                            "residual": 0.0}],
+                "unidad": "pesos (A3500 de pago publicado: equivale a tasa fija)", "ajuste": None, "pago_conocido": True}
 
     def _flujos(r: dict) -> list[dict]:
         """Pagos futuros por 100 VN original, en la unidad del bono: fecha, cupón, amortización, total y residual."""
@@ -158,7 +177,7 @@ def calculadora(f: dict, liquidacion: date, operacion: date, contexto: dict | No
                 "detalle": dict(r, tea_real=r_precio[tasa] if r_precio else None, cer_final=cer_final,
                                 coeficiente_final=coef),
                 "flujos": flujos, "unidad": "pesos (CER final conocido: equivale a tasa fija)", "ajuste": None,
-                "cer_conocido": True}
+                "cer_conocido": True, "pago_conocido": True}
 
     def _ajuste() -> tuple[str, float] | None:
         """Para pasar los flujos a pesos de hoy: el coeficiente CER o el A3500."""

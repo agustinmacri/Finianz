@@ -56,6 +56,33 @@ def test_cer_con_cer_final_conocido():
         mercado.datos_cer, mercado.cer_final_conocido = originales
 
 
+def test_dl_y_tamar_con_pago_conocido():
+    """Dollar linked con el A3500 de pago publicado y TAMAR con toda la ventana publicada: tasa fija."""
+    dl = next(x for x in leer_fichas.todas() if x["familia"] == "dolar_linked_bullet" and x["vencimiento"] > LIQUIDACION)
+    originales = mercado.a3500, mercado.a3500_pago_conocido, mercado.datos_tamar
+    mercado.a3500 = lambda operacion: (1450.0, operacion, False)
+    try:
+        mercado.a3500_pago_conocido = lambda f: None
+        assert metricas.calculadora(dl, LIQUIDACION, LIQUIDACION)(145_000.0)["curva"] == "dl"
+        mercado.a3500_pago_conocido = lambda f: 1470.0
+        m = _ida_y_vuelta(dl, 145_000.0)
+        plazo = (dl["vencimiento"] - LIQUIDACION).days
+        assert m["curva"] == "tasa_fija" and m["pago_conocido"] and m["ajuste"] is None
+        assert abs(m["tea"] - ((147_000 / 145_000) ** (365 / plazo) - 1)) < 1e-12
+        assert abs(m["flujos"][-1]["total"] - 147_000) < 1e-9
+        tamar_f = next(x for x in leer_fichas.todas() if x["familia"] == "tamar_capitalizable"
+                       and x["vencimiento"] > LIQUIDACION and "DUAL" not in x.get("tipo", "").upper())
+        base = {"referencia": 0.30, "tamar_bono": 0.31, "conocidas": [0.31] * 20, "desde_estimar": LIQUIDACION,
+                "fin": tamar_f["vencimiento"], "inicio": tamar_f["emision"]}
+        mercado.datos_tamar = lambda f, corte: dict(base, a_estimar=5)
+        assert metricas.calculadora(tamar_f, LIQUIDACION, LIQUIDACION)(110.0)["curva"] == "tamar"
+        mercado.datos_tamar = lambda f, corte: dict(base, a_estimar=0)
+        m = _ida_y_vuelta(tamar_f, 110.0)
+        assert m["curva"] == "tasa_fija" and m["pago_conocido"]
+    finally:
+        mercado.a3500, mercado.a3500_pago_conocido, mercado.datos_tamar = originales
+
+
 def test_tasa_imposible():
     f = leer_fichas.ficha("GD30")
     calc = metricas.calculadora(f, LIQUIDACION, LIQUIDACION)
@@ -68,7 +95,8 @@ def test_tasa_imposible():
 
 
 if __name__ == "__main__":
-    for prueba in (test_lecap, test_hard_dollar, test_cer_con_cer_final_conocido, test_tasa_imposible):
+    for prueba in (test_lecap, test_hard_dollar, test_cer_con_cer_final_conocido, test_dl_y_tamar_con_pago_conocido,
+                   test_tasa_imposible):
         prueba()
         print(f"OK  {prueba.__name__}")
     print("Todas las pruebas de métricas pasaron.")

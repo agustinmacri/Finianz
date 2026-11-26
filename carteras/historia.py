@@ -123,8 +123,8 @@ def flujos_pesos(fila: dict, desde: date, hasta: date, fx: dict[str, Serie]) -> 
         if not (desde < x["fecha"] <= hasta) or not x["total"]:
             continue
         monto = x["total"]
-        if m.get("cer_conocido"):
-            pass                                          # CER final publicado: los flujos ya están en pesos
+        if m.get("pago_conocido"):
+            pass                                          # pago final ya fijo: los flujos ya están en pesos
         elif familia.startswith("cer"):
             if cer_inicial is None:
                 cer_inicial = mercado.datos_cer(f, inicio + timedelta(days=1))[1]["cer_inicial"]

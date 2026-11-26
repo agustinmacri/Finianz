@@ -67,6 +67,27 @@ def cer_final_conocido(fecha_pago: date) -> float | None:
     return valor
 
 
+REZAGO_TC_PAGO_DL = 3            # Lelink del Tesoro: A3500 del 3.er día hábil anterior al pago (resoluciones conjuntas)
+_a3500_refrescado = [0.0]
+
+
+def a3500_pago_conocido(f: dict) -> float | None:
+    """A3500 con el que paga un dollar linked al vencimiento, si ya está publicado (3.er día hábil anterior al pago,
+    o el rezago de la ficha en 'rezago_tipo_cambio'); si no, None."""
+    import time
+    rezago = int(f.get("rezago_tipo_cambio", REZAGO_TC_PAGO_DL))
+    fecha = feriados.sumar_dias_habiles(f["vencimiento"], -rezago, CALENDARIO_HABILES)
+    valor = db_series.valor("A3500", fecha)
+    if valor is None and date.today() >= fecha and time.time() - _a3500_refrescado[0] > 3600:
+        _a3500_refrescado[0] = time.time()
+        try:
+            carga_series.actualizar("A3500")
+        except ErrorAPI:
+            pass
+        valor = db_series.valor("A3500", fecha)
+    return valor
+
+
 def ultima_inflacion() -> tuple[float, str]:
     """Último dato de inflación mensual conocido (INDEC vía BCRA): (fracción, mes)."""
     candidatas = [v for v in bcra.buscar_variables("inflacion mensual")

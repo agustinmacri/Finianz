@@ -86,10 +86,12 @@ def _crecimientos(v: dict, proy: valuar.Proyecciones):
             continue
         f, m = fila["_f"], fila["_m"]
         familia = f["familia"]
-        if len(fila["_legs"]) > 1 or familia == "tamar_capitalizable":
+        if m.get("pago_conocido") and len(fila["_legs"]) == 1:     # pago final fijo en pesos: tasa fija
+            salida.append(lambda d, tea=m["tea"]: (1 + tea) ** anios(d))
+        elif len(fila["_legs"]) > 1 or familia == "tamar_capitalizable":
             tir = max(proy.tir_nominal(fl, fila["_px"], ml) for fl, ml in fila["_legs"])
             salida.append(lambda d, tir=tir: (1 + tir) ** anios(d))
-        elif familia.startswith("tasa_fija") or m.get("cer_conocido"):
+        elif familia.startswith("tasa_fija"):
             salida.append(lambda d, tea=m["tea"]: (1 + tea) ** anios(d))
         elif familia.startswith("cer"):
             indice = proy.cer()

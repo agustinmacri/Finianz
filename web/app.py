@@ -260,9 +260,10 @@ st.markdown(f'<div class="encabezado"><div class="titulo">{seccion}</div><span>{
 # ---------- Curvas ----------
 
 def _ficha_de_curva(ticker: str, curva: str) -> dict | None:
-    """La ficha del bono en esa curva. Un CER con el CER final conocido figura en la de tasa fija."""
+    """La ficha del bono en esa curva. Un CER, TAMAR o dollar linked con el pago final ya conocido figura en la de
+    tasa fija."""
     return next((f for f in leer_fichas.fichas_de(ticker) if (metricas.FAMILIAS_CURVA.get(f["familia"]) == curva
-                 or (curva == "tasa_fija" and f["familia"].startswith("cer")))
+                 or (curva == "tasa_fija" and metricas.FAMILIAS_CURVA.get(f["familia"]) in ("cer", "tamar", "dl")))
                  and "DUAL" not in f.get("tipo", "").upper()), None)
 
 
@@ -511,6 +512,11 @@ if seccion == "Bono":
     if ficha["familia"] == "tamar_capitalizable":
         st.caption("El pago final usa la TAMAR ya publicada y, para los días que faltan, la última TAMAR. Para otros "
                    "supuestos, la sección Proyecciones.")
+    elif m.get("pago_conocido") and not m.get("cer_conocido"):
+        st.caption(f"El pago final ya está fijo en pesos ({m['extra']['pago_final']:,.4f} por 100 VN): "
+                   + ("el A3500 de pago ya está publicado" if "tipo_cambio_pago" in m["extra"]
+                      else "ya se publicó la TAMAR de toda la ventana")
+                   + ". El bono se valúa como tasa fija y figura en esa curva.")
     elif m.get("cer_conocido"):
         st.caption(f"El CER final ya está publicado ({m['extra']['cer_final']:,.4f}): el pago queda fijo en pesos y el "
                    "bono se valúa como tasa fija (TEA nominal)."

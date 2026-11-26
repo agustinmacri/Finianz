@@ -218,7 +218,19 @@ def _dolar_linked_bullet(f: dict, precio: float, liquidacion: date, operacion: d
         f"Paga 100 dólares por 100 VN al vencimiento, en pesos{pago}\n"
         f"Plazo residual: {r['plazo_residual']} días | duration: {r['duration']:.4f}\n"
         f"TNA: {_pct(r['tna'])} | TIR (TEA): {_pct(r['tea'])} | TEM (30 días): {_pct(r['tem'])} (en dólares, actual/365)"
-    )
+    ) + _dl_pago_conocido(f, precio, liquidacion)
+
+
+def _dl_pago_conocido(f: dict, precio: float, liquidacion: date) -> str:
+    """Si ya se publicó el A3500 de pago (3.er día hábil anterior al vencimiento), el bono es de tasa fija."""
+    tc_pago = mercado.a3500_pago_conocido(f)
+    if tc_pago is None:
+        return ""
+    pago = dolar_linked.PAGO_FINAL_USD * tc_pago
+    n = tasa_fija.calcular_capitalizable(precio, pago, liquidacion, f["vencimiento"])
+    return (f"\nA3500 de pago ya publicado ({tc_pago:,.4f}): el pago queda fijo en ${pago:,.4f} por 100 VN y el bono "
+            f"se valúa como tasa fija. TNA: {_pct(n['tna'])} | TIR nominal (TEA): {_pct(n['tea'])}. Figura en la curva "
+            "de tasa fija.")
 
 
 # Treasuries de EE. UU. (constant maturity, FRED): serie -> plazo en años
@@ -331,7 +343,8 @@ def _tamar_capitalizable(f: dict, precio: float, liquidacion: date, operacion: d
         f"TNA 30 d: {_pct(r['tna_30'])} | TAMAR de referencia: {_pct(r['tamar_referencia'])} (últimos 5 días hábiles "
         f"publicados, {d['ultimas'][0]} a {d['ultimas'][1]}; estima los días que faltan) | "
         f"spread sobre TAMAR (TNA 30 d − referencia): {_pct(r['spread'])}"
-    )
+    ) + ("\nYa se publicó la TAMAR de toda la ventana: el pago final queda fijo en pesos y el bono se valúa como tasa "
+         "fija (la TEA de arriba es nominal y definitiva). Figura en la curva de tasa fija." if d["a_estimar"] == 0 else "")
 
 
 def _tasa_fija_capitalizable(f: dict, precio: float, liquidacion: date) -> str:
