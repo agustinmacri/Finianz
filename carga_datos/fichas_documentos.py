@@ -72,7 +72,8 @@ CAMPOS_COMPARABLES = ("emision", "vencimiento", "cupon", "margen", "frecuencia",
 MARGEN_EMISION_ORIGINAL = 7   # días: una "emisión" posterior a (aviso − 7 días) en una reapertura es la de esta licitación
 LETRAS_MES = "EFMAYJLGSOND"   # convención del Tesoro: ene=E, feb=F, mar=M, abr=A, may=Y, jun=J, jul=L, ago=G, ...
 BUSCADOR = None               # función ticker -> lista de instrumentos (PPI); se resuelve en tiempo de ejecución
-SOLO_BORRADOR = ("pendiente", "cita", "clave", "reapertura", "posible_duplicado", "emision_buscada", "dual_con")
+SOLO_BORRADOR = ("pendiente", "cita", "clave", "reapertura", "posible_duplicado", "emision_buscada", "dual_con",
+                 "confirmado_nuevo")
 # Duales: un borrador por pata, con la clave TICKER-PATA (TMVE8-DL y TMVE8-TAMAR); cada uno se aprueba por separado
 SUFIJO_PATA = {"cer_cero_cupon": "CER", "cer_cupon": "CER", "tasa_fija_capitalizable": "TF", "tasa_fija_cupon": "TF",
                "tasa_fija_descuento": "TF", "tamar_capitalizable": "TAMAR", "dolar_linked_bullet": "DL",
@@ -410,6 +411,26 @@ def _mismo(a: dict, b: dict) -> bool:
     return a.get("familia") == b.get("familia") and a.get("vencimiento") == b.get("vencimiento")
 
 
+def _ya_cargado(ficha: dict, existentes: dict[str, list[dict]]) -> tuple[str, list[dict]] | None:
+    """Si el instrumento ya está en la base: (cómo informarlo, las fichas con las que comparar datos). None si no."""
+    ticker = (ficha.get("ticker") or "").upper()
+    if ticker and ticker in existentes:
+        misma = [f for f in existentes[ticker] if f["familia"] == ficha.get("familia")]
+        if misma:
+            return ticker, misma
+        if not ficha.get("dual_con"):           # el ticker existe con otra familia: es ese bono (revisar la familia)
+            familias = ", ".join(f["familia"] for f in existentes[ticker])
+            return f"{ticker} (cargado como {familias})", []
+        return None                              # la pata de un dual que falta: va al borrador
+    if not ticker:
+        duplicados = posibles_duplicados(ficha, existentes)
+        if duplicados:
+            return (f"{ficha.get('clave')} = {duplicados[0]} (mismas condiciones: familia, vencimiento"
+                    f"{', cupón' if 'cupon' in ficha else ''}{', margen' if 'margen' in ficha else ''})",
+                    [f for f in existentes[duplicados[0]] if f["familia"] == ficha.get("familia")])
+    return None
+
+
 def posibles_duplicados(ficha: dict, existentes: dict[str, list[dict]]) -> list[str]:
     """Bonos ya cargados con la misma familia y vencimiento (y, si ambos lo tienen, el mismo cupón y margen)."""
     salida = []
@@ -458,7 +479,7 @@ def actualizar_borradores(hoy: date | None = None) -> list[str]:
         return []
     existentes = leer_fichas.leer_todas()
     usados = set(existentes)
-    avisos, sin_conexion = [], None
+    avisos, sin_conexion, descartar = [], None, []
     for b in borradores:
         if not b.get("ticker") and sin_conexion is None:
             encontrados = []
@@ -489,14 +510,23 @@ def actualizar_borradores(hoy: date | None = None) -> list[str]:
                 avisos.append(f"{b['clave']}: varios tickers posibles ({opciones})")
         if not b.get("pendiente"):
             b.pop("pendiente", None)
+        if b.get("confirmado_nuevo"):            # un humano dijo que es otro bono: no se descarta
+            b.pop("posible_duplicado", None)
+            continue
+        ya = _ya_cargado(b, existentes)
+        if ya:
+            descartar.append(b)
+            avisos.append(f"{b['clave']}: descartado, ya está en la base ({ya[0]})")
+            continue
         duplicados = posibles_duplicados(b, existentes)
-        if duplicados:
+        if duplicados:                            # con ticker propio pero mismas condiciones que otro: decide un humano
             if b.get("posible_duplicado") != duplicados:
                 avisos.append(f"{b['clave']}: parece el mismo bono que {', '.join(duplicados)} (misma familia, vencimiento y "
                               "condiciones). Si lo es: vincular; si es otro: aprobar --nuevo")
             b["posible_duplicado"] = duplicados
         else:
             b.pop("posible_duplicado", None)
+    borradores = [b for b in borradores if b not in descartar]
     _guardar_borradores(borradores)
     if sin_conexion:
         avisos.append(f"No se pudo buscar tickers en PPI ({sin_conexion}); se reintenta en la próxima lectura.")
@@ -568,12 +598,17 @@ def leer(fuente: str, extractor=extraer_con_modelo, hoy: date | None = None, sol
         if _vencido(ficha, hoy):
             resumen["vencidos"].append(f"{ticker or ins.nombre} (venció el {ficha['vencimiento']:%d/%m/%Y})")
             continue
-        cargadas = [f for f in existentes.get(ticker, []) if f["familia"] == ficha.get("familia") or not ficha.get("familia")] if ticker else []
-        if cargadas:
-            resumen["ya_cargados"].append(ticker)
-            for cargada in cargadas if ficha.get("familia") else []:
+        # Reglas de Agustin (26/11/2026): (1) si el ticker ya está en la base, no va al borrador (los datos distintos
+        # quedan como cambios propuestos); la excepción es la pata de un dual que todavía no está cargada. (2) Sin
+        # ticker (un aviso viejo o un llamado de un bono nuevo), si las condiciones coinciden con un bono cargado, se
+        # descarta también: es ese bono.
+        ya = _ya_cargado(ficha, existentes)
+        if ya:
+            resumen["ya_cargados"].append(ya[0])
+            for cargada in ya[1]:
                 resumen["cambios"] += _proponer_cambios(ficha, cargada, cambios)
-            sobrantes = [b for b in borradores if _mismo(b, {**ficha, "ticker": None})]   # el del llamado, sin ticker
+            sobrantes = [b for b in borradores if _mismo(b, {**ficha, "ticker": None})
+                         or (ticker and (b.get("ticker") or "").upper() == ticker and b.get("familia") == ficha.get("familia"))]
             for b in sobrantes:
                 borradores.remove(b)
                 resumen["descartados"].append(b["clave"])

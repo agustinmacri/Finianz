@@ -130,3 +130,27 @@ margen = 0.03
 revisado = true
 fuente = "Planilla de TAMAR de Agustin (ejemplo_tamar.xlsx), 13/11/2026"
 nota = "Dual: paga el mayor entre el ajuste CER y TAMAR + 3%. Se muestra calculado de las dos formas."
+
+[[bono]]
+ticker = "M30A7"
+tipo = "BONO TAMAR"
+familia = "tamar_capitalizable"
+emision = 2026-11-13
+vencimiento = 2027-04-30
+margen = 0.025
+base = "30/360"
+revisado = true
+fuente = "llamado a licitación del 2026-11-05 (https://www.argentina.gob.ar/noticias/llamado-licitacion-de-instrumentos-del-tesoro-nacional-denominados-en-pesos-y-en-dolares-16); borrador del lector de fichas; completado con resultado de licitación del 2026-11-11 (https://www.argentina.gob.ar/noticias/resultado-de-la-licitacion-por-efectivo-de-instrumentos-del-tesoro-nacional-denominados-17); borrador del lector de fichas; aprobado por Agustin el 26/11/2026"
+nota = "ticker M30A7 encontrado en PPI por la convención de nombres (LETRA TESORO NACIONAL A TASA TAMAR 30/04/27 $): verificalo antes de aprobar"
+
+[[bono]]
+ticker = "TMVE8"
+tipo = "DUAL TAMAR/DL"
+familia = "tamar_capitalizable"
+fecha_tipo_cambio_inicial = 2026-07-28
+emision = 2026-07-31    
+vencimiento = 2028-01-31
+margen = 0
+revisado = true
+fuente = "resultado de licitación del 2026-07-29 (https://www.argentina.gob.ar/noticias/resultado-de-la-licitacion-por-efectivo-de-instrumentos-del-tesoro-nacional-denominados-8); borrador del lector de fichas; aprobado por Agustin el 26/11/2026"
+nota = "DUAL TAMAR/DL. Paga lo que más rinda entre la tasa TAMAR y el dólar linked."

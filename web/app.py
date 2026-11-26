@@ -229,6 +229,14 @@ inicial = st.query_params.get("seccion", "Curvas")
 seccion = st.sidebar.radio("Calculadoras", SECCIONES, format_func=lambda s: f"{ICONOS[s]}  {s}",
                            index=SECCIONES.index(inicial) if inicial in SECCIONES else 0, label_visibility="collapsed")
 st.query_params["seccion"] = seccion
+try:                                     # novedades de la revisión automática de avisos del Tesoro
+    from carga_datos import novedades as novedades_tesoro
+    _sin_ver = novedades_tesoro.sin_ver()
+except Exception:
+    _sin_ver = []
+if _sin_ver:
+    st.sidebar.info(f"🆕 Licitación del Tesoro: {novedades_tesoro.resumen_texto(_sin_ver).split('. Revisalos')[0]}. "
+                    "Miralo en Fichas.")
 st.sidebar.divider()
 st.sidebar.markdown('<span class="rotulo-lateral">PRECIOS</span>', unsafe_allow_html=True)
 modo = st.sidebar.radio("Precios", ["Hoy (en vivo)", "Cierre de una fecha"], index=0, label_visibility="collapsed")
@@ -654,6 +662,20 @@ if seccion == "Proyecciones":
 
 if seccion == "Fichas":
     from carga_datos import fichas_documentos as fd
+    if _sin_ver:
+        with st.container(border=True):
+            st.markdown(f"**🆕 Novedades de la revisión automática ({len(_sin_ver)} aviso{'s' if len(_sin_ver) > 1 else ''})**")
+            for n in _sin_ver:
+                detalle = []
+                for clave, nombre in (("nuevos", "Borradores nuevos"), ("completados", "Completados"),
+                                      ("cortes", "Valores de corte"), ("cambios", "Cambios propuestos")):
+                    if n[clave]:
+                        detalle.append(f"{nombre}: {'; '.join(map(str, n[clave]))}")
+                st.markdown(f"- {n['cuando'].replace('T', ' ')} · [{n['documento']} del {n['fecha']}]({n['url']})  \n  "
+                            + "  \n  ".join(detalle))
+            if st.button("Marcar como vistas"):
+                novedades_tesoro.marcar_vistas()
+                st.rerun()
     todas = leer_fichas.todas()
     resumen = pd.Series([f["familia"] for f in todas]).value_counts().rename_axis("Familia").reset_index(name="Bonos")
     col1, col2 = st.columns([1, 2])
