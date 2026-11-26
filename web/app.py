@@ -23,6 +23,7 @@ import streamlit.components.v1 as components
 import config
 from renta_fija import leer_fichas
 from renta_fija.calculadoras import curva as calc_curva
+from renta_fija.calculadoras import forwards as calc_forwards
 from renta_fija import curvas_mercado, mercado, metricas
 from tools import bonos, breakevens, curvas, proyeccion_cer, proyecciones
 from web import carteras_panel, salidas
@@ -290,6 +291,32 @@ def _guardar_edicion(clave_editor: str, curva: str, filas: list[dict]):
     st.session_state["version_editor"] = st.session_state.get("version_editor", 0) + 1
 
 
+CURVAS_FORWARD = ("tasa_fija", "cer")
+AYUDA_FORWARD = {
+    "tasa_fija": "TEA a la que habría que renovar este bono, a su vencimiento, hasta el vencimiento del siguiente de la "
+                 "curva (columna Contra) para rendir lo mismo que comprar ese siguiente hoy.",
+    "cer": "Tasa real (CER + x, TEA) a la que habría que renovar este bono, a su vencimiento, hasta el vencimiento del "
+           "siguiente de la curva (columna Contra) para rendir lo mismo que comprar ese siguiente hoy."}
+
+
+def _matriz_forwards(bonos: list[dict], liquidacion: date, curva: str):
+    """Forward entre cada par de bonos: el corto en las columnas y el largo en las filas (decisión de Agustin)."""
+    tickers, celdas = calc_forwards.matriz(bonos, liquidacion)
+    if len(tickers) < 2:
+        return
+    cortos, largos = tickers[:-1], tickers[1:]
+    df = pd.DataFrame([[celdas[(corto, largo)] * 100 if (corto, largo) in celdas else None for corto in cortos]
+                       for largo in largos], index=pd.Index(largos, name="Largo ↓ / Corto →"), columns=cortos)
+    real = " real (CER + x)" if curva == "cer" else ""
+    st.markdown(f"**Matriz de forwards{real} (TEA, %)**")
+    st.dataframe(df.style.format("{:.2f}", na_rep=""), width="stretch")
+    st.caption(f"Columnas: bono corto; filas: bono largo. Cada celda es la tasa{real} a la que habría que renovar el "
+               "corto, a su vencimiento, hasta el vencimiento del largo para rendir lo mismo que comprar el largo hoy: "
+               "f = [(1 + TIR largo)^t largo / (1 + TIR corto)^t corto]^(1 / (t largo − t corto)) − 1, con t en años "
+               "desde la liquidación hasta cada vencimiento. Con los precios o tasas que hayas cargado en la tabla. "
+               "En bonos con cupones es la aproximación con la TIR de cada bono.")
+
+
 if seccion == "Curvas":
     @st.fragment(run_every=segundos)
     def panel_curvas():
@@ -352,19 +379,31 @@ if seccion == "Curvas":
         with st.container(border=True):
             st.plotly_chart(fig, width="stretch", theme=None)
 
-        # La tabla se puede editar: precio, TEA o TNA de cualquier bono; lo demás se recalcula
+        # La tabla se puede editar: precio, TEA o TNA de cualquier bono; lo demás se recalcula (también las forwards)
+        con_forwards = c in CURVAS_FORWARD
+        bonos_fwd = [{"ticker": f["ticker"], "vencimiento": f["vencimiento"], "tea": f["tea"]} for f in filas]
+        siguiente = calc_forwards.al_siguiente(bonos_fwd, liquidacion) if con_forwards else {}
         tabla = pd.DataFrame([{"Ticker": f["ticker"], "Precio": f["precio"], "TEA (%)": f["tea"] * 100,
                                "TNA (%)": f["tna"] * 100 if f.get("tna") is not None else None,
                                "Duration (años)": f["x"] / 365,
+                               **({"Forwards (%)": siguiente[f["ticker"]][1] * 100
+                                   if siguiente.get(f["ticker"]) and siguiente[f["ticker"]][1] is not None else None,
+                                   "Contra": siguiente[f["ticker"]][0] if f["ticker"] in siguiente else ""}
+                                  if con_forwards else {}),
                                "": {"precio": "✎ precio", "tea": "✎ TEA", "tna": "✎ TNA"}.get(f["editado"], "")}
                               for f in filas])
         clave = f"editor_{c}_{st.session_state.get('version_editor', 0)}"
-        st.data_editor(tabla, key=clave, hide_index=True, width="stretch", disabled=["Ticker", "Duration (años)", ""],
+        st.data_editor(tabla, key=clave, hide_index=True, width="stretch",
+                       disabled=["Ticker", "Duration (años)", "Forwards (%)", "Contra", ""],
                        on_change=_guardar_edicion, args=(clave, c, filas),
                        column_config={"Precio": st.column_config.NumberColumn(format="%.2f", min_value=0.0001),
                                       "TEA (%)": st.column_config.NumberColumn(format="%.2f"),
                                       "TNA (%)": st.column_config.NumberColumn(format="%.2f", help=AYUDA_TNA.get(c, "")),
                                       "Duration (años)": st.column_config.NumberColumn(format="%.2f"),
+                                      "Forwards (%)": st.column_config.NumberColumn(format="%.2f", help=AYUDA_FORWARD[c]
+                                                                                    if con_forwards else None),
+                                      "Contra": st.column_config.TextColumn(width="small",
+                                                                            help="El bono del vencimiento siguiente"),
                                       "": st.column_config.TextColumn(width="small")})
         col1, col2 = st.columns([3, 1])
         col1.caption("Escribí un precio, una TEA o una TNA en la tabla y se recalcula el resto del bono y su punto en "
@@ -376,6 +415,8 @@ if seccion == "Curvas":
             st.rerun(scope="fragment")
         for aviso in avisos:
             st.warning(f"No se pudo recalcular {aviso}")
+        if con_forwards:
+            _matriz_forwards(bonos_fwd, liquidacion, c)
         if c == "tasa_fija":
             with st.expander("Curva teórica de tasa fija (a precio de mercado): desvío de cada bono contra la curva y sus vecinos"):
                 mostrar(salida_herramienta("curva_tf", marca_actual, fecha=fecha.isoformat() if fecha else None))
