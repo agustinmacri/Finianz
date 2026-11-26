@@ -10,7 +10,7 @@ mismos precios de PPI y las mismas bases de datos/. Si algo da distinto que en l
 import hmac
 import sys
 import time
-from datetime import date
+from datetime import date, timedelta
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))   # para importar el proyecto al correr con streamlit
@@ -23,6 +23,7 @@ import streamlit.components.v1 as components
 import config
 from renta_fija import leer_fichas
 from renta_fija.calculadoras import curva as calc_curva
+from renta_fija.calculadoras import exit_yield as calc_exit
 from renta_fija.calculadoras import forwards as calc_forwards
 from renta_fija import curvas_mercado, mercado, metricas
 from tools import bonos, breakevens, curvas, proyeccion_cer, proyecciones
@@ -294,12 +295,13 @@ def _guardar_edicion(clave_editor: str, curva: str, filas: list[dict]):
     st.session_state["version_editor"] = st.session_state.get("version_editor", 0) + 1
 
 
-CURVAS_FORWARD = ("tasa_fija", "cer")
-AYUDA_FORWARD = {
-    "tasa_fija": "TEA a la que habría que renovar este bono, a su vencimiento, hasta el vencimiento del siguiente de la "
-                 "curva (columna Contra) para rendir lo mismo que comprar ese siguiente hoy.",
-    "cer": "Tasa real (CER + x, TEA) a la que habría que renovar este bono, a su vencimiento, hasta el vencimiento del "
-           "siguiente de la curva (columna Contra) para rendir lo mismo que comprar ese siguiente hoy."}
+CURVAS_FORWARD = ("tasa_fija", "cer", "tamar", "dl", "hd")
+UNIDAD_CURVA = {"tasa_fija": ("TEA", "pesos"), "cer": ("TEA real (CER + x)", "pesos reales"),
+                "tamar": ("TEA", "pesos (TAMAR estimada con la publicada y la última para lo que falta)"),
+                "dl": ("TEA en dólares", "dólares"), "hd": ("TEA en dólares", "dólares")}
+AYUDA_FORWARD = {c: f"{UNIDAD_CURVA[c][0]} entre el vencimiento del bono anterior de la curva y el de este bono: la tasa "
+                    "a la que habría que renovar el anterior para rendir lo mismo que comprar este hoy. El más corto "
+                    "queda vacío." for c in CURVAS_FORWARD}
 
 
 def _matriz_forwards(bonos: list[dict], liquidacion: date, curva: str):
@@ -310,7 +312,7 @@ def _matriz_forwards(bonos: list[dict], liquidacion: date, curva: str):
     cortos, largos = tickers[:-1], tickers[1:]
     df = pd.DataFrame([[celdas[(corto, largo)] * 100 if (corto, largo) in celdas else None for corto in cortos]
                        for largo in largos], index=pd.Index(largos, name="Largo ↓ / Corto →"), columns=cortos)
-    real = " real (CER + x)" if curva == "cer" else ""
+    real = {"cer": " real (CER + x)", "dl": " en dólares", "hd": " en dólares"}.get(curva, "")
     st.markdown(f"**Matriz de forwards{real} (TEA, %)**")
     st.dataframe(df.style.format("{:.2f}", na_rep=""), width="stretch")
     st.caption(f"Columnas: bono corto; filas: bono largo. Cada celda es la tasa{real} a la que habría que renovar el "
@@ -318,6 +320,92 @@ def _matriz_forwards(bonos: list[dict], liquidacion: date, curva: str):
                "f = [(1 + TIR largo)^t largo / (1 + TIR corto)^t corto]^(1 / (t largo − t corto)) − 1, con t en años "
                "desde la liquidación hasta cada vencimiento. Con los precios o tasas que hayas cargado en la tabla. "
                "En bonos con cupones es la aproximación con la TIR de cada bono.")
+
+
+
+def _exit_bono(m: dict, ficha: dict, liquidacion: date):
+    """Calculadora individual: retorno vendiendo en una fecha a una exit yield, y su sensibilidad."""
+    st.markdown("#### Exit yield")
+    futuros = [x for x in m["flujos"] if x["fecha"] > liquidacion]
+    if not futuros:
+        return
+    col1, col2, _ = st.columns([1, 1, 2])
+    clave = f"{ficha['ticker']}_{ficha['familia']}"
+    vto = max(x["fecha"] for x in futuros)
+    salida = col1.date_input("Fecha de salida", value=min(liquidacion + timedelta(days=182), vto),
+                             min_value=liquidacion + timedelta(days=1), format="DD/MM/YYYY", key=f"bono_exit_fecha_{clave}")
+    exit_tea = col2.number_input("Exit yield (TEA, %)", value=float(round(m["tea"] * 100, 2)), step=0.25,
+                                 format="%.2f", key=f"bono_exit_tea_{clave}") / 100
+    try:
+        r = calc_exit.retorno(futuros, m["tea"], liquidacion, salida, exit_tea)
+        sens = calc_exit.sensibilidad(futuros, m["tea"], liquidacion, salida, exit_tea)
+    except Exception as e:
+        st.error(f"No se pudo calcular: {e}")
+        return
+    a, b, c_, d = st.columns(4)
+    a.metric("Precio de salida", f"{r['precio_salida']:,.2f}" if not r["vence_antes"] else "vence antes",
+             help="Dirty teórico por 100 VN original, en la unidad del bono")
+    b.metric("Cobrado hasta la salida", f"{r['cobrado']:,.2f}", help="Reinvertido a la exit yield hasta la salida")
+    c_.metric("Retorno del período", f"{r['retorno']:.2%}", help=f"{r['dias']} días")
+    d.metric("Retorno anualizado (TEA)", f"{r['anualizado']:.2%}" if r["anualizado"] is not None else "–",
+             f"{round((r['anualizado'] - m['tea']) * 1e4):+d} pb vs TIR de hoy" if r["anualizado"] is not None else None,
+             delta_color="normal")
+    tabla = pd.DataFrame([{"Exit yield (%)": x["tea_salida"] * 100, "Cambio (pb)": x["pb"],
+                           "Precio de salida": x["precio_salida"], "Retorno del período (%)": x["retorno"] * 100,
+                           "Retorno anualizado (%)": x["anualizado"] * 100 if x["anualizado"] is not None else None}
+                          for x in sens])
+    st.dataframe(tabla, hide_index=True, width="stretch", column_config={
+        c: st.column_config.NumberColumn(format="%.2f") for c in tabla.columns if c != "Cambio (pb)"})
+    st.caption(f"En {m['unidad']}. Precio de hoy en esa unidad: {r['precio_hoy']:,.2f} (valor presente de los flujos a "
+               "la TIR de hoy). Cupones y amortizaciones hasta la salida reinvertidos a la exit yield; con exit yield "
+               "igual a la TIR de hoy, el retorno anualizado es la TIR de hoy.")
+
+
+@st.cache_data(ttl=60, show_spinner=False)
+def _flujos_bono(ticker: str, curva: str, precio: float, liquidacion: date, operacion: date) -> list[dict]:
+    ficha = _ficha_de_curva(ticker, curva)
+    return metricas.calculadora(ficha, liquidacion, operacion)(precio)["flujos"] if ficha else []
+
+
+def _tabla_exit(filas: list[dict], curva: str, liquidacion: date, operacion: date):
+    """Retorno de cada bono de la curva si se vende en una fecha a una TIR de salida (editable por bono)."""
+    st.markdown("**Retornos con exit yield**")
+    col1, col2, _ = st.columns([1, 1, 2])
+    defecto = min(liquidacion + timedelta(days=182), max(f["vencimiento"] for f in filas))
+    salida = col1.date_input("Fecha de salida", value=defecto, min_value=liquidacion + timedelta(days=1),
+                             format="DD/MM/YYYY", key=f"exit_fecha_{curva}")
+    desplazamiento = col2.number_input("Exit yield: TIR de hoy ± (pb)", value=0, step=25, key=f"exit_pb_{curva}",
+                                       help="Cambio paralelo para todos los bonos. Después podés editar la exit yield "
+                                            "de cada uno en la tabla.")
+    clave = f"exit_tabla_{curva}_{salida}_{desplazamiento}"
+    editadas = st.session_state.get(clave, {}).get("edited_rows", {})
+    filas_tabla = []
+    for i, f in enumerate(filas):
+        exit_pct = editadas.get(i, {}).get("Exit yield (%)", (f["tea"] + desplazamiento / 1e4) * 100)
+        fila = {"Ticker": f["ticker"], "TIR hoy (%)": f["tea"] * 100, "Exit yield (%)": exit_pct,
+                "Precio de salida": None, "Cobrado hasta la salida": None, "Retorno del período (%)": None,
+                "Retorno anualizado (%)": None, "": ""}
+        try:
+            r = calc_exit.retorno(_flujos_bono(f["ticker"], curva, f["precio"], liquidacion, operacion), f["tea"],
+                                  liquidacion, salida, exit_pct / 100)
+            fila.update({"Precio de salida": r["precio_salida"], "Cobrado hasta la salida": r["cobrado"],
+                         "Retorno del período (%)": r["retorno"] * 100,
+                         "Retorno anualizado (%)": r["anualizado"] * 100 if r["anualizado"] is not None else None,
+                         "": "vence antes" if r["vence_antes"] else ""})
+        except Exception:
+            fila[""] = "sin cálculo"
+        filas_tabla.append(fila)
+    formato = {c: st.column_config.NumberColumn(format="%.2f") for c in
+               ("TIR hoy (%)", "Exit yield (%)", "Precio de salida", "Cobrado hasta la salida",
+                "Retorno del período (%)", "Retorno anualizado (%)")}
+    st.data_editor(pd.DataFrame(filas_tabla), key=clave, hide_index=True, width="stretch", column_config=formato,
+                   disabled=[c for c in filas_tabla[0] if c != "Exit yield (%)"] if filas_tabla else True)
+    unidad = UNIDAD_CURVA.get(curva, ("", "su unidad"))[1]
+    st.caption(f"Vendiendo el {salida:%d/%m/%Y} a la exit yield de cada bono (editable). Precio de salida: dirty "
+               f"teórico por 100 VN original, en {unidad}. Cobrado: cupones y amortizaciones hasta la salida, "
+               "reinvertidos a la exit yield. Con exit yield igual a la TIR de hoy, el retorno anualizado es la TIR de "
+               "hoy. \"vence antes\": se cobra todo y se reinvierte a la exit yield hasta la fecha. Retornos en "
+               f"{unidad}.")
 
 
 if seccion == "Curvas":
@@ -385,19 +473,17 @@ if seccion == "Curvas":
         # La tabla se puede editar: precio, TEA o TNA de cualquier bono; lo demás se recalcula (también las forwards)
         con_forwards = c in CURVAS_FORWARD
         bonos_fwd = [{"ticker": f["ticker"], "vencimiento": f["vencimiento"], "tea": f["tea"]} for f in filas]
-        siguiente = calc_forwards.al_siguiente(bonos_fwd, liquidacion) if con_forwards else {}
+        anterior = calc_forwards.al_anterior(bonos_fwd, liquidacion) if con_forwards else {}
         tabla = pd.DataFrame([{"Ticker": f["ticker"], "Precio": f["precio"], "TEA (%)": f["tea"] * 100,
                                "TNA (%)": f["tna"] * 100 if f.get("tna") is not None else None,
                                "Duration (años)": f["x"] / 365,
-                               **({"Forwards (%)": siguiente[f["ticker"]][1] * 100
-                                   if siguiente.get(f["ticker"]) and siguiente[f["ticker"]][1] is not None else None,
-                                   "Contra": siguiente[f["ticker"]][0] if f["ticker"] in siguiente else ""}
-                                  if con_forwards else {}),
+                               **({"Forwards (%)": anterior[f["ticker"]] * 100
+                                   if anterior.get(f["ticker"]) is not None else None} if con_forwards else {}),
                                "": {"precio": "✎ precio", "tea": "✎ TEA", "tna": "✎ TNA"}.get(f["editado"], "")}
                               for f in filas])
         clave = f"editor_{c}_{st.session_state.get('version_editor', 0)}"
         st.data_editor(tabla, key=clave, hide_index=True, width="stretch",
-                       disabled=["Ticker", "Duration (años)", "Forwards (%)", "Contra", ""],
+                       disabled=["Ticker", "Duration (años)", "Forwards (%)", ""],
                        on_change=_guardar_edicion, args=(clave, c, filas),
                        column_config={"Precio": st.column_config.NumberColumn(format="%.2f", min_value=0.0001),
                                       "TEA (%)": st.column_config.NumberColumn(format="%.2f"),
@@ -405,8 +491,6 @@ if seccion == "Curvas":
                                       "Duration (años)": st.column_config.NumberColumn(format="%.2f"),
                                       "Forwards (%)": st.column_config.NumberColumn(format="%.2f", help=AYUDA_FORWARD[c]
                                                                                     if con_forwards else None),
-                                      "Contra": st.column_config.TextColumn(width="small",
-                                                                            help="El bono del vencimiento siguiente"),
                                       "": st.column_config.TextColumn(width="small")})
         col1, col2 = st.columns([3, 1])
         col1.caption("Escribí un precio, una TEA o una TNA en la tabla y se recalcula el resto del bono y su punto en "
@@ -420,6 +504,7 @@ if seccion == "Curvas":
             st.warning(f"No se pudo recalcular {aviso}")
         if con_forwards:
             _matriz_forwards(bonos_fwd, liquidacion, c)
+        _tabla_exit(filas, c, liquidacion, _contexto(fecha)[0])
         if c == "tasa_fija":
             with st.expander("Curva teórica de tasa fija (a precio de mercado): desvío de cada bono contra la curva y sus vecinos"):
                 mostrar(salida_herramienta("curva_tf", marca_actual, fecha=fecha.isoformat() if fecha else None))
@@ -509,6 +594,7 @@ if seccion == "Bono":
         flujos[f"Total {nombre}"] = flujos["Total"] * factor
         formato[f"Total {nombre}"] = st.column_config.NumberColumn(format="%.2f")
     st.dataframe(flujos, hide_index=True, width="stretch", column_config=formato)
+    _exit_bono(m, ficha, liquidacion)
     if ficha["familia"] == "tamar_capitalizable":
         st.caption("El pago final usa la TAMAR ya publicada y, para los días que faltan, la última TAMAR. Para otros "
                    "supuestos, la sección Proyecciones.")

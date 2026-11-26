@@ -38,6 +38,18 @@ def al_siguiente(bonos: list[dict], liquidacion: date) -> dict[str, tuple[str, f
     return salida
 
 
+def al_anterior(bonos: list[dict], liquidacion: date) -> dict[str, float | None]:
+    """Para cada bono, la forward desde el vencimiento anterior de la curva hasta el suyo (decisión de Agustin,
+    26/11/2026: la columna de forwards de cada bono es contra el anterior). El más corto queda en None; los que
+    vencen el mismo día que otro usan el vencimiento anterior distinto."""
+    ordenados = _plazos(bonos, liquidacion)
+    salida = {}
+    for i, largo in enumerate(ordenados):
+        corto = next((b for b in reversed(ordenados[:i]) if b["vencimiento"] < largo["vencimiento"]), None)
+        salida[largo["ticker"]] = tasa_forward(corto["tea"], corto["t"], largo["tea"], largo["t"]) if corto else None
+    return salida
+
+
 def matriz(bonos: list[dict], liquidacion: date) -> tuple[list[str], dict[tuple[str, str], float]]:
     """Forward entre cada par (corto, largo) con el largo venciendo después: (tickers ordenados, {(corto, largo): f})."""
     ordenados = _plazos(bonos, liquidacion)

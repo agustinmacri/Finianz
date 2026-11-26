@@ -318,6 +318,44 @@ def _error(funcion) -> str:
     return ""
 
 
+def test_dual_un_borrador_por_pata():
+    """Un dual (TAMAR o dollar linked) deja un borrador por pata, cada uno con sus datos, y se aprueban por separado."""
+    original_carpeta, original_borradores = leer_fichas.CARPETA, fd.BORRADORES
+    dual = fd.Documento(tipo_documento="llamado a licitación", fecha_documento="2026-11-20", instrumentos=[
+        fd.Instrumento(nombre="Bono dual TAMAR / dólar linked vencimiento 31 de mayo de 2028", ticker="TMVE8",
+                       familia="tamar_capitalizable", familia_dual="dolar_linked_bullet", tipo="DUAL TAMAR/DL",
+                       emision="2026-11-24", vencimiento="2028-05-31", margen=0.0,
+                       tipo_cambio_pago="A3500 del 3.er día hábil anterior al pago",
+                       pendiente=["margen: se define en la licitación"])])
+    with tempfile.TemporaryDirectory() as tmp:
+        carpeta = Path(tmp) / "fichas"
+        shutil.copytree(original_carpeta, carpeta, ignore=shutil.ignore_patterns("borradores"))
+        leer_fichas.CARPETA, fd.BORRADORES = carpeta, carpeta / "borradores" / "borradores.toml"
+        documento = Path(tmp) / "llamado.txt"
+        documento.write_text("Llamado a licitación del Tesoro. " * 20, encoding="utf-8")
+        try:
+            r = fd.leer(str(documento), extractor=lambda texto: dual, hoy=date(2026, 11, 20))
+            assert sorted(r["nuevos"]) == ["TMVE8-DL", "TMVE8-TAMAR"], r["nuevos"]
+            patas = {b["clave"]: b for b in fd.pendientes()}
+            tamar, dl = patas["TMVE8-TAMAR"], patas["TMVE8-DL"]
+            assert tamar["familia"] == "tamar_capitalizable" and "margen" in tamar and "tipo_cambio_pago" not in tamar
+            assert dl["familia"] == "dolar_linked_bullet" and "margen" not in dl and "tipo_cambio_pago" in dl
+            assert "pendiente" not in dl and tamar["pendiente"] == ["margen: se define en la licitación"]
+            assert tamar["dual_con"] == "dolar_linked_bullet" and "DUAL" in dl["tipo"]
+            # Leer de nuevo no duplica: completa cada pata
+            fd.leer(str(documento), extractor=lambda texto: dual, hoy=date(2026, 11, 20))
+            assert sorted(b["clave"] for b in fd.pendientes()) == ["TMVE8-DL", "TMVE8-TAMAR"]
+            fd.aprobar("TMVE8-DL", hoy=date(2026, 11, 20))
+            fd.aprobar("TMVE8-TAMAR", hoy=date(2026, 11, 20))
+            familias = sorted(f["familia"] for f in leer_fichas.fichas_de("TMVE8"))
+            assert familias == ["dolar_linked_bullet", "tamar_capitalizable"], familias
+            assert all("dual_con" not in f and "DUAL" in f["tipo"] for f in leer_fichas.fichas_de("TMVE8"))
+            assert not fd.pendientes()
+        finally:
+            leer_fichas.CARPETA, fd.BORRADORES = original_carpeta, original_borradores
+            leer_fichas.leer_todas.cache_clear() if hasattr(leer_fichas.leer_todas, "cache_clear") else None
+
+
 def test_texto_html():
     html = "<html><head><style>x{}</style><script>var a=1</script></head><body><h1>Llamado</h1><p>LECAP <b>S14G6</b></p></body></html>"
     texto = fd._html_a_texto(html)
@@ -333,7 +371,7 @@ def test_toml_ida_y_vuelta():
 
 
 if __name__ == "__main__":
-    for prueba in (test_borradores_aprobacion, test_resultado_y_cambios, test_reaperturas_duplicados_y_tickers, test_emision_original, test_texto_html, test_toml_ida_y_vuelta):
+    for prueba in (test_borradores_aprobacion, test_resultado_y_cambios, test_reaperturas_duplicados_y_tickers, test_emision_original, test_dual_un_borrador_por_pata, test_texto_html, test_toml_ida_y_vuelta):
         prueba()
         print(f"OK  {prueba.__name__}")
     print("Todas las pruebas del lector de fichas pasaron.")

@@ -72,7 +72,11 @@ CAMPOS_COMPARABLES = ("emision", "vencimiento", "cupon", "margen", "frecuencia",
 MARGEN_EMISION_ORIGINAL = 7   # días: una "emisión" posterior a (aviso − 7 días) en una reapertura es la de esta licitación
 LETRAS_MES = "EFMAYJLGSOND"   # convención del Tesoro: ene=E, feb=F, mar=M, abr=A, may=Y, jun=J, jul=L, ago=G, ...
 BUSCADOR = None               # función ticker -> lista de instrumentos (PPI); se resuelve en tiempo de ejecución
-SOLO_BORRADOR = ("pendiente", "cita", "clave", "reapertura", "posible_duplicado", "emision_buscada")
+SOLO_BORRADOR = ("pendiente", "cita", "clave", "reapertura", "posible_duplicado", "emision_buscada", "dual_con")
+# Duales: un borrador por pata, con la clave TICKER-PATA (TMVE8-DL y TMVE8-TAMAR); cada uno se aprueba por separado
+SUFIJO_PATA = {"cer_cero_cupon": "CER", "cer_cupon": "CER", "tasa_fija_capitalizable": "TF", "tasa_fija_cupon": "TF",
+               "tasa_fija_descuento": "TF", "tamar_capitalizable": "TAMAR", "dolar_linked_bullet": "DL",
+               "dolar_linked_cupon": "DL", "hard_dollar": "HD"}
 BUSCADOR_WEB = None           # función consulta -> lista de URLs; por defecto, el modelo con búsqueda de Google
 DOMINIOS_OFICIALES = ("argentina.gob.ar", "boletinoficial.gob.ar", "economia.gob.ar")
 NAVEGADOR = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) "
@@ -107,6 +111,8 @@ class Instrumento(BaseModel):
     ticker: str | None = Field(None, description="Ticker, si el texto lo dice")
     reapertura: bool = Field(False, description="True si es la reapertura de un instrumento existente")
     familia: Familia | None = None
+    familia_dual: Familia | None = Field(None, description="Solo si es dual: la familia de la otra pata (en 'familia' va "
+                                         "la de una pata y acá la de la otra; paga la que más rinde)")
     tipo: str | None = Field(None, description="LECAP, BONCAP, LEDE, BONTE, BONCER, LECER, BONO TAMAR, DUAL ..., BONO DL, LETRA DL, BONAR, GLOBAL u ON")
     emision: str | None = Field(None, description="Fecha de emisión AAAA-MM-DD")
     vencimiento: str | None = Field(None, description="Fecha de vencimiento AAAA-MM-DD")
@@ -234,8 +240,47 @@ def a_ficha(ins: Instrumento, origen: str, tipo_documento: str, fecha_documento:
                 "emision: es una reapertura; falta la fecha de emisión original (leé la resolución o el prospecto de la "
                 "primera emisión, o completala a mano)"]
     ficha = {k: v for k, v in ficha.items() if v not in (None, "", [])}
-    ficha["clave"] = ficha.get("ticker") or f"{ficha.get('familia', 'sin_familia')}-{ficha.get('vencimiento', 'sin_vto')}"
+    ficha["clave"] = clave_de(ficha)
     return ficha
+
+
+# Datos de condiciones que usa cada familia (en un dual, cada pata se queda con los suyos)
+DATOS_DE_PATA = {"tasa_fija_capitalizable": {"cupon"}, "tasa_fija_cupon": {"cupon", "frecuencia", "base", "pagos"},
+                 "tasa_fija_descuento": set(), "cer_cero_cupon": set(), "cer_cupon": {"cupon", "frecuencia", "pagos"},
+                 "tamar_capitalizable": {"margen"}, "dolar_linked_bullet": {"tipo_cambio_pago"},
+                 "dolar_linked_cupon": {"cupon", "base", "pagos", "tipo_cambio_pago"},
+                 "hard_dollar": {"cupon", "ley", "tramos", "pagos", "base"}}
+
+
+def a_fichas(ins: Instrumento, origen: str, tipo_documento: str, fecha_documento: str | None) -> list[dict]:
+    """Los borradores de un instrumento: uno, o uno por pata si es dual (mismo ticker, emisión y vencimiento; cada
+    pata con sus propias condiciones, como las fichas de los duales cargados)."""
+    ficha = a_ficha(ins, origen, tipo_documento, fecha_documento)
+    if not ins.familia_dual or ins.familia_dual == ins.familia or not ins.familia:
+        return [ficha]
+    patas = []
+    for familia, otra in ((ins.familia, ins.familia_dual), (ins.familia_dual, ins.familia)):
+        pata = {k: v for k, v in ficha.items()
+                if k not in set().union(*DATOS_DE_PATA.values()) or k in DATOS_DE_PATA[familia]}
+        pata["familia"], pata["dual_con"] = familia, otra
+        if "DUAL" not in str(pata.get("tipo") or "").upper():     # las curvas dejan afuera a los duales por el tipo
+            pata["tipo"] = f"DUAL {SUFIJO_PATA[ins.familia]}/{SUFIJO_PATA[ins.familia_dual]}"
+        if pata.get("pendiente"):                  # lo pendiente de la otra pata no es de esta
+            ajenos = DATOS_DE_PATA[otra] - DATOS_DE_PATA[familia]
+            pata["pendiente"] = [p for p in pata["pendiente"] if p.split(":")[0].strip() not in ajenos] or None
+            if pata["pendiente"] is None:
+                del pata["pendiente"]
+        pata["clave"] = clave_de(pata)
+        patas.append(pata)
+    return patas
+
+
+def clave_de(ficha: dict) -> str:
+    """TICKER (o familia-vencimiento si todavía no tiene); en un dual, TICKER-PATA."""
+    base = ficha.get("ticker") or f"{ficha.get('familia', 'sin_familia')}-{ficha.get('vencimiento', 'sin_vto')}"
+    if ficha.get("dual_con") and ficha.get("ticker"):
+        return f"{base}-{SUFIJO_PATA.get(ficha.get('familia'), ficha.get('familia'))}"
+    return base
 
 
 def _valor_toml(v) -> str:
@@ -426,7 +471,8 @@ def actualizar_borradores(hoy: date | None = None) -> list[str]:
                     encontrados.append((candidato, hallados[0].get("description") or ""))
             if len(encontrados) == 1:
                 ticker, descripcion = encontrados[0]
-                b["ticker"], b["clave"] = ticker, ticker
+                b["ticker"] = ticker
+                b["clave"] = clave_de(b)
                 nota = (f"ticker {ticker} encontrado en PPI por la convención de nombres"
                         + (f" ({descripcion})" if descripcion else "") + ": verificalo antes de aprobar")
                 b["nota"] = f"{b['nota']}. {nota}" if b.get("nota") else nota
@@ -508,9 +554,9 @@ def leer(fuente: str, extractor=extraer_con_modelo, hoy: date | None = None, sol
         resumen["vencidos"].append(f"{b['clave']} (borrador, venció el {b['vencimiento']:%d/%m/%Y})")
     origen = fuente if re.match(r"https?://", fuente) else Path(fuente).name
     objetivo = _elegir_borrador(borradores, solo) if solo else None
-    for ins in documento.instrumentos:
+    for ins, ficha in [(ins, f) for ins in documento.instrumentos
+                       for f in a_fichas(ins, origen, documento.tipo_documento, documento.fecha_documento)]:
         corte = _texto_corte(ins)
-        ficha = a_ficha(ins, origen, documento.tipo_documento, documento.fecha_documento)
         ticker = ficha.get("ticker")
         if objetivo is not None and not _mismo(objetivo, ficha) and not _mismo({**objetivo, "ticker": None}, ficha):
             continue
@@ -547,7 +593,7 @@ def leer(fuente: str, extractor=extraer_con_modelo, hoy: date | None = None, sol
                 del previo["pendiente"]
         previo["fuente"] = f"{previo['fuente']}; completado con {ficha['fuente']}" if agregados else previo["fuente"]
         if previo.get("ticker"):
-            previo["clave"] = previo["ticker"]
+            previo["clave"] = clave_de(previo)
         resumen["completados"].append((previo["clave"], agregados))
     _guardar_borradores(borradores)
     if cambios or _ruta_cambios().exists():
@@ -795,7 +841,7 @@ def completar(clave: str, campo: str, valor) -> str:
         if elegido["pendiente"] is None:
             del elegido["pendiente"]
     if campo == "ticker":
-        elegido["clave"] = valor
+        elegido["clave"] = clave_de(elegido)
     _guardar_borradores(borradores)
     return f"Borrador {elegido['clave']}: {campo} = {valor}."
 
