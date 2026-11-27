@@ -15,11 +15,12 @@ from admin_datos import rem as db_rem
 from admin_datos import series as db_series
 from conexiones import bcra
 from conexiones.http import ErrorAPI
-from renta_fija import leer_fichas as fichas
+from renta_fija import leer_fichas as fichas, mercado
 from renta_fija.calculadoras import breakeven as be
-from renta_fija.calculadoras import cer, cer_cupon
+from renta_fija.calculadoras import cer_cupon
 from renta_fija.calculadoras import proyeccion_cer as pc
-from tools import bonos, breakevens
+from tools import breakevens
+from tools.caminos import pct
 
 ESCENARIOS = Path(__file__).resolve().parent.parent / "renta_fija" / "escenarios" / "inflacion.toml"
 MESES = ("ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic")
@@ -43,7 +44,7 @@ def escenarios() -> dict[str, dict]:
 
 def _serie_cer() -> dict[date, float]:
     """CER publicado de los últimos años (de la base propia, actualizada si hace falta)."""
-    bonos._cer(date.today() - timedelta(days=1))           # asegura que la base esté al día
+    mercado.cer_de(date.today() - timedelta(days=1))           # asegura que la base esté al día
     desde = date(date.today().year - 2, 1, 1).isoformat()
     return {date.fromisoformat(p["fecha"]): p["valor"] for p in db_series.entre("CER", desde)}
 
@@ -88,6 +89,20 @@ def inflacion_rem_por_mes(hasta_mes: pc.Mes) -> tuple[str, dict[pc.Mes, float]] 
     return relevamiento, publicadas | {m: v for m, (v, _) in caminos.items()}
 
 
+def nominal_cer(f: dict, precio: float, liquidacion: date, cer_en) -> dict:
+    """Rendimiento nominal de un bono CER con un CER proyectado (cer_en: fecha -> CER). Cero cupón: el de
+    pc.nominal_cero_cupon con "cer_final"; con cupón: el de pc.nominal_con_cupon con "cers" (el CER de cada pago)."""
+    _, f2, cer_corriente = mercado.datos_cer(f, liquidacion)
+    if f["familia"] == "cer_cero_cupon":
+        cer_final = cer_en(mercado.fecha_cer(f["vencimiento"]))
+        r = pc.nominal_cero_cupon(precio, f2["cer_inicial"], cer_final, liquidacion, f["vencimiento"])
+        return dict(r, cer_final=cer_final)
+    real = cer_cupon.calcular(precio, f2["cer_inicial"], cer_corriente, liquidacion, f["pagos"], f["cupon"],
+                              f["frecuencia"], f["emision"], mercado.ajustar)
+    cers = [cer_en(mercado.fecha_cer(p["fecha"])) for p in f["pagos"] if p["fecha"] > liquidacion]
+    return dict(pc.nominal_con_cupon(precio, f2["cer_inicial"], real["flujos"], cers, liquidacion), cers=cers)
+
+
 def _nombre_mes(mes: pc.Mes) -> str:
     return f"{MESES[mes[1] - 1]}-{mes[0] % 100:02d}"
 
@@ -112,7 +127,7 @@ def camino_inflacion(fuente: str, liquidacion: date, hasta_mes: pc.Mes, curvas: 
         meses_rem = sorted(m for m in mensuales if m >= desde)
         descripcion = (f"REM del BCRA, relevamiento {relevamiento} (mediana). Mes a mes"
                        + (f" de {_nombre_mes(meses_rem[0])} a {_nombre_mes(meses_rem[-1])}" if meses_rem else ": ninguno pendiente")
-                       + "; inflación anual " + ", ".join(f"{a} {bonos._pct(v)}" for a, v in sorted(anuales.items()))
+                       + "; inflación anual " + ", ".join(f"{a} {pct(v)}" for a, v in sorted(anuales.items()))
                        + ". Los meses sin dato mensual completan cada año para cerrar en esa anual; después de "
                        + f"{max(anuales)} se repite la última anual. Los meses ya publicados usan el dato del INDEC")
     elif fuente.startswith("mensual:") or fuente == "rem":
@@ -120,11 +135,11 @@ def camino_inflacion(fuente: str, liquidacion: date, hasta_mes: pc.Mes, curvas: 
             anual, fecha_rem = _rem_12_meses()
             tasa = (1 + anual) ** (1 / 12) - 1
             descripcion = (f"REM (relevamiento al {fecha_rem}): mediana de la inflación esperada a 12 meses "
-                           f"{bonos._pct(anual)}, pasada a mensual ({bonos._pct(tasa)}) y aplicada plana. Aproximación: "
+                           f"{pct(anual)}, pasada a mensual ({pct(tasa)}) y aplicada plana. Aproximación: "
                            "no hay ningún Excel del REM en fuentes/rem/")
         else:
             tasa = tasa_mensual(fuente.split(":", 1)[1])
-            descripcion = f"inflación mensual plana de {bonos._pct(tasa)}"
+            descripcion = f"inflación mensual plana de {pct(tasa)}"
         mes, caminos = desde, {}
         while mes <= hasta_mes:
             caminos[mes] = (tasa, "plana")
@@ -143,10 +158,10 @@ def camino_inflacion(fuente: str, liquidacion: date, hasta_mes: pc.Mes, curvas: 
                 mes = pc.sumar_meses(mes, 1)
         caminos = pc.camino(publicadas, mensuales, anuales, desde, hasta_mes)
         descripcion = ("camino de inflación indicado: "
-                       + ", ".join(f"{_nombre_mes(m)} {bonos._pct(x)}" for m, x in sorted(mensuales.items())
+                       + ", ".join(f"{_nombre_mes(m)} {pct(x)}" for m, x in sorted(mensuales.items())
                                    if resto is None or x != resto)
-                       + ("; anual " + ", ".join(f"{a} {bonos._pct(x)}" for a, x in sorted(anuales.items())) if anuales else "")
-                       + (f"; el resto {bonos._pct(resto)} mensual" if resto is not None else ""))
+                       + ("; anual " + ", ".join(f"{a} {pct(x)}" for a, x in sorted(anuales.items())) if anuales else "")
+                       + (f"; el resto {pct(resto)} mensual" if resto is not None else ""))
     elif fuente.startswith("escenario:"):
         nombre = fuente.split(":", 1)[1]
         todos = escenarios()
@@ -162,10 +177,10 @@ def camino_inflacion(fuente: str, liquidacion: date, hasta_mes: pc.Mes, curvas: 
             tf = be.interpolar(puntos_tf, p["x"])
             if f is None or tf is None:
                 continue
-            _, f2, _ = bonos._datos_cer(f, liquidacion)
+            _, f2, _ = mercado.datos_cer(f, liquidacion)
             plazo = (f["vencimiento"] - liquidacion).days
             cer_final = p["precio"] * (1 + tf) ** (plazo / 365) * f2["cer_inicial"] / 100
-            fecha_final = bonos.feriados.sumar_dias_habiles(f["vencimiento"], -cer.REZAGO_HABILES, bonos.CALENDARIO_HABILES)
+            fecha_final = mercado.fecha_cer(f["vencimiento"])
             if fecha_final > ultimo:
                 nodos.append((fecha_final, cer_final))
         if not nodos:
@@ -217,8 +232,8 @@ def _titulo_fuente(fuente: str) -> str:
 def proyectar_cer(fuente: str = "breakeven", ticker: str | None = None, fecha: str | None = None) -> str:
     try:
         operacion = date.fromisoformat(fecha) if fecha else date.today()
-        bonos._asegurar_feriados(operacion, operacion + timedelta(days=365 * 6))
-        liquidacion = bonos.feriados.sumar_dias_habiles(operacion, bonos.PLAZO_LIQUIDACION, "BYMA")
+        mercado.asegurar_feriados(operacion, operacion + timedelta(days=365 * 6))
+        liquidacion = mercado.feriados.sumar_dias_habiles(operacion, mercado.PLAZO_LIQUIDACION, "BYMA")
         serie = _serie_cer()
         publicadas = pc.inflacion_publicada(serie)
         ultimo = max(serie)
@@ -231,8 +246,7 @@ def proyectar_cer(fuente: str = "breakeven", ticker: str | None = None, fecha: s
         fechas_cer = {}                                   # fecha de CER de cada pago (10 días hábiles antes)
         for f in lista:
             pagos = [p["fecha"] for p in f["pagos"]] if f["familia"] == "cer_cupon" else [f["vencimiento"]]
-            fechas_cer[f["ticker"]] = [(p, bonos.feriados.sumar_dias_habiles(p, -cer.REZAGO_HABILES, bonos.CALENDARIO_HABILES))
-                                       for p in pagos if p > liquidacion]
+            fechas_cer[f["ticker"]] = [(p, mercado.fecha_cer(p)) for p in pagos if p > liquidacion]
         hasta = max(d for v in fechas_cer.values() for _, d in v)
         hasta_mes = pc.mes_aplicado(hasta) if hasta > ultimo else desde
 
@@ -249,7 +263,7 @@ def proyectar_cer(fuente: str = "breakeven", ticker: str | None = None, fecha: s
 
     texto = [f"Proyección del CER – calculadora de Finianz – fuente: {descripcion}",
              f"Último CER publicado: {ultimo} = {serie[ultimo]:,.4f} (incluye la inflación de {_nombre_mes(max(publicadas))}: "
-             f"{bonos._pct(publicadas[max(publicadas)])})"]
+             f"{pct(publicadas[max(publicadas)])})"]
     if caminos:
         texto += _tabla_inflacion(fuente, caminos, publicadas, desde, max(caminos), liquidacion, curvas, operacion,
                                   fecha_precios)
@@ -263,28 +277,21 @@ def proyectar_cer(fuente: str = "breakeven", ticker: str | None = None, fecha: s
     for f in sorted(lista, key=lambda f: f["vencimiento"]):
         t = f["ticker"].upper()
         try:
-            precio = precios.get(t) or bonos._precio(t, fecha_precios)[0]
-            _, f2, cer_corriente = bonos._datos_cer(f, liquidacion)
+            precio = precios.get(t) or mercado.precio(t, fecha_precios)[0]
+            r = nominal_cer(f, precio, liquidacion, cer_en)
+            fecha_final = fechas_cer[f["ticker"]][-1][1]
             if f["familia"] == "cer_cupon":
-                ajustar = lambda d: bonos.feriados.proximo_dia_habil(d, bonos.CALENDARIO_HABILES)
-                real = cer_cupon.calcular(precio, f2["cer_inicial"], cer_corriente, liquidacion, f["pagos"], f["cupon"],
-                                          f["frecuencia"], f["emision"], ajustar)
-                cers = [cer_en(d) for _, d in fechas_cer[f["ticker"]]]
-                r = pc.nominal_con_cupon(precio, f2["cer_inicial"], real["flujos"], cers, liquidacion)
                 tf = be.interpolar(puntos_tf, r["duration"] * 365)
-                fecha_final = fechas_cer[f["ticker"]][-1][1]
-                texto.append(f"{t} | {f['vencimiento']} | {cers[-1]:,.2f} ({fecha_final}) | flujos ajustados | "
-                             f"{bonos._pct(r['tna_semestral'])} semestral | {bonos._pct(r['tir'])} | "
-                             f"{bonos._pct(tf) if tf is not None else 'fuera de la curva'}")
+                texto.append(f"{t} | {f['vencimiento']} | {r['cers'][-1]:,.2f} ({fecha_final}) | flujos ajustados | "
+                             f"{pct(r['tna_semestral'])} semestral | {pct(r['tir'])} | "
+                             f"{pct(tf) if tf is not None else 'fuera de la curva'}")
             else:
-                fecha_final = fechas_cer[f["ticker"]][-1][1]
-                cf = cer_en(fecha_final)
-                r = pc.nominal_cero_cupon(precio, f2["cer_inicial"], cf, liquidacion, f["vencimiento"])
+                cf = r["cer_final"]
                 tf = be.interpolar(puntos_tf, r["plazo"])
                 dual = " (dual: solo la pata CER)" if "DUAL" in f["tipo"].upper() else ""
                 texto.append(f"{t}{dual} | {f['vencimiento']} | {cf:,.2f} ({fecha_final}) | {r['pago_final']:.2f} | "
-                             f"{bonos._pct(r['tna'])} | {bonos._pct(r['tir'])} | "
-                             f"{bonos._pct(tf) if tf is not None else 'fuera de la curva'}")
+                             f"{pct(r['tna'])} | {pct(r['tir'])} | "
+                             f"{pct(tf) if tf is not None else 'fuera de la curva'}")
         except (ErrorAPI, ValueError, KeyError) as e:
             texto.append(f"{t} | error: {e}")
     if errores:

@@ -109,58 +109,10 @@ def es_renta_fija(ticker: str) -> bool:
 
 
 def pagos(ticker: str, desde: date, hasta: date) -> list[dict]:
-    """Cupones y amortizaciones de un bono entre dos fechas, por 100 VN original:
-    [{"fecha", "moneda", "renta", "amortizacion", "residual_antes"}] en la moneda de pago (pesos; hard dollar en
-    dólares MEP o cable según la ley). CER con el CER del pago (10.º día hábil anterior), dollar linked con el A3500 de
-    pago (3.er día hábil anterior), TAMAR con la calculadora a la fecha del pago. Duales: al vencimiento, la pata que
-    más paga."""
-    from renta_fija import leer_fichas, mercado, metricas
-    from renta_fija.calculadoras import cer
-    from admin_datos import series as db_series
-    fichas = [f for f in leer_fichas.fichas_de(ticker) if f["familia"] in metricas.UNIDAD]
-    if not fichas:
-        return []
-    salida = {}
-    for f in fichas:
-        inicio = max(desde, f["emision"])
-        if inicio >= hasta:
-            continue
-        try:
-            m = metricas.calculadora(f, inicio + timedelta(days=1), inicio)(100.0)
-        except Exception:
-            continue
-        familia = f["familia"]
-        moneda = ("ccl" if f.get("ley") == "NY" else "mep") if familia == "hard_dollar" else "pesos"
-        for x in m["flujos"]:
-            if not (desde < x["fecha"] <= hasta) or not x["total"]:
-                continue
-            factor = 1.0
-            if m.get("pago_conocido"):
-                pass
-            elif familia.startswith("cer"):
-                fecha_cer = mercado.feriados.sumar_dias_habiles(x["fecha"], -cer.REZAGO_HABILES, mercado.CALENDARIO_HABILES)
-                indice = db_series.valor("CER", fecha_cer)
-                if indice is None:
-                    continue
-                factor = indice / mercado.datos_cer(f, inicio + timedelta(days=1))[1]["cer_inicial"]
-            elif familia.startswith("dolar_linked"):
-                tc = mercado.a3500_pago_conocido(f, x["fecha"])
-                if tc is None:
-                    continue
-                factor = tc
-            elif familia == "tamar_capitalizable" and x["fecha"] >= f["vencimiento"]:
-                try:                                   # el pago final con la TAMAR ya publicada
-                    final = metricas.calculadora(f, x["fecha"] - timedelta(days=1), x["fecha"] - timedelta(days=2))(100.0)
-                    x = dict(x, **{k: final["flujos"][-1][k] for k in ("cupon", "amortizacion", "total")})
-                except Exception:
-                    pass
-            pago = {"fecha": x["fecha"], "moneda": moneda, "renta": x["cupon"] * factor,
-                    "amortizacion": x["amortizacion"] * factor, "residual_antes": (x["residual"] + x["amortizacion"]) * factor,
-                    "final": x["residual"] <= 1e-9}
-            previo = salida.get(x["fecha"])
-            if previo is None or pago["renta"] + pago["amortizacion"] > previo["renta"] + previo["amortizacion"]:
-                salida[x["fecha"]] = pago                # dual: la pata que más paga
-    return [salida[d] for d in sorted(salida)]
+    """Cupones y amortizaciones de un bono entre dos fechas, por 100 VN original y en la moneda de pago
+    (renta_fija/pagos.py)."""
+    from renta_fija import pagos as pagos_bono
+    return pagos_bono.pagos(ticker, desde, hasta)
 
 
 # --- motor ---
@@ -312,12 +264,12 @@ class Libro:
         aplicadas = []
         while self._i < len(self._ops) and self._ops[self._i].fecha <= d:
             op = self._ops[self._i]
-            self._avanzar(self._anterior, op.fecha, self._corregidos, incluir_dia=False)
+            self._avanzar(self._anterior, op.fecha, self._corregidos)
             self.aplicar(op)
             aplicadas.append(op)
             self._anterior = op.fecha
             self._i += 1
-        self._avanzar(self._anterior, d, self._corregidos, incluir_dia=True)
+        self._avanzar(self._anterior, d, self._corregidos)
         if self._anterior is not None and d > self._anterior:
             self._anterior = d
         self.fecha = d
@@ -334,7 +286,7 @@ class Libro:
             self._pagos[ticker] = pagos(ticker, self._inicio, max(self._fin, hasta))
         return [p for p in self._pagos[ticker] if desde < p["fecha"] <= hasta]
 
-    def _avanzar(self, desde: date | None, hasta: date, corregidos: dict, incluir_dia: bool):
+    def _avanzar(self, desde: date | None, hasta: date, corregidos: dict):
         """Cobros, vencimientos e intereses entre la última operación y la siguiente. Los del mismo día de una
         operación se aplican antes que ella (un pago del día lo cobra quien tenía los títulos)."""
         if desde is None:

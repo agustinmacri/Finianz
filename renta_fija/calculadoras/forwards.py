@@ -26,18 +26,6 @@ def _plazos(bonos: list[dict], liquidacion: date) -> list[dict]:
                   key=lambda b: (b["vencimiento"], b["ticker"]))
 
 
-def al_siguiente(bonos: list[dict], liquidacion: date) -> dict[str, tuple[str, float | None]]:
-    """Para cada bono, la forward contra el siguiente vencimiento de la curva: {ticker: (ticker del siguiente, f)}.
-    Si hay varios bonos con el mismo vencimiento, el siguiente es el primero que vence después."""
-    ordenados = _plazos(bonos, liquidacion)
-    salida = {}
-    for i, corto in enumerate(ordenados):
-        largo = next((b for b in ordenados[i + 1:] if b["vencimiento"] > corto["vencimiento"]), None)
-        if largo:
-            salida[corto["ticker"]] = (largo["ticker"], tasa_forward(corto["tea"], corto["t"], largo["tea"], largo["t"]))
-    return salida
-
-
 def al_anterior(bonos: list[dict], liquidacion: date) -> dict[str, float | None]:
     """Para cada bono, la forward desde el vencimiento anterior de la curva hasta el suyo (decisión de Agustin,
     26/11/2026: la columna de forwards de cada bono es contra el anterior). El más corto queda en None; los que

@@ -8,8 +8,8 @@ from datetime import date, timedelta
 from admin_datos import rem as db_rem
 from conexiones.http import ErrorAPI
 from renta_fija.calculadoras import breakeven as be, tamar
-from renta_fija import curvas_mercado
-from tools import bonos
+from renta_fija import curvas_mercado, mercado
+from tools.caminos import pct
 
 TIPOS = ("inflacion", "devaluacion", "tipo_cambio_real", "brecha", "tamar")
 NOMBRES = {"inflacion": "Inflación implícita (CER vs tasa fija)",
@@ -27,8 +27,8 @@ def _curvas(operacion: date, liquidacion: date, fecha_precios: date | None,
 
 def _brecha_actual(fecha_precios: date | None, a3500: float) -> float | None:
     try:
-        pesos, _ = bonos._precio("AL30", fecha_precios)
-        mep, _ = bonos._precio("AL30D", fecha_precios)
+        pesos, _ = mercado.precio("AL30", fecha_precios)
+        mep, _ = mercado.precio("AL30D", fecha_precios)
         return pesos / mep / a3500
     except (ErrorAPI, ValueError):
         return None
@@ -40,15 +40,15 @@ def _tabla(filas: list[dict], nombre_base: str, nombre_otra: str, extras=()) -> 
               + "".join(f" | {titulo}" for titulo, _ in extras)]
     for f in filas:
         if f["anual"] is None:
-            lineas.append(f"{f['ticker']} | {f['vencimiento']} | {f['x']:.0f} | {bonos._pct(f['tea'])} | fuera del rango de la otra curva")
+            lineas.append(f"{f['ticker']} | {f['vencimiento']} | {f['x']:.0f} | {pct(f['tea'])} | fuera del rango de la otra curva")
             continue
         extra = "".join(f" | {_seguro(funcion, f)}" for _, funcion in extras)
-        lineas.append(f"{f['ticker']} | {f['vencimiento']} | {f['x']:.0f} | {bonos._pct(f['tea'])} | {bonos._pct(f['tea_otra'])} | "
-                      f"{bonos._pct(f['anual'])} | {bonos._pct(f['mensual'])} | {bonos._pct(f['acumulado'])}{extra}")
+        lineas.append(f"{f['ticker']} | {f['vencimiento']} | {f['x']:.0f} | {pct(f['tea'])} | {pct(f['tea_otra'])} | "
+                      f"{pct(f['anual'])} | {pct(f['mensual'])} | {pct(f['acumulado'])}{extra}")
     tramos = be.forwards(filas)
     if tramos:
         lineas.append("Forwards (entre vencimientos consecutivos): " + "; ".join(
-            f"{t['desde']}→{t['hasta']} ({t['dias']:.0f} d): {bonos._pct(t['mensual'])} mensual, {bonos._pct(t['anual'])} anual"
+            f"{t['desde']}→{t['hasta']} ({t['dias']:.0f} d): {pct(t['mensual'])} mensual, {pct(t['anual'])} anual"
             for t in tramos))
     return "\n".join(lineas)
 
@@ -87,8 +87,8 @@ def calcular_breakevens(tipo: str = "todos", fecha: str | None = None) -> str:
         return f"Tipo desconocido: {tipo}. Opciones: todos, {', '.join(TIPOS)}."
     try:
         operacion = date.fromisoformat(fecha) if fecha else date.today()
-        bonos._asegurar_feriados(operacion)
-        liquidacion = bonos.feriados.sumar_dias_habiles(operacion, bonos.PLAZO_LIQUIDACION, "BYMA")
+        mercado.asegurar_feriados(operacion)
+        liquidacion = mercado.feriados.sumar_dias_habiles(operacion, mercado.PLAZO_LIQUIDACION, "BYMA")
     except (ErrorAPI, ValueError) as e:
         return f"Error: {e}"
     fecha_precios = operacion if fecha else None
@@ -109,7 +109,7 @@ def calcular_breakevens(tipo: str = "todos", fecha: str | None = None) -> str:
                 def rem_anual(f):
                     acum = be.inflacion_acumulada(rem["inflacion"], liquidacion, fin(f))
                     return (1 + acum) ** (365 / f["x"]) - 1
-                extras = [("inflación REM anual (mismo plazo)", lambda f: bonos._pct(rem_anual(f))),
+                extras = [("inflación REM anual (mismo plazo)", lambda f: pct(rem_anual(f))),
                           ("breakeven − REM", lambda f: f"{(f['anual'] - rem_anual(f)) * 100:+.2f} pp")]
             texto.append(_tabla(be.cruzar(curvas["cer"], curvas["tasa_fija"], be.inflacion), "CER (real)", "tasa fija", extras))
             if extras:
@@ -127,7 +127,7 @@ def calcular_breakevens(tipo: str = "todos", fecha: str | None = None) -> str:
                         raise ValueError
                     return v
                 extras += [("tipo de cambio REM", lambda f: f"{tc_rem(f):,.2f}"),
-                           ("implícito / REM", lambda f: bonos._pct(tc[0] * (1 + f["acumulado"]) / tc_rem(f) - 1))]
+                           ("implícito / REM", lambda f: pct(tc[0] * (1 + f["acumulado"]) / tc_rem(f) - 1))]
             texto.append(_tabla(be.cruzar(curvas["dl"], curvas["tasa_fija"], be.devaluacion), "DL (USD)", "tasa fija", extras))
             if len(extras) > 1:
                 texto.append("Tipo de cambio REM: interpolado entre hoy y los promedios mensuales que espera el REM (ubicados a mitad "
@@ -141,10 +141,10 @@ def calcular_breakevens(tipo: str = "todos", fecha: str | None = None) -> str:
         elif t == "brecha":
             tc = contexto.get("a3500")
             actual = _brecha_actual(fecha_precios, tc[0]) if tc else None
-            extras = [("brecha implícita", lambda f: f"{bonos._pct(actual * (1 + f['acumulado']) - 1)}")] if actual else []
+            extras = [("brecha implícita", lambda f: f"{pct(actual * (1 + f['acumulado']) - 1)}")] if actual else []
             texto.append(_tabla(be.cruzar(curvas["dl"], curvas["hd"], be.brecha), "DL (USD oficial)", "Bonares (USD MEP)", extras))
             if actual:
-                texto.append(f"Brecha actual (MEP implícito AL30/AL30D sobre A3500): {bonos._pct(actual - 1)}. "
+                texto.append(f"Brecha actual (MEP implícito AL30/AL30D sobre A3500): {pct(actual - 1)}. "
                              "Ojo: el Bonar suma riesgo de crédito en dólares que el dollar linked no tiene.")
         elif t == "tamar":
             puntos = [(p["x"], p["tea"]) for p in curvas["tasa_fija"]]
@@ -152,22 +152,22 @@ def calcular_breakevens(tipo: str = "todos", fecha: str | None = None) -> str:
             con_rem = bool(rem and rem["tamar"])
             lineas = ["Bono | vence | TEA bono | TEA tasa fija (interp.) | TAMAR implícita de los días por publicar"
                       + (" | TAMAR REM (mismos días) | TEA del bono con la TAMAR del REM" if con_rem else "")
-                      + (f" | TAMAR actual {bonos._pct(ref)}" if ref else "")]
+                      + (f" | TAMAR actual {pct(ref)}" if ref else "")]
             for p in sorted(curvas["tamar"], key=lambda p: p["x"]):
                 tf = be.interpolar(puntos, p["x"])
                 if tf is None:
-                    lineas.append(f"{p['ticker']} | {p['vencimiento']} | {bonos._pct(p['tea'])} | fuera del rango de la tasa fija")
+                    lineas.append(f"{p['ticker']} | {p['vencimiento']} | {pct(p['tea'])} | fuera del rango de la tasa fija")
                     continue
                 imp = be.tamar_implicita(tf, p["precio"], p["plazo"], p["dias_30_360"], p["margen"], p["conocidas"], p["a_estimar"])
-                fila = (f"{p['ticker']} | {p['vencimiento']} | {bonos._pct(p['tea'])} | {bonos._pct(tf)} | "
-                        + (f"{bonos._pct(imp)} TNA" if imp is not None else "sin días por publicar"))
+                fila = (f"{p['ticker']} | {p['vencimiento']} | {pct(p['tea'])} | {pct(tf)} | "
+                        + (f"{pct(imp)} TNA" if imp is not None else "sin días por publicar"))
                 if con_rem and p["a_estimar"]:
-                    dias = bonos.feriados.dias_habiles_entre(p["desde_estimar"], p["fin_ventana"], bonos.CALENDARIO_HABILES)
+                    dias = mercado.feriados.dias_habiles_entre(p["desde_estimar"], p["fin_ventana"], mercado.CALENDARIO_HABILES)
                     valores = [rem["tamar"]((d.year, d.month)) for d in dias]
                     tamar_bono = (sum(p["conocidas"]) + sum(valores)) / (len(p["conocidas"]) + len(valores))
                     r = tamar.calcular(p["precio"], tamar_bono, p["margen"], p["emision"], p["vencimiento"], liquidacion,
                                        ref or 0)
-                    fila += f" | {bonos._pct(sum(valores) / len(valores))} TNA | {bonos._pct(r['tea'])}"
+                    fila += f" | {pct(sum(valores) / len(valores))} TNA | {pct(r['tea'])}"
                 lineas.append(fila)
             texto.append("\n".join(lineas))
             if con_rem:

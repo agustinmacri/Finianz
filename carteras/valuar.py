@@ -22,8 +22,8 @@ import config
 from admin_datos import precios as db_precios
 from carga_datos import precios as carga_precios
 from conexiones.http import ErrorAPI
-from renta_fija import leer_fichas, mercado, metricas
-from renta_fija.calculadoras import cer, cer_cupon, motor, tamar
+from renta_fija import mercado, metricas
+from renta_fija.calculadoras import motor
 from renta_fija.calculadoras import proyeccion_cer as pc
 
 MONEDAS = {"pesos": "pesos", "mep": "dólares MEP", "ccl": "dólares CCL"}
@@ -152,26 +152,15 @@ class Proyecciones:
         if familia.startswith("tasa_fija") or m.get("pago_conocido"):
             return m["tea"]                                 # pago final ya fijo en pesos (CER, TAMAR o DL): tasa fija
         if familia in ("cer_cero_cupon", "cer_cupon"):
-            cer_en = self.cer()
-            _, f2, cer_corriente = mercado.datos_cer(f, liq)
-            fecha_cer = lambda p: mercado.feriados.sumar_dias_habiles(p, -cer.REZAGO_HABILES, mercado.CALENDARIO_HABILES)
-            if familia == "cer_cero_cupon":
-                return pc.nominal_cero_cupon(precio, f2["cer_inicial"], cer_en(fecha_cer(f["vencimiento"])), liq,
-                                             f["vencimiento"])["tir"]
-            ajustar = lambda d: mercado.feriados.proximo_dia_habil(d, mercado.CALENDARIO_HABILES)
-            real = cer_cupon.calcular(precio, f2["cer_inicial"], cer_corriente, liq, f["pagos"], f["cupon"],
-                                      f["frecuencia"], f["emision"], ajustar)
-            cers = [cer_en(fecha_cer(p["fecha"])) for p in f["pagos"] if p["fecha"] > liq]
-            return pc.nominal_con_cupon(precio, f2["cer_inicial"], real["flujos"], cers, liq)["tir"]
+            from tools.proyeccion_cer import nominal_cer
+            return nominal_cer(f, precio, liq, self.cer())["tir"]
         if familia == "tamar_capitalizable":
-            from tools.proyecciones import tamar_del_bono
-            tamar_bono, d = tamar_del_bono(f, self.ctx.operacion, self.tamar())
-            return tamar.calcular(precio / mercado.tipo_cambio_inicial(f), tamar_bono, f["margen"], f["emision"],
-                                  f["vencimiento"], liq, d["referencia"])["tea"]
+            from tools.proyecciones import tamar_proyectada
+            return tamar_proyectada(f, precio, liq, self.ctx.operacion, self.tamar())[0]["tea"]
         if familia in ("dolar_linked_bullet", "dolar_linked_cupon"):
             return self._tir_en_pesos(m["flujos"], precio, self.oficial())
         if familia == "hard_dollar":
-            tipo = "ccl" if f.get("ley") == "NY" else "mep"
+            tipo = mercado.moneda_hard_dollar(f)
             return self._tir_en_pesos(m["flujos"], precio * self.ctx.fx[tipo], self.dolar(tipo))
         raise ValueError(f"sin proyección para {familia}")
 
@@ -191,7 +180,7 @@ def _nombre_tipo(f: dict) -> str:
 def _renta_fija(pos, fichas: list[dict], ctx: Contexto, proy: Proyecciones) -> dict:
     principal = fichas[0]
     hd = principal["familia"] == "hard_dollar"
-    tipo_fx = ("ccl" if principal.get("ley") == "NY" else "mep") if hd else None
+    tipo_fx = mercado.moneda_hard_dollar(principal) if hd else None
     # Hard dollar: precio en dólares (D si es ley AR, C si es ley NY), valuado al MEP o al CCL
     px = precio(pos.ticker + ({"mep": "D", "ccl": "C"}[tipo_fx] if hd else ""), ctx.fecha_precios, ctx.avisos)
     precio_pesos = px * ctx.fx[tipo_fx] if hd else px
@@ -386,8 +375,7 @@ def valuar(cartera: Cartera, moneda: str = "pesos", fecha: date | None = None) -
             raise ValueError(f"operaciones: {e}") from None
         cartera = Cartera(cartera.nombre, [Posicion(t, x.nominales) for t, x in libro.tenencias.items()
                                            if x.nominales > 1e-9], cartera.supuestos, _liquidez_de_libro(libro, operacion))
-    fichas_de = {p.ticker: [f for f in leer_fichas.fichas_de(p.ticker) if f["familia"] in metricas.UNIDAD]
-                 for p in cartera.posiciones}
+    fichas_de = {p.ticker: metricas.fichas_de(p.ticker) for p in cartera.posiciones}
     vencimientos = [f["vencimiento"] for lista in fichas_de.values() for f in lista]
     proy = Proyecciones(cartera.supuestos, ctx, max(vencimientos, default=operacion))
     filas, avisos = [], []

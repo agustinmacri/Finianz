@@ -69,7 +69,7 @@ def _feriados():
 
 
 def test_fecha_cer_final():
-    from tools.bonos import CALENDARIO_HABILES
+    from renta_fija.mercado import CALENDARIO_HABILES
     feriados = _feriados()
     for t, vto, fecha_cer, *_ in CASOS:
         if t in FECHA_CER_CONOCIDAS:
@@ -80,7 +80,7 @@ def test_fecha_cer_final():
 
 def test_fecha_cer_corriente():
     """Liquidación 13/11/2026: 10.º día hábil anterior con el calendario de BYMA (9/11 y 10/11 feriados)."""
-    from tools.bonos import CALENDARIO_HABILES
+    from renta_fija.mercado import CALENDARIO_HABILES
     feriados = _feriados()
     assert feriados.sumar_dias_habiles(LIQUIDACION, -cer.REZAGO_HABILES, CALENDARIO_HABILES) == date(2026, 10, 28)
 
@@ -88,7 +88,7 @@ def test_fecha_cer_corriente():
 def test_fecha_base_con_feriados_puente():
     """Emisión del 31/03/2026 (TZXM8, TZXM9, TZXS7, TZXS8): con el 23/03 (puente) y el 24/03 inhábiles,
     el 10.º día hábil anterior es el 13/03/2026, como en el Excel."""
-    from tools.bonos import CALENDARIO_HABILES
+    from renta_fija.mercado import CALENDARIO_HABILES
     feriados = _feriados()
     assert feriados.sumar_dias_habiles(date(2026, 3, 31), -cer.REZAGO_HABILES, CALENDARIO_HABILES) == date(2026, 3, 13)
 

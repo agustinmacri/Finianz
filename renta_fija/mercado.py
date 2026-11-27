@@ -21,6 +21,21 @@ PLAZO_LIQUIDACION = 1          # T+1: precios y cálculos a la fecha de liquidac
 CALENDARIO_HABILES = "BYMA"    # días hábiles del rezago del CER y de las fechas de pago (decisión de Agustin, 13/11/2026)
 
 
+def ajustar(d: date) -> date:
+    """Fecha de pago corrida al próximo día hábil (la que usan las calculadoras para los flujos)."""
+    return feriados.proximo_dia_habil(d, CALENDARIO_HABILES)
+
+
+def fecha_cer(d: date) -> date:
+    """Fecha del CER que se usa para una fecha (pago, liquidación o emisión): el 10.º día hábil anterior."""
+    return feriados.sumar_dias_habiles(d, -cer.REZAGO_HABILES, CALENDARIO_HABILES)
+
+
+def moneda_hard_dollar(f: dict) -> str:
+    """Dólar en que cobra y cotiza un hard dollar: cable ("ccl") los de ley NY, MEP ("mep") los de ley AR."""
+    return "ccl" if f.get("ley") == "NY" else "mep"
+
+
 def contexto(fecha: date | None = None) -> tuple[date, date, date | None]:
     """(operación, liquidación T+1, fecha de precios): hoy con precios en vivo, o el cierre de 'fecha'."""
     operacion = fecha or date.today()
@@ -75,7 +90,7 @@ def cer_final_conocido(fecha_pago: date, operacion: date | None = None) -> float
     el dato ya esté en la base."""
     import time
     operacion = operacion or date.today()
-    fecha = feriados.sumar_dias_habiles(fecha_pago, -cer.REZAGO_HABILES, CALENDARIO_HABILES)
+    fecha = fecha_cer(fecha_pago)
     if publicacion_cer(fecha) > operacion:
         return None
     valor = db_series.valor("CER", fecha)
@@ -161,10 +176,10 @@ def precio(ticker: str, fecha: date | None) -> tuple[float, str]:
 def datos_cer(f: dict, liquidacion: date) -> tuple[str, dict, float]:
     """CER corriente (10.º día hábil anterior a la liquidación) y CER inicial (10.º día hábil anterior a la
     emisión), ambos de la base propia de series: las fichas no traen valores de CER."""
-    fecha_cer_corriente = feriados.sumar_dias_habiles(liquidacion, -cer.REZAGO_HABILES, CALENDARIO_HABILES)
+    fecha_cer_corriente = fecha_cer(liquidacion)
     cer_corriente = cer_de(fecha_cer_corriente)
     asegurar_feriados(f["emision"])
-    fecha_base = feriados.sumar_dias_habiles(f["emision"], -cer.REZAGO_HABILES, CALENDARIO_HABILES)
+    fecha_base = fecha_cer(f["emision"])
     f = dict(f, cer_inicial=cer_de(fecha_base))
     texto = (f"Base (CER inicial): {f['cer_inicial']:,.4f} (al {fecha_base}, 10.º día hábil anterior a la emisión "
              f"del {f['emision']}) | CER corriente: {cer_corriente:,.5f} "

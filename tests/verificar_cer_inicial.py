@@ -10,7 +10,8 @@ se aproxima con el nacional).
 from renta_fija import leer_fichas
 from tests.test_renta_fija_cer import CASOS
 from tests.test_renta_fija_cer_cupon import CER_INICIAL as BASE_TX28
-from tools import bonos
+from renta_fija import mercado
+from renta_fija.calculadoras import cer
 
 EXCEL = {t: base for t, _vto, _fecha, base, *_ in CASOS} | {
     "TX28": BASE_TX28,
@@ -24,9 +25,9 @@ def main():
         if not f["familia"].startswith("cer"):
             continue
         ticker = f["ticker"].upper()
-        bonos._asegurar_feriados(f["emision"])
-        fecha = bonos.feriados.sumar_dias_habiles(f["emision"], -bonos.cer.REZAGO_HABILES, bonos.CALENDARIO_HABILES)
-        propia = bonos._cer(fecha)
+        mercado.asegurar_feriados(f["emision"])
+        fecha = mercado.feriados.sumar_dias_habiles(f["emision"], -cer.REZAGO_HABILES, mercado.CALENDARIO_HABILES)
+        propia = mercado.cer_de(fecha)
         excel = EXCEL.get(ticker)
         dif = f"{(propia / excel - 1) * 100:9.5f}" if excel else f"{'(sin Excel)':>9}"
         marca = "  <-- revisar" if excel and abs(propia / excel - 1) > 1e-6 else ""

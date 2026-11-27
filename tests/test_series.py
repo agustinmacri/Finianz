@@ -53,8 +53,8 @@ def test_carga_completa_e_incremental():
             assert carga.actualizar("CER") == 0                      # ya está al día: no guarda nada nuevo
             assert pedidos == []                                     # ni siquiera le pregunta al BCRA
 
-            from tools import bonos                                   # la calculadora lee el CER de la base
-            assert bonos._cer(date(2020, 8, 20)) == db.valor("CER", date(2020, 8, 20))
+            from renta_fija import mercado                            # la calculadora lee el CER de la base
+            assert mercado.cer_de(date(2020, 8, 20)) == db.valor("CER", date(2020, 8, 20))
         finally:
             config.DATOS_DIR, bcra.obtener_serie, bcra.listar_variables = original_dir, original_api, original_listado
 

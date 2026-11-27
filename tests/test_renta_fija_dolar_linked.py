@@ -3,7 +3,7 @@ Correr con:
     python -m tests.test_renta_fija_dolar_linked
 """
 import tempfile
-from datetime import date, timedelta
+from datetime import date
 from pathlib import Path
 
 from renta_fija import leer_fichas
@@ -41,9 +41,9 @@ def test_a3500_del_dia_o_estimado():
         mercado.carga_series.actualizar = lambda variable: 0            # sin conexión
         try:
             db_series.guardar("A3500", [{"fecha": "2026-11-12", "valor": 1440.0}], "prueba")
-            assert bonos._a3500(date(2026, 11, 13)) == (1440.0, date(2026, 11, 12), True)
+            assert mercado.a3500(date(2026, 11, 13)) == (1440.0, date(2026, 11, 12), True)
             db_series.guardar("A3500", [{"fecha": "2026-11-13", "valor": 1450.0}], "prueba")
-            assert bonos._a3500(date(2026, 11, 13)) == (1450.0, date(2026, 11, 13), False)
+            assert mercado.a3500(date(2026, 11, 13)) == (1450.0, date(2026, 11, 13), False)
             texto = bonos.calcular_bono("TZV27", precio=140000, fecha="2026-11-13")
             assert "Precio en dólares: 96.5517" in texto and "A3500 del día de concertación, 2026-11-13" in texto
         finally:

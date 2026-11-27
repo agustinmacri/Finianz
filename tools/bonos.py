@@ -9,27 +9,14 @@ Ningún número sale de cálculos externos: de afuera vienen solo datos.
 """
 from datetime import date, timedelta
 
-from admin_datos import feriados
 from conexiones import fred
 from conexiones.http import ErrorAPI
-from renta_fija import leer_fichas as fichas, mercado
-from renta_fija.calculadoras import breakeven, cer, cer_cupon, dolar_linked, hard_dollar, motor, tamar, tasa_fija
+from renta_fija import leer_fichas as fichas, mercado, metricas
+from renta_fija.calculadoras import breakeven, cer, dolar_linked, hard_dollar, motor, tasa_fija
+from tools.caminos import pct as _pct
 
-# Los datos de mercado (precios, CER, A3500, TAMAR, feriados) viven en renta_fija/mercado.py. Estos nombres quedan
-# como atajos para las demás herramientas (y para las pruebas que los reemplazan por datos inventados).
-PLAZO_LIQUIDACION = mercado.PLAZO_LIQUIDACION
-CALENDARIO_HABILES = mercado.CALENDARIO_HABILES
-_asegurar_feriados = mercado.asegurar_feriados
-_cer = mercado.cer_de
-_ultima_inflacion = mercado.ultima_inflacion
-_precio = mercado.precio
-_datos_cer = mercado.datos_cer
-_a3500 = mercado.a3500
-_datos_tamar = mercado.datos_tamar
-
-
-def _pct(x: float) -> str:
-    return f"{x * 100:.2f}%"
+# Los números salen de renta_fija/metricas.py (la misma calculadora de las curvas, el panel y las carteras, con las
+# reglas de pago conocido); acá se arma el texto. Los datos de mercado vienen de renta_fija/mercado.py.
 
 
 def calcular_bono(ticker: str, precio: float | None = None, fecha: str | None = None,
@@ -49,14 +36,14 @@ def calcular_bono(ticker: str, precio: float | None = None, fecha: str | None = 
     # Datos comunes a todos los bonos: liquidación y precio
     try:
         operacion = date.fromisoformat(fecha) if fecha else date.today()
-        _asegurar_feriados(operacion, f["vencimiento"])
-        liquidacion = feriados.sumar_dias_habiles(operacion, PLAZO_LIQUIDACION, "BYMA")
+        mercado.asegurar_feriados(operacion, f["vencimiento"])
+        liquidacion = mercado.feriados.sumar_dias_habiles(operacion, mercado.PLAZO_LIQUIDACION, "BYMA")
         if liquidacion >= f["vencimiento"]:
             return f"{ticker.upper()} vence el {f['vencimiento']}: no quedan flujos para la liquidación del {liquidacion}."
         if f["familia"] == "hard_dollar":
-            return _hard_dollar(f, precio, date.fromisoformat(fecha) if fecha else None, liquidacion)
+            return _hard_dollar(f, precio, date.fromisoformat(fecha) if fecha else None, liquidacion, operacion)
         if precio is None:
-            precio, origen = _precio(ticker, date.fromisoformat(fecha) if fecha else None)
+            precio, origen = mercado.precio(ticker, date.fromisoformat(fecha) if fecha else None)
         else:
             origen = "precio indicado"
     except (ErrorAPI, ValueError) as e:
@@ -64,7 +51,7 @@ def calcular_bono(ticker: str, precio: float | None = None, fecha: str | None = 
 
     encabezado = (
         f"{ticker.upper()} ({f['tipo']}, vence {f['vencimiento']}) – calculadora de Finianz\n"
-        f"Precio: {precio:,.2f} por 100 VN ({origen}) | liquidación {liquidacion} (T+{PLAZO_LIQUIDACION})\n"
+        f"Precio: {precio:,.2f} por 100 VN ({origen}) | liquidación {liquidacion} (T+{mercado.PLAZO_LIQUIDACION})\n"
     )
     secciones, avisos = [], ""
     for f in lista:                       # un dual tiene una ficha por cada forma de calcularlo
@@ -106,9 +93,7 @@ def _dual_tasa_fija_tamar(lista: list[dict], precio: float, liquidacion: date, o
         pata_tamar = next(f for f in lista if f["familia"] == "tamar_capitalizable")
         pf_fija = tasa_fija.pago_final(fija["cupon"], fija["emision"], fija["vencimiento"])
         camino, desc_tamar = proyecciones.camino_tamar(fuente_tamar, operacion)
-        tamar_bono, d = proyecciones.tamar_del_bono(pata_tamar, operacion, camino)
-        r = tamar.calcular(precio, tamar_bono, pata_tamar["margen"], pata_tamar["emision"],
-                           pata_tamar["vencimiento"], liquidacion, d["referencia"])
+        r, d, _, _ = proyecciones.tamar_proyectada(pata_tamar, precio, liquidacion, operacion, camino)
     except (ErrorAPI, ValueError, StopIteration) as e:
         return f"\n— Qué pata paga —\nSin dato: {e}"
     gana = "tasa fija" if pf_fija >= r["pago_final"] else "TAMAR"
@@ -148,14 +133,12 @@ def _dual_dl_tamar(lista: list[dict], precio: float, liquidacion: date, operacio
                     "fecha_tipo_cambio_inicial (A3500 del día hábil anterior a la licitación original) o "
                     "tipo_cambio_inicial a su ficha.")
         camino, desc_tamar = proyecciones.camino_tamar(fuente_tamar, operacion)
-        tamar_bono, d = proyecciones.tamar_del_bono(pata_tamar, operacion, camino)
-        r = tamar.calcular(precio / escala, tamar_bono, pata_tamar["margen"], pata_tamar["emision"],
-                           pata_tamar["vencimiento"], liquidacion, d["referencia"])
+        r, d, _, _ = proyecciones.tamar_proyectada(pata_tamar, precio, liquidacion, operacion, camino)
         tc_hoy, fecha_tc, _ = mercado.a3500(operacion)
     except (ErrorAPI, ValueError, StopIteration, KeyError) as e:
         return f"\n— Qué pata paga —\nSin dato: {e}"
     vto = pata_dl["vencimiento"]
-    fecha_pago_tc = feriados.sumar_dias_habiles(vto, -mercado.REZAGO_TC_PAGO_DL, CALENDARIO_HABILES)
+    fecha_pago_tc = mercado.feriados.sumar_dias_habiles(vto, -mercado.REZAGO_TC_PAGO_DL, mercado.CALENDARIO_HABILES)
     pago_tamar = r["pago_final"] * escala                      # pesos por 100 VN en dólares
     tc_indiferencia = pago_tamar / dolar_linked.PAGO_FINAL_USD
     dias_tc = max((fecha_pago_tc - operacion).days, 1)
@@ -198,8 +181,8 @@ def _dual_cer_tamar(lista: list[dict], precio: float, liquidacion: date, operaci
     try:
         pata_cer = next(f for f in lista if f["familia"] == "cer_cero_cupon")
         pata_tamar = next(f for f in lista if f["familia"] == "tamar_capitalizable")
-        _, f2, _ = _datos_cer(pata_cer, liquidacion)
-        fecha_final = feriados.sumar_dias_habiles(pata_cer["vencimiento"], -cer.REZAGO_HABILES, CALENDARIO_HABILES)
+        _, f2, _ = mercado.datos_cer(pata_cer, liquidacion)
+        fecha_final = mercado.fecha_cer(pata_cer["vencimiento"])
         caminos, desc_inflacion, serie, publicadas = proyeccion_cer.camino_inflacion(
             fuente_inflacion, liquidacion, pc.mes_aplicado(fecha_final), None, operacion, fecha_precios)
         ultimo = max(serie)
@@ -207,9 +190,7 @@ def _dual_cer_tamar(lista: list[dict], precio: float, liquidacion: date, operaci
         cer_final = serie[fecha_final] if fecha_final <= ultimo else pc.proyectar(serie, inflacion, fecha_final)[fecha_final]
         pago_cer = 100 * cer_final / f2["cer_inicial"]
         camino, desc_tamar = proyecciones.camino_tamar(fuente_tamar, operacion)
-        tamar_bono, d = proyecciones.tamar_del_bono(pata_tamar, operacion, camino)
-        r = tamar.calcular(precio, tamar_bono, pata_tamar["margen"], pata_tamar["emision"], pata_tamar["vencimiento"],
-                           liquidacion, d["referencia"])
+        r, d, tamar_bono, _ = proyecciones.tamar_proyectada(pata_tamar, precio, liquidacion, operacion, camino)
     except (ErrorAPI, ValueError, StopIteration, KeyError) as e:
         return f"\n— Qué pata paga —\nSin dato: {e}"
     plazo = r["plazo_residual"]
@@ -250,57 +231,160 @@ NOMBRE_FAMILIA = {
 
 def _calcular_ficha(f: dict, precio: float, liquidacion: date, operacion: date,
                     inflacion_mensual: float | None) -> str:
-    if f["familia"].startswith("cer"):
-        texto_cer, f, cer_corriente = _datos_cer(f, liquidacion)
-        if f["familia"] == "cer_cupon":
-            futuros = [p for p in f["pagos"] if p["fecha"] > liquidacion]
-            extra = ""
-            if len(futuros) == 1:
-                reales = cer_cupon.calcular(precio, f["cer_inicial"], cer_corriente, liquidacion, f["pagos"], f["cupon"],
-                                            f["frecuencia"], f["emision"],
-                                            lambda d: feriados.proximo_dia_habil(d, CALENDARIO_HABILES))["flujos"]
-                extra = _cer_final_conocido(f, precio, liquidacion, operacion, futuros[0]["fecha"],
-                                            [fl for fl in reales if fl.fecha > liquidacion])
-            return texto_cer + _cer_cupon(f, precio, cer_corriente, liquidacion) + extra
-        return (texto_cer + _cer_cero_cupon(f, precio, cer_corriente, liquidacion, inflacion_mensual)
-                + _cer_final_conocido(f, precio, liquidacion, operacion, f["vencimiento"]))
-    if f["familia"] == "tasa_fija_capitalizable":
-        return _tasa_fija_capitalizable(f, precio, liquidacion)
-    if f["familia"] == "tamar_capitalizable":
-        return _tamar_capitalizable(f, precio, liquidacion, operacion)
-    if f["familia"] == "dolar_linked_bullet":
-        return _dolar_linked_bullet(f, precio, liquidacion, operacion)
-    if f["familia"] == "dolar_linked_cupon":
-        return _dolar_linked_cupon(f, precio, liquidacion, operacion)
-    if f["familia"] == "tasa_fija_descuento":
-        return _tasa_fija_descuento(f, precio, liquidacion)
-    return _tasa_fija_cupon(f, precio, liquidacion)
+    """El texto de una ficha. Los números salen de metricas.calculadora; si el pago ya se conoce (CER, A3500 o TAMAR
+    publicados), se agrega la línea de tasa fija."""
+    contexto = {}
+    m = metricas.calculadora(f, liquidacion, operacion, contexto)(precio)
+    r = m.get("indexado") or m["detalle"]           # el cálculo como bono indexado, aunque el pago ya se conozca
+    familia = f["familia"]
+    if familia == "cer_cero_cupon":
+        texto = contexto["datos_cer"][0] + _cer_cero_cupon(f, r, inflacion_mensual)
+    elif familia == "cer_cupon":
+        texto = contexto["datos_cer"][0] + _cer_cupon(r)
+    elif familia == "tasa_fija_capitalizable":
+        texto = _tasa_fija_capitalizable(f, r)
+    elif familia == "tamar_capitalizable":
+        texto = _tamar_capitalizable(f, r, contexto["datos_tamar"])
+    elif familia == "dolar_linked_bullet":
+        texto = _dolar_linked_bullet(f, r, operacion, contexto["a3500"])
+    elif familia == "dolar_linked_cupon":
+        texto = _dolar_linked_cupon(f, r, operacion, contexto["a3500"])
+    elif familia == "tasa_fija_descuento":
+        texto = _tasa_fija_descuento(r)
+    else:
+        texto = _tasa_fija_cupon(r)
+    return texto + _pago_conocido(m)
 
 
-def _dolar_linked_bullet(f: dict, precio: float, liquidacion: date, operacion: date) -> str:
-    tc, fecha_tc, estimado = _a3500(operacion)
-    r = dolar_linked.calcular_bullet(precio, tc, liquidacion, f["vencimiento"])
-    origen_tc = (f"A3500 del {fecha_tc}, estimado: el del {operacion} todavía no se publicó" if estimado
-                 else f"A3500 del día de concertación, {fecha_tc}")
+def _pago_conocido(m: dict) -> str:
+    """La línea del bono que ya pasó a tasa fija (pago final conocido el día de la operación)."""
+    if not m.get("pago_conocido"):
+        return ""
+    if m.get("cer_conocido"):
+        return (f"\nCER final ya publicado ({m['extra']['cer_final']:,.4f}): el pago queda fijo en "
+                f"${m['extra']['pago_final']:,.4f} por 100 VN y el bono se valúa como tasa fija. TIR nominal (TEA): "
+                f"{_pct(m['tea'])}. Figura en la curva de tasa fija.")
+    if "tipo_cambio_pago" in m["extra"]:
+        return (f"\nA3500 de pago ya publicado ({m['extra']['tipo_cambio_pago']:,.4f}): el pago queda fijo en "
+                f"${m['extra']['pago_final']:,.4f} por 100 VN y el bono se valúa como tasa fija. TNA: {_pct(m['tna'])} | "
+                f"TIR nominal (TEA): {_pct(m['tea'])}. Figura en la curva de tasa fija.")
+    return ("\nYa se publicó la TAMAR de toda la ventana: el pago final queda fijo en pesos y el bono se valúa como tasa "
+            "fija (la TEA de arriba es nominal y definitiva). Figura en la curva de tasa fija.")
+
+
+def _origen_a3500(operacion: date, a3500: tuple) -> tuple[float, str]:
+    tc, fecha_tc, estimado = a3500
+    return tc, (f"A3500 del {fecha_tc}, estimado: el del {operacion} todavía no se publicó" if estimado
+                else f"A3500 del día de concertación, {fecha_tc}")
+
+
+def _proximos(r: dict) -> str:
+    return "; ".join(f"{fl.fecha}: {fl.renta:.4f} + {fl.amortizacion:g} = {fl.total:.4f}" for fl in r["flujos"][:4])
+
+
+def _dolar_linked_bullet(f: dict, r: dict, operacion: date, a3500: tuple) -> str:
+    tc, origen_tc = _origen_a3500(operacion, a3500)
     pago = f" | tipo de cambio de pago: {f['tipo_cambio_pago']}" if f.get("tipo_cambio_pago") else ""
     return (
         f"Precio en dólares: {r['precio_usd']:.4f} por 100 VN (precio en pesos / {tc:,.4f}, {origen_tc})\n"
         f"Paga 100 dólares por 100 VN al vencimiento, en pesos{pago}\n"
         f"Plazo residual: {r['plazo_residual']} días | duration: {r['duration']:.4f}\n"
         f"TNA: {_pct(r['tna'])} | TIR (TEA): {_pct(r['tea'])} | TEM (30 días): {_pct(r['tem'])} (en dólares, actual/365)"
-    ) + _dl_pago_conocido(f, precio, liquidacion, operacion)
+    )
 
 
-def _dl_pago_conocido(f: dict, precio: float, liquidacion: date, operacion: date) -> str:
-    """Si ya se publicó el A3500 de pago (3.er día hábil anterior al vencimiento), el bono es de tasa fija."""
-    tc_pago = mercado.a3500_pago_conocido(f, operacion)
-    if tc_pago is None:
-        return ""
-    pago = dolar_linked.PAGO_FINAL_USD * tc_pago
-    n = tasa_fija.calcular_capitalizable(precio, pago, liquidacion, f["vencimiento"])
-    return (f"\nA3500 de pago ya publicado ({tc_pago:,.4f}): el pago queda fijo en ${pago:,.4f} por 100 VN y el bono "
-            f"se valúa como tasa fija. TNA: {_pct(n['tna'])} | TIR nominal (TEA): {_pct(n['tea'])}. Figura en la curva "
-            "de tasa fija.")
+def _tamar_capitalizable(f: dict, r: dict, d: dict) -> str:
+    return (
+        f"TAMAR del bono: {_pct(r['tamar_bono'])} (promedio del {d['inicio']} al {d['fin']}: "
+        f"{len(d['conocidas'])} días publicados y {d['a_estimar']} estimados) + margen {_pct(f['margen'])} → "
+        f"TEM {_pct(r['tem_bono'])} (base 32 días)\n"
+        f"Pago final teórico: {r['pago_final']:.4f} por 100 VN | plazo residual: {r['plazo_residual']} días | "
+        f"duration: {r['duration']:.4f}\n"
+        f"TNA: {_pct(r['tna'])} | TEA (TIR): {_pct(r['tea'])} | TEM (30 días): {_pct(r['tem_30'])} | "
+        f"TNA semestral: {_pct(r['tna_semestral'])}\n"
+        f"TNA 30 d: {_pct(r['tna_30'])} | TAMAR de referencia: {_pct(r['tamar_referencia'])} (últimos 5 días hábiles "
+        f"publicados, {d['ultimas'][0]} a {d['ultimas'][1]}; estima los días que faltan) | "
+        f"spread sobre TAMAR (TNA 30 d − referencia): {_pct(r['spread'])}"
+    )
+
+
+def _tasa_fija_capitalizable(f: dict, r: dict) -> str:
+    return (
+        f"Pago final: {r['pago_final']:.4f} por 100 VN (cupón de licitación {_pct(f['cupon'])} mensual capitalizable, emitida el {f['emision']})\n"
+        f"Plazo residual: {r['plazo_residual']} días ({r['meses_al_vencimiento']:.2f} meses 30/360) | "
+        f"duration: {r['duration']:.4f}\n"
+        f"TNA: {_pct(r['tna'])} | TEA (TIR): {_pct(r['tea'])} | TEM (30 días): {_pct(r['tem'])}"
+    )
+
+
+def _tasa_fija_descuento(r: dict) -> str:
+    return (
+        f"Letra a descuento: paga 100 por 100 VN al vencimiento\n"
+        f"Plazo residual: {r['plazo_residual']} días | duration: {r['duration']:.4f}\n"
+        f"TNA: {_pct(r['tna'])} | TEA (TIR): {_pct(r['tea'])} | TEM (30 días): {_pct(r['tem'])} | "
+        f"tasa de descuento: {_pct(r['tasa_descuento'])}"
+    )
+
+
+def _dolar_linked_cupon(f: dict, r: dict, operacion: date, a3500: tuple) -> str:
+    tc, origen_tc = _origen_a3500(operacion, a3500)
+    pago = f" | tipo de cambio de pago: {f['tipo_cambio_pago']}" if f.get("tipo_cambio_pago") else ""
+    return (
+        f"Precio en dólares: {r['precio_usd']:.4f} por 100 VN (precio en pesos / {tc:,.4f}, {origen_tc}){pago}\n"
+        f"Residual: {r['residual']:g} | cupón {_pct(f['cupon'])} ({f['base']}) | interés corrido: {r['interes_corrido']:.4f} | "
+        f"valor técnico: {r['valor_tecnico']:.4f} | paridad: {_pct(r['paridad'])}\n"
+        f"TIR (TEA, en dólares): {_pct(r['tir'])} | TNA semestral: {_pct(r['tna_semestral'])} | TEM: {_pct(r['tem'])}\n"
+        f"Duration: {r['duration']:.4f} | duration modificada: {r['duration_modificada']:.4f} | "
+        f"convexidad: {r['convexidad']:.4f} | PV01: {r['pv01']:.6f} | DD (100 pb): {r['dd']:.4f}\n"
+        f"Current yield: {_pct(r['current_yield'])} | cash yield (12 meses): {_pct(r['cash_yield'])}\n"
+        f"Próximos flujos en dólares por 100 VN (renta + amortización, fechas corridas): {_proximos(r)}"
+    )
+
+
+def _tasa_fija_cupon(r: dict) -> str:
+    return (
+        f"Residual: {r['residual']:g} | interés corrido: {r['interes_corrido']:.4f} | "
+        f"valor técnico: {r['valor_tecnico']:.4f}\n"
+        f"Paridad: {_pct(r['paridad'])}\n"
+        f"TIR: {_pct(r['tir_real'])} | TNA semestral: {_pct(r['tna_semestral'])} | TNA 30 d: {_pct(r['tna_30'])} | "
+        f"TEM: {_pct(r['tem'])}\n"
+        f"Duration: {r['duration']:.4f} | duration modificada: {r['duration_modificada']:.4f} | "
+        f"convexidad: {r['convexidad']:.4f} | PV01: {r['pv01']:.6f} | DD (100 pb): {r['dd']:.4f}\n"
+        f"Current yield: {_pct(r['current_yield'])} | cash yield (12 meses): {_pct(r['cash_yield'])}\n"
+        f"Próximos flujos por 100 VN (renta + amortización, fechas corridas): {_proximos(r)}"
+    )
+
+
+def _cer_cero_cupon(f: dict, r: dict, inflacion_mensual: float | None) -> str:
+    if inflacion_mensual is None:
+        inflacion, mes_inflacion = mercado.ultima_inflacion()
+        origen_inflacion = f"{mes_inflacion}, INDEC vía BCRA"
+    else:
+        inflacion, origen_inflacion = inflacion_mensual / 100, "indicada"
+    return (
+        f"Plazo residual: {r['plazo_residual']} días | ratio: {r['ratio']:,.4f} | valor técnico: {r['valor_tecnico']:,.4f} "
+        f"(100 × ratio, en pesos) | paridad: {_pct(r['paridad'])}\n"
+        f"Fecha CER final (10.º día hábil anterior al vencimiento): {mercado.fecha_cer(f['vencimiento'])}\n"
+        f"TNA real: {_pct(r['tna_real'])} | TEA real (TIR): {_pct(r['tea_real'])}\n"
+        f"Duration: {r['duration']:.4f} | duration modificada: {r['duration_modificada']:.4f} | "
+        f"convexidad: {r['convexidad']:.4f}\n"
+        f"Carry mensual: {_pct(cer.carry_mensual(inflacion, r['tna_real']))} (inflación {_pct(inflacion)} "
+        f"[{origen_inflacion}] + TNA / 12)"
+    )
+
+
+def _cer_cupon(r: dict) -> str:
+    return (
+        f"Ratio: {r['ratio']:,.4f} | residual: {r['residual']:g} | interés corrido: {r['interes_corrido']:.4f} | "
+        f"valor técnico: {r['valor_tecnico']:.4f}\n"
+        f"Precio real (precio / ratio): {r['precio_dirty_real']:.4f} | paridad: {_pct(r['paridad'])}\n"
+        f"TIR real: {_pct(r['tir_real'])} | TNA semestral: {_pct(r['tna_semestral'])} | TNA 30 d: {_pct(r['tna_30'])} | "
+        f"TEM: {_pct(r['tem'])}\n"
+        f"Duration: {r['duration']:.4f} | duration modificada: {r['duration_modificada']:.4f} | "
+        f"convexidad: {r['convexidad']:.4f} | PV01: {r['pv01']:.6f} | DD (100 pb): {r['dd']:.4f}\n"
+        f"Current yield: {_pct(r['current_yield'])} | cash yield (12 meses): {_pct(r['cash_yield'])}\n"
+        f"Próximos flujos reales por 100 VN (renta + amortización, fechas corridas): {_proximos(r)}"
+    )
 
 
 # Treasuries de EE. UU. (constant maturity, FRED): serie -> plazo en años
@@ -322,13 +406,12 @@ def _treasuries(fecha: date) -> tuple[list[tuple[float, float]], str]:
     return curva, max(fechas)
 
 
-def _hard_dollar(f: dict, precio: float | None, fecha: date | None, liquidacion: date) -> str:
+def _hard_dollar(f: dict, precio: float | None, fecha: date | None, liquidacion: date, operacion: date) -> str:
     """Bono en dólares: TIR con precio MEP y cable, spreads contra Treasuries y entre leyes, dólar implícito."""
     base = f["ticker"].upper()
-    ajustar = lambda d: feriados.proximo_dia_habil(d, CALENDARIO_HABILES)
 
     def calcular(ficha_, p):
-        return hard_dollar.calcular(p, liquidacion, ficha_["pagos"], ficha_["tramos"], ficha_["emision"], ajustar)
+        return metricas.calculadora(ficha_, liquidacion, operacion)(p)["detalle"]
 
     precios, faltantes = {}, []
     if precio is not None:
@@ -336,7 +419,7 @@ def _hard_dollar(f: dict, precio: float | None, fecha: date | None, liquidacion:
     else:
         for nombre, sufijo in SUFIJOS_USD.items():
             try:
-                precios[nombre] = _precio(base + sufijo, fecha)
+                precios[nombre] = mercado.precio(base + sufijo, fecha)
             except (ErrorAPI, ValueError) as e:
                 faltantes.append(f"{nombre} ({base + sufijo}): {e}")
     if not precios:
@@ -353,7 +436,7 @@ def _hard_dollar(f: dict, precio: float | None, fecha: date | None, liquidacion:
     proximos = "; ".join(f"{fl.fecha}: {fl.renta:.4f} + {fl.amortizacion:g} = {fl.total:.4f}" for fl in r0["flujos"][:4])
     texto = (
         f"{base} ({f['tipo']}, ley {f['ley']}, vence {f['vencimiento']}) – calculadora de Finianz\n"
-        f"Liquidación {liquidacion} (T+{PLAZO_LIQUIDACION}) | residual: {r0['residual']:g} | cupón vigente: "
+        f"Liquidación {liquidacion} (T+{mercado.PLAZO_LIQUIDACION}) | residual: {r0['residual']:g} | cupón vigente: "
         f"{_pct(r0['tasa_vigente'])} | interés corrido: {r0['interes_corrido']:.4f} | valor técnico: {r0['valor_tecnico']:.4f}\n"
         f"Próximos flujos por 100 VN en USD (renta + amortización, fechas corridas): {proximos}\n"
         f"TNA: nominal anual con capitalización semestral, base 30/360; TIR = TEA. Precios en dólares por 100 VN original "
@@ -376,7 +459,7 @@ def _hard_dollar(f: dict, precio: float | None, fecha: date | None, liquidacion:
                       f"{r['duration']:.2f} años: {_pct(ust)}, FRED al {fecha_ust})\n")
         if par and precio is None:
             try:
-                p_par, _ = _precio(par["ticker"].upper() + SUFIJOS_USD[nombre], fecha)
+                p_par, _ = mercado.precio(par["ticker"].upper() + SUFIJOS_USD[nombre], fecha)
                 tir_par = calcular(par, p_par)["tir"]
                 ny, ar = (r["tir"], tir_par) if f["ley"] == "NY" else (tir_par, r["tir"])
                 texto += (f"Spread ley NY − ley AR (sobre la TNA semestral): {(ny - ar) * 10000:,.0f} pb ({par['ticker'].upper()} a "
@@ -387,7 +470,7 @@ def _hard_dollar(f: dict, precio: float | None, fecha: date | None, liquidacion:
         texto += f"\nSpread contra Treasuries: sin dato ({fecha_ust})\n"
     if precio is None:
         try:
-            pesos, origen_pesos = _precio(base, fecha)
+            pesos, _ = mercado.precio(base, fecha)
             implicitos = " | ".join(f"{'MEP' if n == 'MEP' else 'CCL'}: {pesos / p:,.2f}" for n, (p, _) in precios.items())
             texto += f"\nDólar implícito ({base} en pesos a {pesos:,.2f} / precio en dólares): {implicitos}\n"
         except (ErrorAPI, ValueError) as e:
@@ -397,141 +480,6 @@ def _hard_dollar(f: dict, precio: float | None, fecha: date | None, liquidacion:
     if not f.get("revisado"):
         texto += "\nAVISO: la ficha técnica todavía no fue revisada por Agustin; tomá el resultado como preliminar."
     return texto.rstrip("\n")
-
-
-def _tamar_capitalizable(f: dict, precio: float, liquidacion: date, operacion: date) -> str:
-    d = _datos_tamar(f, operacion)
-    escala = mercado.tipo_cambio_inicial(f)          # dual TAMAR/DL: VN en dólares al tipo de cambio inicial
-    r = tamar.calcular(precio / escala, d["tamar_bono"], f["margen"], f["emision"], f["vencimiento"], liquidacion,
-                       d["referencia"])
-    return (
-        f"TAMAR del bono: {_pct(r['tamar_bono'])} (promedio del {d['inicio']} al {d['fin']}: "
-        f"{len(d['conocidas'])} días publicados y {d['a_estimar']} estimados) + margen {_pct(f['margen'])} → "
-        f"TEM {_pct(r['tem_bono'])} (base 32 días)\n"
-        f"Pago final teórico: {r['pago_final']:.4f} por 100 VN | plazo residual: {r['plazo_residual']} días | "
-        f"duration: {r['duration']:.4f}\n"
-        f"TNA: {_pct(r['tna'])} | TEA (TIR): {_pct(r['tea'])} | TEM (30 días): {_pct(r['tem_30'])} | "
-        f"TNA semestral: {_pct(r['tna_semestral'])}\n"
-        f"TNA 30 d: {_pct(r['tna_30'])} | TAMAR de referencia: {_pct(r['tamar_referencia'])} (últimos 5 días hábiles "
-        f"publicados, {d['ultimas'][0]} a {d['ultimas'][1]}; estima los días que faltan) | "
-        f"spread sobre TAMAR (TNA 30 d − referencia): {_pct(r['spread'])}"
-    ) + ("\nYa se publicó la TAMAR de toda la ventana: el pago final queda fijo en pesos y el bono se valúa como tasa "
-         "fija (la TEA de arriba es nominal y definitiva). Figura en la curva de tasa fija."
-         if d["a_estimar"] == 0 and d["fin"] < operacion else "")
-
-
-def _tasa_fija_capitalizable(f: dict, precio: float, liquidacion: date) -> str:
-    pf = tasa_fija.pago_final(f["cupon"], f["emision"], f["vencimiento"])
-    r = tasa_fija.calcular_capitalizable(precio, pf, liquidacion, f["vencimiento"])
-    return (
-        f"Pago final: {r['pago_final']:.4f} por 100 VN (cupón de licitación {_pct(f['cupon'])} mensual capitalizable, emitida el {f['emision']})\n"
-        f"Plazo residual: {r['plazo_residual']} días ({r['meses_al_vencimiento']:.2f} meses 30/360) | "
-        f"duration: {r['duration']:.4f}\n"
-        f"TNA: {_pct(r['tna'])} | TEA (TIR): {_pct(r['tea'])} | TEM (30 días): {_pct(r['tem'])}"
-    )
-
-
-def _tasa_fija_descuento(f: dict, precio: float, liquidacion: date) -> str:
-    r = tasa_fija.calcular_descuento(precio, liquidacion, f["vencimiento"])
-    return (
-        f"Letra a descuento: paga 100 por 100 VN al vencimiento\n"
-        f"Plazo residual: {r['plazo_residual']} días | duration: {r['duration']:.4f}\n"
-        f"TNA: {_pct(r['tna'])} | TEA (TIR): {_pct(r['tea'])} | TEM (30 días): {_pct(r['tem'])} | "
-        f"tasa de descuento: {_pct(r['tasa_descuento'])}"
-    )
-
-
-def _dolar_linked_cupon(f: dict, precio: float, liquidacion: date, operacion: date) -> str:
-    tc, fecha_tc, estimado = _a3500(operacion)
-    r = dolar_linked.calcular_cupon(precio, tc, liquidacion, f["pagos"], f["cupon"], f["emision"], f["base"],
-                                    lambda d: feriados.proximo_dia_habil(d, CALENDARIO_HABILES))
-    origen_tc = (f"A3500 del {fecha_tc}, estimado: el del {operacion} todavía no se publicó" if estimado
-                 else f"A3500 del día de concertación, {fecha_tc}")
-    proximos = "; ".join(f"{fl.fecha}: {fl.renta:.4f} + {fl.amortizacion:g} = {fl.total:.4f}" for fl in r["flujos"][:4])
-    pago = f" | tipo de cambio de pago: {f['tipo_cambio_pago']}" if f.get("tipo_cambio_pago") else ""
-    return (
-        f"Precio en dólares: {r['precio_usd']:.4f} por 100 VN (precio en pesos / {tc:,.4f}, {origen_tc}){pago}\n"
-        f"Residual: {r['residual']:g} | cupón {_pct(f['cupon'])} ({f['base']}) | interés corrido: {r['interes_corrido']:.4f} | "
-        f"valor técnico: {r['valor_tecnico']:.4f} | paridad: {_pct(r['paridad'])}\n"
-        f"TIR (TEA, en dólares): {_pct(r['tir'])} | TNA semestral: {_pct(r['tna_semestral'])} | TEM: {_pct(r['tem'])}\n"
-        f"Duration: {r['duration']:.4f} | duration modificada: {r['duration_modificada']:.4f} | "
-        f"convexidad: {r['convexidad']:.4f} | PV01: {r['pv01']:.6f} | DD (100 pb): {r['dd']:.4f}\n"
-        f"Current yield: {_pct(r['current_yield'])} | cash yield (12 meses): {_pct(r['cash_yield'])}\n"
-        f"Próximos flujos en dólares por 100 VN (renta + amortización, fechas corridas): {proximos}"
-    )
-
-
-def _tasa_fija_cupon(f: dict, precio: float, liquidacion: date) -> str:
-    r = tasa_fija.calcular_cupon(precio, liquidacion, f["pagos"], f["cupon"], f["frecuencia"], f["emision"],
-                                 lambda d: feriados.proximo_dia_habil(d, CALENDARIO_HABILES))
-    proximos = "; ".join(f"{fl.fecha}: {fl.renta:.4f} + {fl.amortizacion:g} = {fl.total:.4f}" for fl in r["flujos"][:4])
-    return (
-        f"Residual: {r['residual']:g} | interés corrido: {r['interes_corrido']:.4f} | "
-        f"valor técnico: {r['valor_tecnico']:.4f}\n"
-        f"Paridad: {_pct(r['paridad'])}\n"
-        f"TIR: {_pct(r['tir_real'])} | TNA semestral: {_pct(r['tna_semestral'])} | TNA 30 d: {_pct(r['tna_30'])} | "
-        f"TEM: {_pct(r['tem'])}\n"
-        f"Duration: {r['duration']:.4f} | duration modificada: {r['duration_modificada']:.4f} | "
-        f"convexidad: {r['convexidad']:.4f} | PV01: {r['pv01']:.6f} | DD (100 pb): {r['dd']:.4f}\n"
-        f"Current yield: {_pct(r['current_yield'])} | cash yield (12 meses): {_pct(r['cash_yield'])}\n"
-        f"Próximos flujos por 100 VN (renta + amortización, fechas corridas): {proximos}"
-    )
-
-
-def _cer_cero_cupon(f: dict, precio: float, cer_corriente: float, liquidacion: date,
-                    inflacion_mensual: float | None) -> str:
-    if inflacion_mensual is None:
-        inflacion, mes_inflacion = _ultima_inflacion()
-        origen_inflacion = f"{mes_inflacion}, INDEC vía BCRA"
-    else:
-        inflacion, origen_inflacion = inflacion_mensual / 100, "indicada"
-    fecha_cer_final = feriados.sumar_dias_habiles(f["vencimiento"], -cer.REZAGO_HABILES, CALENDARIO_HABILES)
-    r = cer.calcular(precio, f["cer_inicial"], cer_corriente, liquidacion, f["vencimiento"], inflacion)
-    return (
-        f"Plazo residual: {r['plazo_residual']} días | ratio: {r['ratio']:,.4f} | valor técnico: {r['valor_tecnico']:,.4f} "
-        f"(100 × ratio, en pesos) | paridad: {_pct(r['paridad'])}\n"
-        f"Fecha CER final (10.º día hábil anterior al vencimiento): {fecha_cer_final}\n"
-        f"TNA real: {_pct(r['tna_real'])} | TEA real (TIR): {_pct(r['tea_real'])}\n"
-        f"Duration: {r['duration']:.4f} | duration modificada: {r['duration_modificada']:.4f} | "
-        f"convexidad: {r['convexidad']:.4f}\n"
-        f"Carry mensual: {_pct(r['carry_mensual'])} (inflación {_pct(inflacion)} [{origen_inflacion}] + TNA / 12)"
-    )
-
-
-def _cer_final_conocido(f: dict, precio: float, liquidacion: date, operacion: date, fecha_pago: date,
-                        flujos_reales=None) -> str:
-    """Si el CER del último pago ya se conocía el día de la operación, el bono es de tasa fija: pago en pesos y TIR
-    nominal."""
-    from renta_fija.calculadoras import proyeccion_cer as pc
-    cer_final = mercado.cer_final_conocido(fecha_pago, operacion)
-    if cer_final is None:
-        return ""
-    if flujos_reales is None:
-        n = pc.nominal_cero_cupon(precio, f["cer_inicial"], cer_final, liquidacion, f["vencimiento"])
-        pago = n["pago_final"]
-    else:
-        n = pc.nominal_con_cupon(precio, f["cer_inicial"], flujos_reales, [cer_final] * len(flujos_reales), liquidacion)
-        pago = sum(fl.total for fl in n["flujos"])
-    return (f"\nCER final ya publicado ({cer_final:,.4f}): el pago queda fijo en ${pago:,.4f} por 100 VN y el bono se "
-            f"valúa como tasa fija. TIR nominal (TEA): {_pct(n['tir'])}. Figura en la curva de tasa fija.")
-
-
-def _cer_cupon(f: dict, precio: float, cer_corriente: float, liquidacion: date) -> str:
-    r = cer_cupon.calcular(precio, f["cer_inicial"], cer_corriente, liquidacion, f["pagos"], f["cupon"],
-                           f["frecuencia"], f["emision"],
-                           lambda d: feriados.proximo_dia_habil(d, CALENDARIO_HABILES))
-    proximos = "; ".join(f"{fl.fecha}: {fl.renta:.4f} + {fl.amortizacion:g} = {fl.total:.4f}" for fl in r["flujos"][:4])
-    return (
-        f"Ratio: {r['ratio']:,.4f} | residual: {r['residual']:g} | interés corrido: {r['interes_corrido']:.4f} | "
-        f"valor técnico: {r['valor_tecnico']:.4f}\n"
-        f"Precio real (precio / ratio): {r['precio_dirty_real']:.4f} | paridad: {_pct(r['paridad'])}\n"
-        f"TIR real: {_pct(r['tir_real'])} | TNA semestral: {_pct(r['tna_semestral'])} | TNA 30 d: {_pct(r['tna_30'])} | "
-        f"TEM: {_pct(r['tem'])}\n"
-        f"Duration: {r['duration']:.4f} | duration modificada: {r['duration_modificada']:.4f} | "
-        f"convexidad: {r['convexidad']:.4f} | PV01: {r['pv01']:.6f} | DD (100 pb): {r['dd']:.4f}\n"
-        f"Current yield: {_pct(r['current_yield'])} | cash yield (12 meses): {_pct(r['cash_yield'])}\n"
-        f"Próximos flujos reales por 100 VN (renta + amortización, fechas corridas): {proximos}"
-    )
 
 
 CALCULAR_BONO = {

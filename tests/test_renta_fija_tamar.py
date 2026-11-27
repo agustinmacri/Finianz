@@ -60,23 +60,24 @@ def test_ventana_y_dias_estimados():
     """Con una TAMAR inventada en una base temporal: la ventana, los días publicados y los estimados."""
     import config
     from admin_datos import series as db_series
+    from renta_fija import mercado
     from tools import bonos
     original = config.DATOS_DIR
     with tempfile.TemporaryDirectory() as tmp:
         config.DATOS_DIR = Path(tmp)
         try:
-            bonos._asegurar_feriados(date(2025, 1, 1), date(2030, 12, 31))
+            mercado.asegurar_feriados(date(2025, 1, 1), date(2030, 12, 31))
             corte = date(2026, 11, 13)
-            habiles = bonos.feriados.dias_habiles_entre(date(2025, 1, 2), corte, "BYMA")
+            habiles = mercado.feriados.dias_habiles_entre(date(2025, 1, 2), corte, "BYMA")
             db_series.guardar("TAMAR", [{"fecha": d.isoformat(), "valor": 30.0 if d < date(2026, 11, 1) else 24.0}
                                         for d in habiles], "prueba")
             db_series.guardar("CER", [{"fecha": (date(2026, 1, 1) + timedelta(days=i)).isoformat(), "valor": 800.0}
                                       for i in range(365)], "prueba")            # para la parte CER del dual, sin red
             f = leer_fichas.ficha("TMF27", "tamar_capitalizable")
-            d = bonos._datos_tamar(f, corte)
+            d = mercado.datos_tamar(f, corte)
             assert d["inicio"] == date(2026, 1, 30) and d["fin"] == date(2027, 2, 12)        # como la planilla
             assert d["referencia"] == 0.24                                                    # últimos 5: 24%
-            estimados = bonos.feriados.dias_habiles_entre(corte + timedelta(days=1), d["fin"], "BYMA")
+            estimados = mercado.feriados.dias_habiles_entre(corte + timedelta(days=1), d["fin"], "BYMA")
             assert d["a_estimar"] == len(estimados)
             assert len(d["conocidas"]) == len([h for h in habiles if h >= d["inicio"]])
             esperado = (sum(d["conocidas"]) + 0.24 * len(estimados)) / (len(d["conocidas"]) + len(estimados))

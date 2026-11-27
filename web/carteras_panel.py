@@ -178,14 +178,6 @@ def _tabla_vista(cartera, v: dict | None) -> pd.DataFrame:
     return tabla
 
 
-def _filas_liquidez(v: dict | None) -> pd.DataFrame:
-    filas = [{"Tipo Activo": f["tipo"], "Descripcion": f["descripcion"], "Ticker": "",
-              "Tir Spread/Nominal": f"{f['tir_propia']:.2%}", "Tir Nominal en base a proyeccion": f["tir_proyectada"],
-              "Nominales": f["nominales"], "Precio": None, "Total": f["total"], "% Cartera": f["peso"],
-              "Duration Activo": f["duration"]} for f in (v or {}).get("filas", []) if f.get("liquidez")]
-    return pd.DataFrame(filas, columns=excel.COLUMNAS)
-
-
 def _tabla_simple(filas: list[dict], columnas: dict, alto: int | None = None):
     """Un cuadro de composición: columnas = {clave del dato: (título, formato o None)}."""
     df = pd.DataFrame([{titulo: x.get(clave) for clave, (titulo, _) in columnas.items()} for x in filas])

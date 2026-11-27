@@ -225,8 +225,7 @@ def main(argv: list[str]):
             guardar_registro(registro)
         vistos = set(registro.get("vistos", []))
         for a in avisos:
-            if True:
-                print(f"{'leído   ' if a['url'] in vistos else 'PENDIENTE'} {a['fecha'] or '':<10} {a['titulo']}\n          {a['url']}")
+            print(f"{'leído   ' if a['url'] in vistos else 'PENDIENTE'} {a['fecha'] or '':<10} {a['titulo']}\n          {a['url']}")
         return
     if argv and argv[0] in ("marcar", "olvidar") and len(argv) > 1:
         registro = cargar_registro()

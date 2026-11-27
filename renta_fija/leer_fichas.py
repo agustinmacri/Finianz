@@ -6,6 +6,7 @@ Un mismo ticker puede tener varias fichas de familias distintas (los duales: los
 como CER y como TAMAR). Las fichas tienen solo condiciones de emisión: ningún valor de mercado ni de índices (el CER
 inicial, por ejemplo, se toma de la base de series a partir de la fecha de emisión).
 """
+import copy
 import tomllib
 from datetime import date
 
@@ -29,8 +30,29 @@ class ErrorFicha(Exception):
     """Error en una ficha técnica, con un mensaje que indica qué corregir."""
 
 
+_cache: dict = {"clave": None, "fichas": None}
+
+
+def _clave_archivos() -> tuple:
+    """Qué archivos hay y cuándo cambiaron: si algo cambia (una ficha aprobada o editada), se vuelven a leer."""
+    return (str(CARPETA),) + tuple((a.name, a.stat().st_mtime_ns, a.stat().st_size) for a in sorted(CARPETA.glob("*.toml")))
+
+
+def _leidas() -> dict[str, list[dict]]:
+    """Las fichas leídas y validadas, guardadas en memoria mientras no cambien los archivos."""
+    clave = _clave_archivos()
+    if _cache["clave"] != clave:
+        _cache["fichas"], _cache["clave"] = _leer_archivos(), clave
+    return _cache["fichas"]
+
+
 def leer_todas() -> dict[str, list[dict]]:
-    """Todas las fichas, por ticker (en mayúsculas). Cada ticker tiene una ficha, o varias si es dual."""
+    """Todas las fichas, por ticker (en mayúsculas). Cada ticker tiene una ficha, o varias si es dual.
+    Devuelve una copia: quien la modifique no cambia lo guardado en memoria."""
+    return copy.deepcopy(_leidas())
+
+
+def _leer_archivos() -> dict[str, list[dict]]:
     fichas = {}
     for archivo in sorted(CARPETA.glob("*.toml")):
         try:
@@ -107,7 +129,7 @@ def _validar_tramos(bono: dict, donde: str):
 
 def fichas_de(ticker: str) -> list[dict]:
     """Las fichas de un ticker: una, o varias si es dual. Lista vacía si no tiene."""
-    return leer_todas().get(ticker.upper(), [])
+    return copy.deepcopy(_leidas().get(ticker.upper(), []))
 
 
 def ficha(ticker: str, familia: str | None = None) -> dict | None:

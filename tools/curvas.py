@@ -3,14 +3,16 @@ from datetime import date
 
 from conexiones.http import ErrorAPI
 from renta_fija.calculadoras import curva
-from tools import bonos, breakevens
+from renta_fija import mercado
+from tools import breakevens
+from tools.caminos import pct
 
 
 def curva_tasa_fija(fecha: str | None = None, incluir_bonte: bool = False) -> str:
     try:
         operacion = date.fromisoformat(fecha) if fecha else date.today()
-        bonos._asegurar_feriados(operacion)
-        liquidacion = bonos.feriados.sumar_dias_habiles(operacion, bonos.PLAZO_LIQUIDACION, "BYMA")
+        mercado.asegurar_feriados(operacion)
+        liquidacion = mercado.feriados.sumar_dias_habiles(operacion, mercado.PLAZO_LIQUIDACION, "BYMA")
         familias = {"tasa_fija_capitalizable", "tasa_fija_descuento"} | ({"tasa_fija_cupon"} if incluir_bonte else set())
         curvas, _, errores = breakevens._curvas(operacion, liquidacion, operacion if fecha else None, familias)
         puntos = [dict(p, duration=p["x"] / 365) for p in curvas["tasa_fija"]]
@@ -24,8 +26,8 @@ def curva_tasa_fija(fecha: str | None = None, incluir_bonte: bool = False) -> st
              "Bono | vence | duration | TEA | TEA de la curva | desvío | contra sus vecinos de plazo"]
     for f in filas:
         vecinos = "; ".join(f"{t} ({dias:+.0f} d): {dif:+.0f} pb" for t, dif, dias in f["vecinos"])
-        texto.append(f"{f['ticker']} | {f['vencimiento']} | {f['duration']:.3f} | {bonos._pct(f['tea'])} | "
-                     f"{bonos._pct(f['tea_curva'])} | {f['desvio_pb']:+.0f} pb | {vecinos}")
+        texto.append(f"{f['ticker']} | {f['vencimiento']} | {f['duration']:.3f} | {pct(f['tea'])} | "
+                     f"{pct(f['tea_curva'])} | {f['desvio_pb']:+.0f} pb | {vecinos}")
     texto.append("Lectura: el desvío contra la curva no indica por sí solo si un bono está barato o caro. Sirve para comparar "
                  "bonos de plazos parecidos: un desvío mayor que el de su vecino cercano indica que rinde más que él en "
                  "relación a la curva. Entre plazos muy distintos la comparación pierde sentido.")

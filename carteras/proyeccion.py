@@ -18,7 +18,6 @@ from carteras import valuar
 from carteras.excel import SUPUESTOS, Cartera
 from conexiones.http import ErrorAPI
 from renta_fija import mercado
-from renta_fija.calculadoras import cer
 
 AVISO_ACCIONES = ("Proyección con TIR constante: no supone cambios de tasa ni de precio de mercado. Las acciones y los "
                   "CEDEARs no cambian de valor: en pesos solo acompañan la devaluación del dólar del escenario. Cupones "
@@ -64,7 +63,7 @@ def _crecimientos(v: dict, proy: valuar.Proyecciones):
     ctx = v["_ctx"]
     t0, op = ctx.liquidacion, ctx.operacion
     anios = lambda d: max((d - t0).days, 0) / 365
-    fecha_cer = lambda d: mercado.feriados.sumar_dias_habiles(d, -cer.REZAGO_HABILES, mercado.CALENDARIO_HABILES)
+    fecha_cer = mercado.fecha_cer
     dolar = {t: proy.dolar(t) for t in ("mep", "ccl")}
     def relacion(tipo):
         nivel = dolar[tipo]

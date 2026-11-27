@@ -25,7 +25,7 @@ from carga_datos import precios as carga_precios
 from carga_datos import series as carga_series
 from conexiones.http import ErrorAPI
 from renta_fija import mercado, metricas
-from renta_fija.calculadoras import cer
+from renta_fija import pagos as pagos_bono
 
 PERIODOS = [("Día", lambda hoy: hoy - timedelta(days=1)), ("Semana", lambda hoy: hoy - timedelta(days=7)),
             ("Mes", lambda hoy: hoy - timedelta(days=30)), ("En el año", lambda hoy: date(hoy.year - 1, 12, 31)),
@@ -84,66 +84,38 @@ def tipos_de_cambio() -> dict[str, Serie]:
             "ccl": Serie({d: p / ccl.en(d) for d, p in zip(pesos.fechas, pesos.valores) if ccl.en(d)})}
 
 
-def _es_hard_dollar(fila: dict) -> bool:
-    return fila["categoria"] == "Renta Fija" and fila.get("_tipo_fx") is not None
-
-
-def precio_historico(fila: dict, fx: dict[str, Serie]):
-    """Precio en pesos de cada día (por 100 VN; renta variable, por unidad) y la primera fecha con precio."""
-    if _es_hard_dollar(fila):
-        tipo = fila["_tipo_fx"]
-        dolares = cierres(fila["ticker"] + ("C" if tipo == "ccl" else "D"))
+def precio_en_pesos(ticker: str, fx: dict[str, Serie]):
+    """Precio en pesos de cada día (por 100 VN; renta variable, por unidad) y la primera fecha con precio. Los hard
+    dollar, con el cierre en dólares (D ley AR, C ley NY) por el MEP o el CCL de ese día."""
+    hd = next((f for f in metricas.fichas_de(ticker) if f["familia"] == "hard_dollar"), None)
+    if hd:
+        tipo = mercado.moneda_hard_dollar(hd)
+        dolares = cierres(ticker + ("C" if tipo == "ccl" else "D"))
         def p(d):
             usd, tc = dolares.en(d), fx[tipo].en(d)
             return usd * tc if usd and tc else None
         primera = max(filter(None, (dolares.primera(), fx[tipo].primera())), default=None) if dolares else None
         return p, primera
-    s = cierres(fila["ticker"])
+    s = cierres(ticker)
     return s.en, s.primera()
+
+
+def precio_historico(fila: dict, fx: dict[str, Serie]):
+    return precio_en_pesos(fila["ticker"], fx)
 
 
 def flujos_pesos(fila: dict, desde: date, hasta: date, fx: dict[str, Serie]) -> list[tuple[date, float, bool]]:
     """Cupones y amortizaciones de un bono entre dos fechas: (fecha, pesos por 100 VN original, es el último pago).
-    Los flujos salen de la calculadora del bono con la liquidación al inicio; los de CER se ajustan con el CER del
-    pago, los dollar linked con el A3500 y los hard dollar con el MEP o el CCL de ese día."""
+    Los pagos salen de renta_fija/pagos.py (los mismos que usa el libro de operaciones); los de hard dollar se pasan a
+    pesos con el MEP o el CCL de ese día."""
     if fila["categoria"] != "Renta Fija":
         return []
-    f = fila["_legs"][0][0]
-    inicio = max(desde, f["emision"])
-    if inicio >= hasta:
-        return []
-    try:
-        m = metricas.calculadora(f, inicio + timedelta(days=1), inicio)(fila["_px"] if fila["_px"] else 100.0)
-    except (ErrorAPI, ValueError, KeyError, ZeroDivisionError, ArithmeticError):
-        return []
-    familia = f["familia"]
     salida = []
-    cer_inicial = None
-    for x in m["flujos"]:
-        if not (desde < x["fecha"] <= hasta) or not x["total"]:
+    for p in pagos_bono.pagos(fila["ticker"], desde, hasta):
+        tc = 1.0 if p["moneda"] == "pesos" else fx[p["moneda"]].en(p["fecha"])
+        if tc is None:
             continue
-        monto = x["total"]
-        if m.get("pago_conocido"):
-            pass                                          # pago final ya fijo: los flujos ya están en pesos
-        elif familia.startswith("cer"):
-            if cer_inicial is None:
-                cer_inicial = mercado.datos_cer(f, inicio + timedelta(days=1))[1]["cer_inicial"]
-            fecha_cer = mercado.feriados.sumar_dias_habiles(x["fecha"], -cer.REZAGO_HABILES, mercado.CALENDARIO_HABILES)
-            indice = serie("CER").en(fecha_cer)
-            if indice is None:
-                continue
-            monto *= indice / cer_inicial
-        elif familia.startswith("dolar_linked"):
-            tc = serie("A3500").en(x["fecha"])
-            if tc is None:
-                continue
-            monto *= tc
-        elif familia == "hard_dollar":
-            tc = fx[fila["_tipo_fx"]].en(x["fecha"])
-            if tc is None:
-                continue
-            monto *= tc
-        salida.append((x["fecha"], monto, x["residual"] <= 1e-9))
+        salida.append((p["fecha"], (p["renta"] + p["amortizacion"]) * tc, p["final"]))
     return salida
 
 
@@ -158,7 +130,7 @@ def variaciones(v: dict, moneda: str | None = None) -> dict:
     fx = tipos_de_cambio()
     divisor_hoy = 1.0 if moneda == "pesos" else v["fx"][moneda]
     filas, avisos = [], []
-    cartera_hoy, cartera_antes = 0.0, {n: [0.0, 0.0, 0.0] for n, _ in PERIODOS}   # antes, ahora, flujos
+    cartera_antes = {n: [0.0, 0.0, 0.0] for n, _ in PERIODOS}   # antes, ahora, flujos
     for fila in v["filas"]:
         if fila.get("liquidez"):
             continue
@@ -185,7 +157,6 @@ def variaciones(v: dict, moneda: str | None = None) -> dict:
         if all(x is None for x in resultado["precio"].values()):
             avisos.append(f"{fila['ticker']}: sin precios históricos en la base propia.")
         filas.append(resultado)
-        cartera_hoy += fila["total_pesos"] / divisor_hoy
     total = {"ticker": "", "descripcion": "Cartera (tenencias de hoy)", "precio": {}, "total": {}}
     for nombre, _ in PERIODOS:
         antes, ahora, cobrado = cartera_antes[nombre]

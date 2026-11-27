@@ -31,9 +31,9 @@ def test_escenarios_y_caminos():
             assert camino((2026, 11)) == 0.23                                    # antes del primero, el primero
             plana, _ = pr.camino_tamar("tna:21%", date(2026, 11, 13))
             assert plana((2030, 1)) == 0.21
-            from tools import bonos
-            originales = bonos._precio
-            bonos._precio = lambda t, f: ({"AL30": 87000.0, "AL30D": 60.0, "AL30C": 58.0}[t], "prueba")
+            from renta_fija import mercado
+            originales = mercado.precio
+            mercado.precio = lambda t, f: ({"AL30": 87000.0, "AL30D": 60.0, "AL30C": 58.0}[t], "prueba")
             try:
                 nivel, _, hoy, _ = pr.camino_dolar("mep", "escenario:salto", date(2026, 11, 13))
                 assert hoy == 1450.0 and abs(nivel(date(2027, 1, 15)) - 1600.0) < 1e-9
@@ -44,7 +44,7 @@ def test_escenarios_y_caminos():
                 assert abs(hoy_ccl - 87000 / 58) < 1e-9
                 assert abs(mensual(date(2027, 11, 13)) - hoy_ccl * 1.01 ** (365 / 30.4375)) < 1e-9
             finally:
-                bonos._precio = originales
+                mercado.precio = originales
             try:
                 pr.camino_dolar("mep", "rem", date(2026, 11, 13))
                 raise AssertionError("el MEP no tiene REM")
@@ -57,19 +57,19 @@ def test_escenarios_y_caminos():
 def test_rem_oficial_sin_el_mes_en_curso():
     """El A3500 del REM arranca en el valor de hoy y no usa el promedio esperado del mes en curso."""
     from carga_datos import rem
-    from tools import bonos
+    from renta_fija import mercado
     original = config.DATOS_DIR
     with tempfile.TemporaryDirectory() as tmp:
         config.DATOS_DIR = Path(tmp)
-        originales = bonos._a3500
-        bonos._a3500 = lambda op: (1452.0, op, False)
+        originales = mercado.a3500
+        mercado.a3500 = lambda op: (1452.0, op, False)
         try:
             rem.cargar()
             nivel, _, hoy, _ = pr.camino_dolar("oficial", "rem", date(2026, 11, 13))
             assert abs(nivel(date(2026, 12, 15)) - 1590) < 1e-9 and hoy == 1452.0
             assert 1452.0 < nivel(date(2026, 11, 30)) < 1590                    # sin saltar al 1.574 de noviembre
         finally:
-            config.DATOS_DIR, bonos._a3500 = original, originales
+            config.DATOS_DIR, mercado.a3500 = original, originales
 
 
 def test_caminos_indicados():
@@ -83,15 +83,15 @@ def test_caminos_indicados():
             pass
     camino, _ = pr.camino_tamar("camino:2026-12=24%;2027-01=23%;resto=21%", date(2026, 11, 13))
     assert camino((2026, 12)) == 0.24 and camino((2027, 1)) == 0.23 and camino((2027, 6)) == 0.21
-    from tools import bonos
-    originales = bonos._a3500
-    bonos._a3500 = lambda op: (1450.0, op, False)
+    from renta_fija import mercado
+    originales = mercado.a3500
+    mercado.a3500 = lambda op: (1450.0, op, False)
     try:
         nivel, _, _, _ = pr.camino_dolar("oficial", "camino:2026-12=1600;2027-01=2%;resto=1%", date(2026, 11, 13))
         assert abs(nivel(date(2026, 12, 15)) - 1600) < 1e-9 and abs(nivel(date(2027, 1, 15)) - 1632) < 1e-9
         assert abs(nivel(date(2027, 2, 14)) - 1632 * 1.01 ** (30 / 30.4375)) < 1e-9
     finally:
-        bonos._a3500 = originales
+        mercado.a3500 = originales
 
 
 def test_base_propia():

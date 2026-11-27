@@ -17,7 +17,7 @@ from typing import Callable
 
 from renta_fija.calculadoras import cer, cer_cupon, dolar_linked, hard_dollar, motor, tamar, tasa_fija
 from renta_fija.calculadoras import proyeccion_cer
-from renta_fija import mercado
+from renta_fija import leer_fichas, mercado
 
 UNIDAD = {"tasa_fija_capitalizable": "pesos", "tasa_fija_descuento": "pesos", "tasa_fija_cupon": "pesos",
           "cer_cero_cupon": "pesos reales (se ajustan por CER)", "cer_cupon": "pesos reales (se ajustan por CER)",
@@ -30,11 +30,16 @@ FAMILIAS_CURVA = {"tasa_fija_capitalizable": "tasa_fija", "tasa_fija_descuento":
                   "dolar_linked_bullet": "dl", "tamar_capitalizable": "tamar", "hard_dollar": "hd"}
 
 
+def fichas_de(ticker: str) -> list[dict]:
+    """Las fichas del ticker que tienen calculadora (un dual tiene una por pata)."""
+    return [f for f in leer_fichas.fichas_de(ticker) if f["familia"] in UNIDAD]
+
+
 def calculadora(f: dict, liquidacion: date, operacion: date, contexto: dict | None = None) -> Callable[[float], dict]:
     """Función precio -> {"curva", "tea", "tna", "duration" (años), "extra"} para la ficha f.
     Lanza ValueError si la familia no tiene curva."""
     familia = f["familia"]
-    ajustar = lambda d: mercado.feriados.proximo_dia_habil(d, mercado.CALENDARIO_HABILES)
+    ajustar = mercado.ajustar
     contexto = contexto if contexto is not None else {}
 
     if familia == "tasa_fija_capitalizable":
@@ -48,11 +53,13 @@ def calculadora(f: dict, liquidacion: date, operacion: date, contexto: dict | No
         calc = lambda p: tasa_fija.calcular_cupon(p, liquidacion, f["pagos"], f["cupon"], f["frecuencia"], f["emision"], ajustar)
         tasa = "tir_real"
     elif familia == "cer_cero_cupon":
-        _, f2, cer_corriente = mercado.datos_cer(f, liquidacion)
+        contexto["datos_cer"] = mercado.datos_cer(f, liquidacion)
+        _, f2, cer_corriente = contexto["datos_cer"]
         calc = lambda p: cer.calcular(p, f2["cer_inicial"], cer_corriente, liquidacion, f["vencimiento"])
         tasa = "tea_real"
     elif familia == "cer_cupon":
-        _, f2, cer_corriente = mercado.datos_cer(f, liquidacion)
+        contexto["datos_cer"] = mercado.datos_cer(f, liquidacion)
+        _, f2, cer_corriente = contexto["datos_cer"]
         calc = lambda p: cer_cupon.calcular(p, f2["cer_inicial"], cer_corriente, liquidacion, f["pagos"], f["cupon"],
                                             f["frecuencia"], f["emision"], ajustar)
         tasa = "tir_real"
@@ -63,7 +70,7 @@ def calculadora(f: dict, liquidacion: date, operacion: date, contexto: dict | No
         tasa = "tea"
     elif familia == "tamar_capitalizable":
         d = mercado.datos_tamar(f, operacion)
-        contexto["tamar_referencia"] = d["referencia"]
+        contexto["tamar_referencia"], contexto["datos_tamar"] = d["referencia"], d
         escala = mercado.tipo_cambio_inicial(f)   # dual TAMAR/DL: VN en dólares al tipo de cambio inicial
         calc = lambda p: tamar.calcular(p / escala, d["tamar_bono"], f["margen"], f["emision"], f["vencimiento"],
                                         liquidacion, d["referencia"])
@@ -140,6 +147,7 @@ def calculadora(f: dict, liquidacion: date, operacion: date, contexto: dict | No
         r = tasa_fija.calcular_capitalizable(precio, pago, liquidacion, f["vencimiento"])
         return {"curva": "tasa_fija", "tea": r["tea"], "tna": r["tna"], "duration": r["duration"],
                 "extra": {"tipo_cambio_pago": tc_pago, "pago_final": pago}, "detalle": dict(r, tipo_cambio_pago=tc_pago),
+                "indexado": calc(precio),                    # el cálculo como dollar linked (precio en dólares, TIR)
                 "flujos": [{"fecha": f["vencimiento"], "cupon": pago - 100, "amortizacion": 100.0, "total": pago,
                             "residual": 0.0}],
                 "unidad": "pesos (A3500 de pago publicado: equivale a tasa fija)", "ajuste": None, "pago_conocido": True}

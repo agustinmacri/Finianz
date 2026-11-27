@@ -27,14 +27,7 @@ def series_tipo_de_cambio() -> dict:
 def precio_historico(ticker: str):
     """Precio en pesos de cada día (por 100 VN en renta fija; por unidad en renta variable), con el último cierre."""
     from carteras import historia
-    from renta_fija import leer_fichas
-    fichas = leer_fichas.fichas_de(ticker)
-    hd = next((f for f in fichas if f["familia"] == "hard_dollar"), None)
-    if hd:
-        tipo = "ccl" if hd.get("ley") == "NY" else "mep"
-        dolares, fx = historia.cierres(ticker + ("C" if tipo == "ccl" else "D")), series_tipo_de_cambio()[tipo]
-        return lambda d: dolares.en(d) * fx.en(d) if dolares.en(d) and fx.en(d) else None
-    return historia.cierres(ticker).en
+    return historia.precio_en_pesos(ticker, series_tipo_de_cambio())[0]
 
 
 def dias_habiles(desde: date, hasta: date) -> list[date]:

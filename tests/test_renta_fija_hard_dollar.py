@@ -80,10 +80,11 @@ def test_interpolar():
 
 def test_herramienta():
     """La herramienta con precios y Treasuries inventados (sin conexión)."""
+    from renta_fija import mercado
     from tools import bonos
     precios = {"AL30D": 60.0, "AL30C": 60.5, "GD30D": 62.0, "GD30C": 62.4, "AL30": 87000.0}
-    originales = bonos._precio, bonos._treasuries
-    bonos._precio = lambda t, fecha: (precios[t.upper()], "prueba")
+    originales = mercado.precio, bonos._treasuries
+    mercado.precio = lambda t, fecha: (precios[t.upper()], "prueba")
     bonos._treasuries = lambda fecha: ([(1, 0.04), (2, 0.039), (3, 0.0385), (5, 0.039)], "2026-11-12")
     try:
         texto = bonos.calcular_bono("AL30D", fecha=None)
@@ -98,7 +99,7 @@ def test_herramienta():
         solo = bonos.calcular_bono("GD30", precio=62.0)
         assert "Con precio MEP (indicado)" in solo and "cable" not in solo
     finally:
-        bonos._precio, bonos._treasuries = originales
+        mercado.precio, bonos._treasuries = originales
 
 
 if __name__ == "__main__":
