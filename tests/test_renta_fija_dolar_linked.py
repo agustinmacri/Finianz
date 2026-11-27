@@ -25,7 +25,7 @@ def test_cuentas():
 
 def test_fichas():
     dl = {f["ticker"] for f in leer_fichas.todas() if f["familia"] == "dolar_linked_bullet"}
-    assert dl == {"D30N6", "D15E7", "D31M7", "TZV27", "TZV28", "TZVD8"}
+    assert {"D30N6", "D15E7", "D31M7", "TZV27", "TZV28", "TZVD8"} <= dl          # más los que se vayan aprobando
     assert leer_fichas.ficha("TZVD8")["vencimiento"] == date(2028, 12, 15)
 
 

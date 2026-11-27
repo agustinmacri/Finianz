@@ -84,6 +84,12 @@ def backtest(nombre: str, fecha: date | None, marca: int, version: float, desde:
     return historia.backtest(valuacion(nombre, "pesos", fecha, marca, version), desde)
 
 
+@st.cache_data(ttl=600, show_spinner="Armando la evolución del patrimonio…")
+def evolucion(nombre: str, fecha: date | None, marca: int, version: float) -> dict:
+    from carteras import evolucion as ev
+    return ev.evolucion(excel.leer(nombre).operaciones, fecha or date.today())
+
+
 @st.cache_resource(show_spinner="Preparando los agentes…")
 def grafo():
     from graph.builder import construir_grafo
@@ -151,6 +157,25 @@ def _filas_tabla(cartera, v: dict | None) -> pd.DataFrame:
                       "Total": f["total"] if f else None, "% Cartera": f["peso"] if f else None,
                       "Duration Activo": f["duration"] if f else None})
     return pd.DataFrame(filas, columns=excel.COLUMNAS).astype({"Tipo Activo": str, "Descripcion": str, "Ticker": str})
+
+
+def _tabla_vista(cartera, v: dict | None) -> pd.DataFrame:
+    """La tabla de la vista en el orden de la valuación (liquidez arriba, activos, crédito y pasivo abajo), más las
+    posiciones que no se pudieron valuar al final."""
+    if not v:
+        return _filas_tabla(cartera, v)
+    filas = []
+    for f in v["filas"]:
+        filas.append({"Tipo Activo": f["tipo"], "Descripcion": f["descripcion"], "Ticker": f["ticker"],
+                      "Tir Spread/Nominal": _propia(f), "Tir Nominal en base a proyeccion": f["tir_proyectada"],
+                      "Nominales": f["nominales"], "Precio": f["precio"], "Total": f["total"], "% Cartera": f["peso"],
+                      "Duration Activo": f["duration"]})
+    valuados = {f["ticker"] for f in v["filas"]}
+    sin_valuar = [p for p in cartera.posiciones if p.ticker not in valuados]
+    tabla = pd.DataFrame(filas, columns=excel.COLUMNAS)
+    if sin_valuar:
+        tabla = pd.concat([tabla, _filas_tabla(excel.Cartera(cartera.nombre, sin_valuar), None)], ignore_index=True)
+    return tabla
 
 
 def _filas_liquidez(v: dict | None) -> pd.DataFrame:
@@ -332,6 +357,137 @@ def _backtest(nombre: str, moneda: str, fecha, marca: int, estilo, paleta: dict)
         st.warning(aviso)
 
 
+def _resultados(v: dict):
+    from carteras import operaciones as ops
+    r = ops.resultados(v)
+    unidad = MONEDAS[v["moneda"]].lower()
+    c1, c2 = st.columns(2)
+    c1.metric("Resultado realizado", f"{r['total_realizado']:,.2f}")
+    c2.metric("Resultado no realizado", f"{r['total_no_realizado']:,.2f}")
+    st.markdown(f"#### Realizado ({unidad})")
+    if r["realizado"]:
+        _tabla_simple(r["realizado"], {"activo": ("Activo", None), "ventas": ("Ventas", "localized"),
+                                       "cupones": ("Cupones", "localized"),
+                                       "amortizaciones": ("Amortizaciones", "localized"),
+                                       "otros": ("Otros (dividendos, intereses)", "localized"),
+                                       "total": ("Total", "localized")})
+    else:
+        st.caption("Todavía no hay resultado realizado.")
+    st.markdown(f"#### No realizado ({unidad})")
+    _tabla_simple(r["no_realizado"], {"ticker": ("Ticker", None), "descripcion": ("Descripcion", None),
+                                      "costo": ("Costo", "localized"), "valor": ("Valor hoy", "localized"),
+                                      "resultado": ("Resultado", "localized"), "porcentaje": ("%", "percent")})
+    cobros = (v.get("libro") or {}).get("cobros", [])
+    if cobros:
+        st.markdown("#### Cupones y amortizaciones cobrados")
+        _tabla_simple([x | {"fecha_txt": f"{x['fecha']:%d/%m/%Y}", "origen": "aviso" if x["aviso"] else "calculado"}
+                       for x in cobros],
+                      {"fecha_txt": ("Fecha", None), "ticker": ("Ticker", None), "moneda": ("Moneda", None),
+                       "renta": ("Renta", "localized"), "amortizacion": ("Amortización", "localized"),
+                       "total": ("Total", "localized"), "origen": ("Origen", None)})
+    st.caption("Costo promedio ponderado, con cada operación pasada a la moneda de la vista al tipo de cambio de su "
+               "día. Realizado: ventas (neto de gastos menos el costo de lo vendido), cupones, amortizaciones (lo "
+               "cobrado menos el costo de la parte amortizada), dividendos e intereses. Cupones y amortizaciones "
+               "calculados con las fichas, salvo que cargues el cobro del aviso de pago (tipo Cobro).")
+
+
+def _evolucion(nombre: str, moneda: str, fecha, marca: int, estilo, paleta: dict):
+    try:
+        r = evolucion(nombre, fecha, marca, _version(nombre))
+    except Exception as e:
+        st.error(f"No se pudo armar la evolución: {str(e).splitlines()[0]}")
+        return
+    st.markdown(f"#### Evolución del patrimonio ({MONEDAS[moneda].lower()})")
+    x = r["resumen"][moneda]
+    c = st.columns(5)
+    c[0].metric("Patrimonio", f"{x['final']:,.2f}")
+    c[1].metric("Aportes netos", f"{x['aportes_netos']:,.2f}", help="Depósitos menos retiros, e ingresos menos egresos "
+                "de títulos, cada uno al tipo de cambio de su día")
+    c[2].metric("Ganancia", f"{x['ganancia']:,.2f}")
+    c[3].metric("Rendimiento (TWR)", f"{x['twr']:.2%}",
+                f"{x['twr_anual']:.2%} anual" if x["twr_anual"] is not None else None, delta_color="off",
+                help="Rendimiento de la gestión sin el efecto de aportes y retiros (encadena los rendimientos diarios)")
+    c[4].metric("TIR de la cartera", f"{x['tir']:.2%}" if x["tir"] is not None else "–",
+                help="Rendimiento ponderado por dinero: la tasa que iguala aportes y retiros con el patrimonio final")
+    aportes, acumulado = [], 0.0
+    for p in r["puntos"]:
+        acumulado += p["flujo_" + moneda]
+        aportes.append((p["fecha"], acumulado))
+    _lineas({"Patrimonio": [(p["fecha"], p[moneda]) for p in r["puntos"]], "Aportes netos acumulados": aportes},
+            f"Patrimonio ({MONEDAS[moneda].lower()})", UNIDADES[moneda], estilo, paleta)
+    st.caption(f"Del {r['desde']:%d/%m/%Y} al {r['hasta']:%d/%m/%Y}, con los cierres de cada día (MEP y cable "
+               "implícitos del AL30). Los aportes y retiros no son ganancia.")
+    for aviso in r["avisos"]:
+        st.warning(aviso)
+
+
+def _editar_operaciones(cartera, nombre: str, clave_edicion: str):
+    """Editor de la hoja Operaciones: las posiciones y la liquidez se calculan solas."""
+    from carteras import operaciones as ops
+    st.caption("Las posiciones, la liquidez, el costo y el resultado salen de estas operaciones. Fecha de "
+               "concertación; Precio por 100 VN (por unidad en acciones); Tasa como TNA en %; Monto para movimientos "
+               "de plata, money market, cauciones, créditos y pasivos. Ingreso sin precio: el cierre de ese día.")
+    df = pd.DataFrame([{"Fecha": op.fecha, "Contraparte": op.contraparte or "", "Tipo": op.tipo, "Ticker": op.ticker or "",
+                        "Nominales": op.nominales, "Precio": op.precio, "Moneda": op.moneda, "Monto": op.monto,
+                        "Tasa": op.tasa * 100 if op.tasa is not None else None, "Vencimiento": op.vencimiento,
+                        "Gastos": op.gastos or None, "Nota": op.nota or ""} for op in cartera.operaciones],
+                      columns=ops.COLUMNAS)
+    for c in ("Fecha", "Vencimiento"):
+        df[c] = pd.to_datetime(df[c])
+    df = df.astype({"Contraparte": str, "Ticker": str, "Nota": str, "Nominales": float, "Precio": float,
+                    "Monto": float, "Tasa": float, "Gastos": float})
+    editado = st.data_editor(df, num_rows="dynamic", hide_index=True, width="stretch", key=f"ops_{nombre}",
+                             column_config={
+                                 "Fecha": st.column_config.DateColumn(format="DD/MM/YYYY", required=True,
+                                                                      default=date.today()),
+                                 "Tipo": st.column_config.SelectboxColumn(options=sorted(set(ops.TIPOS.values())),
+                                                                          required=True),
+                                 "Moneda": st.column_config.SelectboxColumn(options=list(ops.MONEDAS), default="pesos"),
+                                 "Nominales": st.column_config.NumberColumn(format="localized"),
+                                 "Precio": st.column_config.NumberColumn(format="%.4f"),
+                                 "Monto": st.column_config.NumberColumn(format="localized"),
+                                 "Tasa": st.column_config.NumberColumn("Tasa (TNA %)", format="%.2f"),
+                                 "Vencimiento": st.column_config.DateColumn(format="DD/MM/YYYY"),
+                                 "Gastos": st.column_config.NumberColumn(format="localized")})
+    supuestos = _supuestos_editables(cartera, nombre)
+    col1, col2, col3 = st.columns([1, 1, 4])
+    if col1.button("Guardar", type="primary", width="stretch"):
+        try:
+            lista = []
+            for i, f in enumerate(editado.to_dict("records"), start=1):
+                if not f.get("Tipo") or pd.isna(f.get("Fecha")):
+                    continue
+                numero = lambda x: None if x is None or pd.isna(x) else float(x)
+                texto = lambda x: (str(x).strip() or None) if x is not None and not pd.isna(x) and str(x) != "nan" else None
+                op = ops.Operacion(fecha=pd.Timestamp(f["Fecha"]).date(), tipo=f["Tipo"],
+                                   ticker=(texto(f.get("Ticker")) or "").upper() or None,
+                                   nominales=numero(f.get("Nominales")), precio=numero(f.get("Precio")),
+                                   moneda=f.get("Moneda") or "pesos", monto=numero(f.get("Monto")),
+                                   tasa=None if numero(f.get("Tasa")) is None else numero(f.get("Tasa")) / 100,
+                                   vencimiento=None if pd.isna(f.get("Vencimiento")) else pd.Timestamp(f["Vencimiento"]).date(),
+                                   gastos=numero(f.get("Gastos")) or 0.0, contraparte=texto(f.get("Contraparte")),
+                                   nota=texto(f.get("Nota")))
+                try:
+                    excel.validar_operacion(op)
+                except ValueError as e:
+                    raise ValueError(f"fila {i}: {e}") from None
+                lista.append(op)
+            ops.estado(lista, date.today())                  # que la secuencia sea posible (no vender lo que no hay)
+            excel.guardar(excel.Cartera(nombre, [], supuestos, [], lista))
+        except PermissionError:
+            st.error("No se pudo escribir el archivo: cerralo en Excel y volvé a guardar.")
+        except ValueError as e:
+            st.error(str(e))
+        else:
+            st.session_state.pop(clave_edicion, None)
+            st.toast("Operaciones guardadas")
+            st.rerun()
+    if col2.button("Cancelar", width="stretch"):
+        st.session_state.pop(clave_edicion, None)
+        st.session_state.pop(f"ops_{nombre}", None)
+        st.rerun()
+
+
 def _graficos(v: dict, estilo, paleta: dict, donde):
     series = paleta["series"]
     composicion = pd.DataFrame(v["filas"]).groupby("subclase")["total"].sum().clip(lower=0).sort_values(ascending=False)
@@ -467,17 +623,20 @@ def ver_cartera(nombre: str | None, moneda: str, fecha: date | None, marca: int,
 
     tabla = _filas_tabla(cartera, v)
     if not editando:
-        completa = pd.concat([tabla, _filas_liquidez(v)], ignore_index=True) if v and any(
-            f.get("liquidez") for f in v["filas"]) else tabla
-        st.dataframe(completa, hide_index=True, width="stretch", column_config=COLUMNAS_TABLA)
+        st.dataframe(_tabla_vista(cartera, v), hide_index=True, width="stretch", column_config=COLUMNAS_TABLA)
         if v:
             st.caption(v["nota_valuacion"] + " Calculadora de Finianz.")
             for aviso in v["avisos"]:
                 st.warning(aviso)
             st.divider()
-            analisis = st.radio("Análisis", ANALISIS, horizontal=True, key=f"analisis_{nombre}",
+            opciones_analisis = (["Resultados", "Evolución"] if v.get("libro") else []) + ANALISIS
+            analisis = st.radio("Análisis", opciones_analisis, horizontal=True, key=f"analisis_{nombre}",
                                 label_visibility="collapsed")
-            if analisis == "Composición y cobros":
+            if analisis == "Resultados":
+                _resultados(v)
+            elif analisis == "Evolución":
+                _evolucion(nombre, moneda, fecha, marca, estilo, paleta)
+            elif analisis == "Composición y cobros":
                 _cobros(v)
                 _cuadros(v, estilo, paleta)
                 _dispersion(v, estilo, paleta)
@@ -495,6 +654,10 @@ def ver_cartera(nombre: str | None, moneda: str, fecha: date | None, marca: int,
                 archivo = excel.guardar_valuacion(v)
                 st.download_button("Descargar Excel", archivo.read_bytes(), file_name=archivo.name,
                                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+        return
+
+    if cartera.operaciones:
+        _editar_operaciones(cartera, nombre, clave_edicion)
         return
 
     # Edición sobre la misma tabla: lo calculado queda fijo y se actualiza al guardar

@@ -17,7 +17,7 @@ from datetime import date
 
 from datetime import timedelta
 
-from carteras.excel import TIPOS_LIQUIDEZ, Cartera
+from carteras.excel import TIPOS_LIQUIDEZ, Cartera, Liquidez, Posicion
 import config
 from admin_datos import precios as db_precios
 from carga_datos import precios as carga_precios
@@ -249,6 +249,55 @@ def _renta_variable(pos, ctx: Contexto) -> dict:
             "pata": None}
 
 
+DESCRIPCION_LIQUIDEZ = {"pesos": "Liquidez en pesos", "mep": "Liquidez en dólares MEP", "ccl": "Liquidez en dólares cable"}
+# Filas que la cartera muestra siempre (Agustin, 27/11/2026): la liquidez arriba (una por moneda), money market y
+# caución; abajo de todo, crédito y pasivo, aunque estén en cero
+FIJAS_ARRIBA = [("Liquidez", "pesos"), ("Liquidez", "mep"), ("Liquidez", "ccl"), ("Money market", "pesos"),
+                ("Caución colocadora", "pesos")]
+FIJAS_ABAJO = [("Crédito", "pesos"), ("Pasivo", "pesos")]
+ORDEN_LIQUIDEZ = {"Liquidez": 0, "Money market": 1, "Caución colocadora": 2, "Plazo fijo": 3, "Crédito": 5,
+                  "Caución tomadora": 6, "Pasivo": 6}
+
+
+def _liquidez_de_libro(libro, d: date) -> list:
+    """Las filas de liquidez de una cartera con operaciones: liquidez y money market por moneda, cauciones, créditos
+    y pasivos abiertos (una fila por tipo y moneda, con la tasa y el vencimiento promedio ponderados)."""
+    from carteras.operaciones import MONEDAS as MONEDAS_OPS
+    filas = [Liquidez("Liquidez", m, libro.liquidez[m], DESCRIPCION_LIQUIDEZ[m]) for m in MONEDAS_OPS]
+    filas += [Liquidez("Money market", m, libro.mm[m], "Money market", libro.tasa_mm[m] or None)
+              for m in MONEDAS_OPS if libro.mm[m]]
+    grupos = {}
+    for c in libro.colocaciones:
+        grupos.setdefault((c.tipo, c.moneda), []).append(c)
+    for (tipo, moneda), lista in grupos.items():
+        valores = [c.valor(d) for c in lista]
+        total = sum(valores)
+        tasa = sum(c.tasa * v for c, v in zip(lista, valores)) / total if total else None
+        dias = sum((c.vencimiento - d).days * v for c, v in zip(lista, valores)) / total if total else 0
+        filas.append(Liquidez(tipo, moneda, total, tipo if len(lista) == 1 else f"{tipo} ({len(lista)})", tasa,
+                              d + timedelta(days=round(dias))))
+    return filas
+
+
+def _ordenar_con_fijas(filas: list[dict], ctx) -> list[dict]:
+    """Liquidez arriba (pesos, MEP, cable), money market y caución; después los activos; abajo crédito y pasivo.
+    Las filas fijas que falten se agregan en cero."""
+    presentes = {(f["tipo"], f["_liq"].moneda) for f in filas if f.get("liquidez")}
+    tipos_presentes = {f["tipo"] for f in filas if f.get("liquidez")}
+    for tipo, moneda in FIJAS_ARRIBA + FIJAS_ABAJO:
+        if (tipo, moneda) in presentes or (tipo != "Liquidez" and tipo in tipos_presentes):
+            continue
+        filas.append(_liquidez(Liquidez(tipo, moneda, 0.0, DESCRIPCION_LIQUIDEZ[moneda] if tipo == "Liquidez"
+                                        else tipo), ctx))
+    orden_moneda = {"pesos": 0, "mep": 1, "ccl": 2}
+    def clave(par):
+        i, f = par
+        if not f.get("liquidez"):
+            return (4, i, 0)
+        return (ORDEN_LIQUIDEZ.get(f["tipo"], 3), orden_moneda.get(f["_liq"].moneda, 3), i)
+    return [f for _, f in sorted(enumerate(filas), key=clave)]
+
+
 def tasa_liquidez(x, operacion: date) -> tuple[float, float]:
     """TEA y duration de una fila de liquidez. La liquidez a la vista (o cualquier tipo sin tasa) rinde 0 con duration
     0 (decisión de Agustin). Con vencimiento: TEA = (1 + TNA × plazo/365)^(365/plazo) − 1 y duration = plazo/365.
@@ -283,6 +332,7 @@ def cuadros(filas: list[dict], total: float) -> dict:
     """Cuadros de composición en la moneda de la vista: por categoría y subclase, por moneda, subclase × moneda y
     por emisor. Cada uno con total y % del patrimonio."""
     peso = lambda x: x / total if total else None
+    filas = [f for f in filas if f["total"]]          # las filas fijas en cero no suman a los cuadros
     suma = {}
     for f in filas:
         suma.setdefault((f["categoria"], f["subclase"]), 0.0)
@@ -327,6 +377,15 @@ def valuar(cartera: Cartera, moneda: str = "pesos", fecha: date | None = None) -
     except ErrorAPI as e:
         raise ValueError(f"no se pudo armar el MEP y el CCL del AL30: {str(e).splitlines()[0]}") from None
     ctx = Contexto(operacion, liquidacion, fecha_precios, fx, avisos_precios)
+    libro = None
+    if cartera.operaciones:                    # las posiciones y la liquidez salen de las operaciones
+        from carteras import operaciones as ops
+        try:
+            libro = ops.estado(cartera.operaciones, operacion)
+        except ValueError as e:
+            raise ValueError(f"operaciones: {e}") from None
+        cartera = Cartera(cartera.nombre, [Posicion(t, x.nominales) for t, x in libro.tenencias.items()
+                                           if x.nominales > 1e-9], cartera.supuestos, _liquidez_de_libro(libro, operacion))
     fichas_de = {p.ticker: [f for f in leer_fichas.fichas_de(p.ticker) if f["familia"] in metricas.UNIDAD]
                  for p in cartera.posiciones}
     vencimientos = [f["vencimiento"] for lista in fichas_de.values() for f in lista]
@@ -346,6 +405,7 @@ def valuar(cartera: Cartera, moneda: str = "pesos", fecha: date | None = None) -
         filas.append(fila)
     for x in cartera.liquidez:
         filas.append(_liquidez(x, ctx))
+    filas = _ordenar_con_fijas(filas, ctx)
     divisor = 1.0 if moneda == "pesos" else ctx.fx[moneda]
     total = sum(f["total_pesos"] for f in filas)
     for f in filas:
@@ -368,6 +428,12 @@ def valuar(cartera: Cartera, moneda: str = "pesos", fecha: date | None = None) -
                "total_liquidez": por_categoria("Liquidez"), "total_creditos": por_categoria("Créditos"),
                "total_pasivos": por_categoria("Pasivos"),
                "tir_proyectada_rf": ponderar("tir_proyectada"), "duration_rf": ponderar("duration")}
+    if libro is not None:                       # costo y resultado no realizado de cada activo, en la moneda de la vista
+        for f in filas:
+            t = libro.tenencias.get(f["ticker"]) if f["ticker"] else None
+            if t is not None and t.nominales > 1e-9:
+                f["costo"] = t.costo[moneda]
+                f["no_realizado"] = f["total"] - f["costo"]
     cobros = sorted((c | {"monto_vista": c["monto_pesos"] / divisor} for f in filas for c in f["cobros"]),
                     key=lambda c: (c["fecha"], c["ticker"]))
     nota = (f"Liquidación {liquidacion:%d/%m/%Y}. Hard dollar ley AR al MEP ({ctx.fx['mep']:,.2f}) y ley NY al CCL "
@@ -378,7 +444,9 @@ def valuar(cartera: Cartera, moneda: str = "pesos", fecha: date | None = None) -
     return {"nombre": cartera.nombre, "fecha": operacion, "moneda": moneda, "nombre_moneda": MONEDAS[moneda],
             "filas": filas, "totales": totales, "fx": ctx.fx, "supuestos": supuestos, "cobros": cobros,
             "cuadros": cuadros(filas, total / divisor), "dias_cobros": DIAS_COBROS,
-            "nota_valuacion": nota, "liquidacion": liquidacion, "avisos": avisos_precios + avisos, "_ctx": ctx}
+            "nota_valuacion": nota, "liquidacion": liquidacion, "avisos": avisos_precios + avisos, "_ctx": ctx,
+            "libro": None if libro is None else {"realizado": libro.realizado, "cobros": libro.cobros,
+                                                 "avisos": libro.avisos}}
 
 
 def _pct(x: float | None, referencia: str = "") -> str:
@@ -420,6 +488,14 @@ def texto(v: dict) -> str:
                       + ", ".join(f"{f['ticker']}: {f['pata'].replace('_', ' ')}" for f in duales) + ").")
     if v["supuestos"]:
         lineas.append("Supuestos de la proyección: " + " | ".join(f"{k}: {d}" for k, d in v["supuestos"].items()))
+    if v.get("libro"):
+        from carteras import operaciones as ops
+        r = ops.resultados(v)
+        lineas.append(f"Resultado realizado: {r['total_realizado']:,.2f} | no realizado: {r['total_no_realizado']:,.2f} "
+                      f"({v['nombre_moneda']}; costo y cobros al tipo de cambio de cada operación)")
+        for x in r["realizado"][:12]:
+            lineas.append(f"  Realizado {x['activo']}: {x['total']:,.2f} (ventas {x['ventas']:,.2f}, cupones "
+                          f"{x['cupones']:,.2f}, amortizaciones {x['amortizaciones']:,.2f}, otros {x['otros']:,.2f})")
     for aviso in v["avisos"]:
         lineas.append("Aviso: " + aviso)
     return "\n".join(lineas)

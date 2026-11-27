@@ -60,6 +60,7 @@ class Cartera:
     posiciones: list[Posicion]
     supuestos: dict[str, str] = field(default_factory=dict)
     liquidez: list[Liquidez] = field(default_factory=list)
+    operaciones: list = field(default_factory=list)          # carteras.operaciones.Operacion (si hay, mandan)
 
 
 def tipo_liquidez(texto) -> str:
@@ -140,8 +141,9 @@ def leer(nombre: str) -> Cartera:
     filas = [list(f) for f in hoja.iter_rows(values_only=True)]
     inicio = next((i for i, f in enumerate(filas) if "ticker" in {_clave(c) for c in f}), None)
     liquidez = _leer_liquidez(libro, archivo.name)
-    if inicio is None and liquidez:
-        filas, inicio = [["Ticker", "Nominales"]], 0       # solo liquidez
+    operaciones = _leer_operaciones(libro, archivo.name)
+    if inicio is None and (liquidez or operaciones):
+        filas, inicio = [["Ticker", "Nominales"]], 0       # solo liquidez u operaciones
     if inicio is None:
         raise ValueError(f"{archivo.name}: no encontré la fila de encabezados con la columna Ticker.")
     encabezados = [_clave(c) for c in filas[inicio]]
@@ -169,9 +171,79 @@ def leer(nombre: str) -> Cartera:
             if len(fila) >= 2 and fila[0] and fila[1] and _clave(fila[0]) in {_clave(s) for s in SUPUESTOS}:
                 variable = next(s for s in SUPUESTOS if _clave(s) == _clave(fila[0]))
                 supuestos[variable] = str(fila[1]).strip()
-    if not posiciones and not liquidez:
+    if not posiciones and not liquidez and not operaciones:
         raise ValueError(f"{archivo.name}: la cartera no tiene activos.")
-    return Cartera(archivo.stem, posiciones, supuestos, liquidez)
+    return Cartera(archivo.stem, posiciones, supuestos, liquidez, operaciones)
+
+
+def _numero(valor, donde: str, campo: str) -> float | None:
+    if valor in (None, ""):
+        return None
+    if isinstance(valor, str):
+        valor = valor.strip().replace(".", "").replace(",", ".") if "," in valor else valor.strip()
+    try:
+        return float(valor)
+    except (TypeError, ValueError):
+        raise ValueError(f"{donde}: {campo} no es un número ({valor!r}).") from None
+
+
+def _leer_operaciones(libro, nombre_archivo: str) -> list:
+    """La hoja Operaciones (ver carteras/operaciones.py para las columnas y los tipos)."""
+    from carteras import operaciones as ops
+    hoja = next((libro[h] for h in libro.sheetnames if _clave(h) == "operaciones"), None)
+    if hoja is None:
+        return []
+    filas = [list(f) for f in hoja.iter_rows(values_only=True)]
+    inicio = next((i for i, f in enumerate(filas) if {"fecha", "tipo"} <= {_clave(c) for c in f}), None)
+    if inicio is None:
+        return []
+    enc = [_clave(c) for c in filas[inicio]]
+    def col(*nombres):
+        return next((enc.index(n) for n in nombres if n in enc), None)
+    i = {"fecha": col("fecha"), "contraparte": col("contraparte"), "tipo": col("tipo"), "ticker": col("ticker"),
+         "nominales": col("nominales", "cantidad", "vn"), "precio": col("precio"), "moneda": col("moneda"),
+         "monto": col("monto", "importe"), "tasa": col("tasa", "tna"), "vencimiento": col("vencimiento"),
+         "gastos": col("gastos", "comisiones"), "nota": col("nota", "notas")}
+    dato = lambda f, n: f[i[n]] if i[n] is not None and i[n] < len(f) else None
+    lista = []
+    for numero, f in enumerate(filas[inicio + 1:], start=inicio + 2):
+        if not dato(f, "tipo") and not dato(f, "ticker") and dato(f, "monto") in (None, ""):
+            continue
+        donde = f"{nombre_archivo}, hoja Operaciones, fila {numero}"
+        try:
+            tipo = ops.tipo_operacion(dato(f, "tipo"))
+            fecha = _fecha(dato(f, "fecha"))
+            if fecha is None:
+                raise ValueError("falta la fecha (de concertación)")
+            ticker = str(dato(f, "ticker") or "").strip().upper() or None
+            op = ops.Operacion(fecha=fecha, tipo=tipo, ticker=ticker,
+                               nominales=_numero(dato(f, "nominales"), donde, "Nominales"),
+                               precio=_numero(dato(f, "precio"), donde, "Precio"),
+                               moneda=moneda_liquidez(dato(f, "moneda")),
+                               monto=_numero(dato(f, "monto"), donde, "Monto"), tasa=_tasa(dato(f, "tasa")),
+                               vencimiento=_fecha(dato(f, "vencimiento")),
+                               gastos=_numero(dato(f, "gastos"), donde, "Gastos") or 0.0,
+                               contraparte=(str(dato(f, "contraparte")).strip() or None) if dato(f, "contraparte") else None,
+                               nota=(str(dato(f, "nota")).strip() or None) if dato(f, "nota") else None)
+            validar_operacion(op)
+        except ValueError as e:
+            raise ValueError(f"{donde}: {e}") from None
+        lista.append(op)
+    return lista
+
+
+def validar_operacion(op):
+    titulos = ("Compra", "Venta", "Ingreso", "Egreso")
+    if op.tipo in titulos and (not op.ticker or not op.nominales or op.nominales <= 0):
+        raise ValueError(f"{op.tipo.lower()}: faltan el ticker o los nominales")
+    if op.tipo in ("Compra", "Venta") and (op.precio is None or op.precio <= 0):
+        raise ValueError(f"{op.tipo.lower()} de {op.ticker}: falta el precio")
+    if op.tipo not in titulos and op.tipo != "Cobro" and (op.monto is None or op.monto < 0):
+        raise ValueError(f"{op.tipo.lower()}: falta el monto")
+    if op.tipo == "Cobro" and (not op.ticker or op.monto is None):
+        raise ValueError("cobro: faltan el ticker o el monto (el que dice el aviso de pago)")
+    if op.tipo in ("Caución colocadora", "Crédito", "Pasivo") and (not op.vencimiento or op.vencimiento <= op.fecha):
+        raise ValueError(f"{op.tipo.lower()}: falta el vencimiento (posterior a la fecha)")
 
 
 def _leer_liquidez(libro, nombre_archivo: str) -> list[Liquidez]:
@@ -222,8 +294,10 @@ def guardar(cartera: Cartera, nombre_anterior: str | None = None) -> Path:
     posiciones = [Posicion(str(p.ticker).strip().upper(), p.nominales, p.tipo, p.descripcion)
                   for p in cartera.posiciones if p.ticker and str(p.ticker).strip()]
     liquidez = [x for x in cartera.liquidez if x.tipo]
-    if not posiciones and not liquidez:
+    if not posiciones and not liquidez and not cartera.operaciones:
         raise ValueError("La cartera no tiene activos.")
+    for op in cartera.operaciones:
+        validar_operacion(op)
     for x in liquidez:
         x.tipo, x.moneda = tipo_liquidez(x.tipo), moneda_liquidez(x.moneda)
         try:
@@ -255,6 +329,20 @@ def guardar(cartera: Cartera, nombre_anterior: str | None = None) -> Path:
         if nominales <= 0:
             raise ValueError(f"Los nominales de {p.ticker} tienen que ser mayores que cero.")
         hoja.append([p.tipo or "", p.descripcion or "", p.ticker, nominales])
+    if cartera.operaciones:
+        from carteras import operaciones as ops
+        hoja_o = libro.create_sheet("Operaciones")
+        hoja_o.append(ops.COLUMNAS)
+        for op in sorted(cartera.operaciones, key=lambda o: o.fecha):
+            hoja_o.append([op.fecha, op.contraparte or "", op.tipo, op.ticker or "", op.nominales, op.precio, op.moneda,
+                           op.monto, op.tasa, op.vencimiento, op.gastos or None, op.nota or ""])
+            hoja_o.cell(hoja_o.max_row, 1).number_format = "dd/mm/yyyy"
+            hoja_o.cell(hoja_o.max_row, 9).number_format = "0.00%"
+            hoja_o.cell(hoja_o.max_row, 10).number_format = "dd/mm/yyyy"
+        for c in hoja_o[1]:
+            c.font = Font(bold=True)
+        for letra, ancho in zip("ABCDEFGHIJKL", (12, 16, 18, 10, 14, 12, 8, 14, 8, 12, 10, 28)):
+            hoja_o.column_dimensions[letra].width = ancho
     hoja_l = libro.create_sheet("Liquidez")
     hoja_l.append(COLUMNAS_LIQUIDEZ)
     for x in liquidez:
@@ -380,6 +468,8 @@ def guardar_valuacion(v: dict) -> Path:
     hoja.row_dimensions[encabezado].height = 32
     _hoja_composicion(libro, v)
     _hoja_cobros(libro, v)
+    if v.get("libro"):
+        _hoja_resultados(libro, v)
     s = libro.create_sheet("Supuestos")
     s.append(["Variable", "Supuesto usado"])
     for c in s[1]:
@@ -451,4 +541,29 @@ def _hoja_cobros(libro, v: dict):
     if not v["cobros"]:
         h.append(["Sin cobros ni vencimientos en el período."])
     for letra, ancho in zip("ABCDEFG", (12, 14, 22, 15, 16, 20, 30)):
+        h.column_dimensions[letra].width = ancho
+
+
+def _hoja_resultados(libro, v: dict):
+    from carteras import operaciones as ops
+    r = ops.resultados(v)
+    h = libro.create_sheet("Resultados")
+    h.append([f"Resultado en {v['nombre_moneda']} (costo y cobros al tipo de cambio de cada operación)"])
+    h.append(["Realizado total", r["total_realizado"], "", "No realizado total", r["total_no_realizado"]])
+    h.append([])
+    h.append(["Activo", "Ventas", "Cupones", "Amortizaciones", "Otros", "Total"])
+    _encabezar(h, h.max_row)
+    for x in r["realizado"]:
+        h.append([x["activo"], x["ventas"], x["cupones"], x["amortizaciones"], x["otros"], x["total"]])
+    h.append([])
+    h.append(["Ticker", "Descripcion", "Costo", "Valor hoy", "Resultado", "%"])
+    _encabezar(h, h.max_row)
+    for x in r["no_realizado"]:
+        h.append([x["ticker"], x["descripcion"], x["costo"], x["valor"], x["resultado"], x["porcentaje"]])
+        h.cell(h.max_row, 6).number_format = "0.00%"
+    for fila in h.iter_rows(min_row=2):
+        for c in fila:
+            if isinstance(c.value, float) and c.number_format == "General":
+                c.number_format = "#,##0.00"
+    for letra, ancho in zip("ABCDEF", (28, 16, 16, 16, 16, 16)):
         h.column_dimensions[letra].width = ancho

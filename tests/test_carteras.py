@@ -120,7 +120,13 @@ def test_valuar_y_monedas(d):
     hoja = load_workbook(ruta)["Cartera"]
     valores = [[c.value for c in fila] for fila in hoja.iter_rows()]
     fila_enc = next(i for i, fila in enumerate(valores) if fila[:len(excel.COLUMNAS)] == excel.COLUMNAS)
-    assert valores[fila_enc + 1][2] == LECAP
+    # Arriba la liquidez (pesos, MEP, cable), money market y caución; abajo crédito y pasivo (en cero si no hay)
+    primeras = [fila[1] for fila in valores[fila_enc + 1:fila_enc + 6]]
+    assert primeras == ["Liquidez en pesos", "Liquidez en dólares MEP", "Liquidez en dólares cable", "Money market",
+                        "Caución colocadora"], primeras
+    assert valores[fila_enc + 6][2] == LECAP
+    tipos = [f["tipo"] for f in v["filas"]]
+    assert tipos[-2:] == ["Crédito", "Pasivo"] and all(f["total"] == 0 for f in v["filas"] if f.get("liquidez"))
 
 
 @_con_carpeta
@@ -133,7 +139,7 @@ def test_errores(d):
         v = valuar.valuar(excel.leer("con_error"))
     finally:
         valuar.carga_precios.registrar = original
-    assert [f["ticker"] for f in v["filas"]] == [LECAP]
+    assert [f["ticker"] for f in v["filas"] if f["ticker"]] == [LECAP]
     assert v["avisos"] and "NOEXISTE" in v["avisos"][0]
     try:
         valuar.valuar(excel.leer("con_error"), "euros")

@@ -3,6 +3,7 @@ devuelve lo que diría el modelo para el llamado a licitación del 15/04/2026 y 
 Correr con:
     python -m tests.test_fichas_documentos
 """
+import re
 import shutil
 import tempfile
 import tomllib
@@ -38,11 +39,25 @@ RESULTADO = fd.Documento(tipo_documento="resultado de licitación", fecha_docume
 ])
 
 
+
+# Bonos que las pruebas tratan como nuevos: si ya se aprobaron en las fichas reales, se sacan de la copia
+NUEVOS_EN_PRUEBAS = ("AO27", "AO28", "M30A7", "TMVE8")
+
+
+def _copiar_fichas(origen, destino):
+    shutil.copytree(origen, destino, ignore=shutil.ignore_patterns("borradores"))
+    for archivo in Path(destino).glob("*.toml"):
+        texto = archivo.read_text(encoding="utf-8")
+        bloques = re.split(r"(?m)^(?=\[\[bono\]\])", texto)
+        quedan = [b for b in bloques if not re.search(r'(?m)^ticker\s*=\s*"(%s)"' % "|".join(NUEVOS_EN_PRUEBAS), b)]
+        if len(quedan) != len(bloques):
+            archivo.write_text("".join(quedan), encoding="utf-8")
+
 def test_borradores_aprobacion():
     original_carpeta, original_borradores = leer_fichas.CARPETA, fd.BORRADORES
     with tempfile.TemporaryDirectory() as tmp:
         carpeta = Path(tmp) / "fichas"
-        shutil.copytree(original_carpeta, carpeta, ignore=shutil.ignore_patterns("borradores"))
+        _copiar_fichas(original_carpeta, carpeta)
         leer_fichas.CARPETA, fd.BORRADORES = carpeta, carpeta / "borradores" / "borradores.toml"
         documento = Path(tmp) / "llamado.txt"
         documento.write_text("Llamado a licitación del Tesoro. " * 20, encoding="utf-8")
@@ -123,7 +138,7 @@ def test_resultado_y_cambios():
     original_carpeta, original_borradores = leer_fichas.CARPETA, fd.BORRADORES
     with tempfile.TemporaryDirectory() as tmp:
         carpeta = Path(tmp) / "fichas"
-        shutil.copytree(original_carpeta, carpeta, ignore=shutil.ignore_patterns("borradores"))
+        _copiar_fichas(original_carpeta, carpeta)
         leer_fichas.CARPETA, fd.BORRADORES = carpeta, carpeta / "borradores" / "borradores.toml"
         documento = Path(tmp) / "resultado.txt"
         documento.write_text("Resultado de la licitación. " * 20, encoding="utf-8")
@@ -170,7 +185,7 @@ def test_reaperturas_duplicados_y_tickers():
     listados = {"S14Y7": "LECAP V14/05/27", "M30A7": "LETRA TAMAR V30/04/27", "TMA27": "BONO TAMAR V30/04/27"}
     with tempfile.TemporaryDirectory() as tmp:
         carpeta = Path(tmp) / "fichas"
-        shutil.copytree(original_carpeta, carpeta, ignore=shutil.ignore_patterns("borradores"))
+        _copiar_fichas(original_carpeta, carpeta)
         leer_fichas.CARPETA, fd.BORRADORES = carpeta, carpeta / "borradores" / "borradores.toml"
         fd.BUSCADOR = lambda t: [{"ticker": t, "description": listados[t]}] if t in listados else []
         documento = Path(tmp) / "aviso.txt"
@@ -264,7 +279,7 @@ def test_emision_original():
     original_carpeta, original_borradores, original_web = leer_fichas.CARPETA, fd.BORRADORES, fd.BUSCADOR_WEB
     with tempfile.TemporaryDirectory() as tmp:
         carpeta = Path(tmp) / "fichas"
-        shutil.copytree(original_carpeta, carpeta, ignore=shutil.ignore_patterns("borradores"))
+        _copiar_fichas(original_carpeta, carpeta)
         leer_fichas.CARPETA, fd.BORRADORES = carpeta, carpeta / "borradores" / "borradores.toml"
         marzo, febrero, otro = Path(tmp) / "marzo.txt", Path(tmp) / "febrero.txt", Path(tmp) / "otro.txt"
         marzo.write_text("Llamado de marzo. BONAR con vencimiento 29/10/2027. " * 10 + "y del “Bono del Tesoro Nacional en "
@@ -351,7 +366,7 @@ def test_dual_un_borrador_por_pata():
                        pendiente=["margen: se define en la licitación"])])
     with tempfile.TemporaryDirectory() as tmp:
         carpeta = Path(tmp) / "fichas"
-        shutil.copytree(original_carpeta, carpeta, ignore=shutil.ignore_patterns("borradores"))
+        _copiar_fichas(original_carpeta, carpeta)
         leer_fichas.CARPETA, fd.BORRADORES = carpeta, carpeta / "borradores" / "borradores.toml"
         documento = Path(tmp) / "llamado.txt"
         documento.write_text("Llamado a licitación del Tesoro. " * 20, encoding="utf-8")
