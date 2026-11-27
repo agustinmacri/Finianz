@@ -485,24 +485,16 @@ def _guardar_exit(clave_editor: str, curva: str, filas: list[dict]):
     st.session_state["version_exit"] = st.session_state.get("version_exit", 0) + 1
 
 
-def _tabla_exit(filas: list[dict], curva: str, operacion: date, con_curva: bool):
+def _tabla_exit(filas: list[dict], curva: str, operacion: date, salida: date, sufijo: str):
     """Retorno de cada bono si se vende en una fecha a la exit yield que se elija para él (o a un precio de salida,
-    del que sale la exit yield). Sin dato cargado, la exit yield es la TIR de hoy (Agustin, 27/11/2026)."""
+    del que sale la exit yield). Sin dato cargado, la exit yield es la TIR de hoy (Agustin, 27/11/2026). Una tabla
+    por curva: los bonos de curvas distintas no comparten tabla."""
     st.markdown("**Retornos con exit yield**")
-    liquidacion = min(f["liquidacion"] for f in filas)
-    col1, col2, _ = st.columns([1, 1, 2])
-    defecto = min(liquidacion + timedelta(days=182), max(f["vencimiento"] for f in filas))
-    salida = col1.date_input("Fecha de salida", value=defecto, min_value=liquidacion + timedelta(days=1),
-                             format="DD/MM/YYYY", key=f"exit_fecha_{curva}")
     cambios = st.session_state.get("cambios_exit", {})
-    if any(k[0] == curva for k in cambios) and col2.button("Volver a la TIR de hoy", key=f"exit_reset_{curva}"):
-        st.session_state["cambios_exit"] = {k: v for k, v in cambios.items() if k[0] != curva}
-        st.session_state["version_exit"] = st.session_state.get("version_exit", 0) + 1
-        st.rerun(scope="fragment")
     registros = []
     for f in filas:
         cambio = cambios.get(_clave_bono(curva, f))
-        fila = {"Ticker": f["ticker"], **({"Curva": f["serie"] or NOMBRES_CURVA[curva].split(" (")[0]} if con_curva else {}),
+        fila = {"Ticker": f["ticker"],
                 "TIR hoy (%)": f["tea"] * 100, "Exit yield (%)": None, "Precio de salida": "",
                 "Cobrado hasta la salida": None, "Retorno del período (%)": None, "Retorno anualizado (%)": None,
                 "": "✎ exit yield" if cambio and cambio[0] == "tea" else "✎ precio" if cambio else ""}
@@ -525,7 +517,7 @@ def _tabla_exit(filas: list[dict], curva: str, operacion: date, con_curva: bool)
         registros.append(fila)
     tabla = _numeros_como_texto(_sin_vacios(pd.DataFrame(registros)),
                                 ["Cobrado hasta la salida", "Retorno del período (%)", "Retorno anualizado (%)"])
-    clave = f"exit_tabla_{curva}_{st.session_state.get('version_exit', 0)}"
+    clave = f"exit_tabla_{curva}_{sufijo}_{st.session_state.get('version_exit', 0)}"
     st.data_editor(_estilo_tabla(tabla, [], {"TIR hoy (%)": "{:.2f}"}), key=clave, hide_index=True,
                    width="stretch", on_change=_guardar_exit, args=(clave, curva, filas),
                    column_config={**{c: st.column_config.NumberColumn(format="%.2f") for c in ("TIR hoy (%)", "Exit yield (%)")},
@@ -535,18 +527,20 @@ def _tabla_exit(filas: list[dict], curva: str, operacion: date, con_curva: bool)
                                   "Precio de salida": st.column_config.TextColumn(
                                       help="Dirty teórico por 100 VN original, en la unidad del bono, a la fecha de "
                                            "salida. Escribí uno y sale la exit yield."),
-                                  "Curva": st.column_config.TextColumn(width="medium"),
                                   "": st.column_config.TextColumn(width="medium")},
                    disabled=[c for c in tabla.columns if c not in ("Exit yield (%)", "Precio de salida")])
     if st.session_state.get("aviso_exit"):
         st.warning(st.session_state.pop("aviso_exit"))
+
+
+def _texto_exit(curva: str, salida: date) -> str:
     unidad = UNIDAD_CURVA.get(curva, ("", "su unidad"))[1]
-    st.caption(f"Vendiendo el {salida:%d/%m/%Y}. Cada bono arranca con la TIR de hoy como exit yield: cambiala casilla por "
-               "casilla, o escribí un precio de salida y se calcula la tasa a esa fecha. Borrar la celda vuelve a la TIR "
-               f"de hoy. Precio de salida: dirty teórico por 100 VN original, en {unidad}. Cobrado: cupones y "
-               "amortizaciones hasta la salida, reinvertidos a la exit yield. \"vence antes\": se cobra todo y se "
-               "reinvierte a la exit yield hasta la fecha."
-               + (" En TAMAR, la exit yield es la TEA del bono (no el spread)." if curva == "tamar" else ""))
+    return (f"Vendiendo el {salida:%d/%m/%Y}. Cada bono arranca con la TIR de hoy como exit yield: cambiala casilla por "
+            "casilla, o escribí un precio de salida y se calcula la tasa a esa fecha. Borrar la celda vuelve a la TIR "
+            f"de hoy. Precio de salida: dirty teórico por 100 VN original, en {unidad}. Cobrado: cupones y "
+            "amortizaciones hasta la salida, reinvertidos a la exit yield. \"vence antes\": se cobra todo y se "
+            "reinvierte a la exit yield hasta la fecha."
+            + (" En TAMAR, la exit yield es la TEA del bono (no el spread)." if curva == "tamar" else ""))
 
 
 if seccion == "Curvas":
@@ -638,69 +632,81 @@ if seccion == "Curvas":
         with st.container(border=True):
             st.plotly_chart(fig, width="stretch", theme=None)
 
-        # La tabla se puede editar: precio, tasa o TNA de cualquier bono; lo demás se recalcula (también las forwards)
+        # Una sección por curva del gráfico: tabla de rendimientos (editable), forwards y exit yield. Los bonos de
+        # curvas distintas (Bonares y Globales, duales) no comparten tabla (Agustin, 27/11/2026).
         con_forwards = c in CURVAS_FORWARD
-        anterior = {}
-        if con_forwards:
-            for serie in series:
-                bonos_serie = [{"ticker": f["ticker"], "vencimiento": f["vencimiento"], "tea": f["tea"]}
-                               for f in filas if f["serie"] == serie]
-                anterior.update({(serie, t): v for t, v in calc_forwards.al_anterior(bonos_serie, liquidacion).items()})
-        registros = []
-        for f in filas:
-            antes = f["antes"] or {}
-            marca_fila = {"precio": "✎ precio", "tea": "✎ TEA", "tna": "✎ TNA", "spread": "✎ spread"}.get(f["editado"], "")
-            if f.get("sin_emitir"):
-                marca_fila = (marca_fila + " · " if marca_fila else "") + "precio de corte, sin cotizar"
-            registros.append({
-                "Ticker": f["ticker"], **({"Curva": nombre_serie(f["serie"])} if varias else {}),
-                "Precio": f["precio"], "Var. precio": _var_precio(f["precio"], antes.get("precio")),
-                columna_tasa: f[clave_tasa] * 100 if f.get(clave_tasa) is not None else None,
-                f"Var. {nombre_tasa} (pb)": _var_tasa(f.get(clave_tasa), antes.get(clave_tasa)),
-                "TNA (%)": f["tna"] * 100 if f.get("tna") is not None else None,
-                "Var. TNA (pb)": _var_tasa(f.get("tna"), antes.get("tna")),
-                "Duration (años)": f["x"] / 365,
-                **({"Forwards (%)": anterior[(f["serie"], f["ticker"])] * 100
-                    if anterior.get((f["serie"], f["ticker"])) is not None else None} if con_forwards else {}),
-                "": marca_fila})
-        tabla = _numeros_como_texto(_sin_vacios(pd.DataFrame(registros)), ["Forwards (%)"], "{:.2f}")
         variaciones = ["Var. precio", f"Var. {nombre_tasa} (pb)", "Var. TNA (pb)"]
-        clave = f"editor_{c}_{st.session_state.get('version_editor', 0)}"
-        st.data_editor(_estilo_tabla(tabla, variaciones, {}),
-                       key=clave, hide_index=True, width="stretch",
-                       disabled=[col for col in tabla.columns if col not in ("Precio", columna_tasa, "TNA (%)")],
-                       on_change=_guardar_edicion, args=(clave, c, filas),
-                       column_config={"Precio": st.column_config.NumberColumn(format="%.2f", min_value=0.0001),
-                                      columna_tasa: st.column_config.NumberColumn(
-                                          format="%.2f", help="TNA de 30 días menos la TAMAR de referencia (promedio de "
-                                                              "los últimos 5 días hábiles publicados)"
-                                          if clave_tasa == "spread" else None),
-                                      "TNA (%)": st.column_config.NumberColumn(format="%.2f", help=AYUDA_TNA.get(c, "")),
-                                      "Duration (años)": st.column_config.NumberColumn(format="%.2f"),
-                                      "Forwards (%)": st.column_config.TextColumn(help=AYUDA_FORWARD[c] if con_forwards
-                                                                                  else None),
-                                      "Curva": st.column_config.TextColumn(width="medium"),
-                                      "": st.column_config.TextColumn(width="medium")})
-        col1, col2 = st.columns([3, 1])
-        col1.caption(f"Escribí un precio, {'un spread' if clave_tasa == 'spread' else 'una TEA'} o una TNA en la tabla y "
-                     "se recalcula el resto del bono y su punto en la curva (rombo; el círculo gris es su lugar a precio "
-                     "de mercado, y la línea punteada, la curva de mercado). Borrar la celda vuelve al mercado. "
-                     "Variaciones contra el cierre del día hábil anterior: en verde con ▲ si suben, en rojo con ▼ si "
-                     "bajan." + (" Cada curva del gráfico se ajusta con sus propios bonos (desde 3)." if varias else ""))
+        col1, col2, col3 = st.columns([1, 1, 2])
+        defecto = min(liquidacion + timedelta(days=182), max(f["vencimiento"] for f in filas))
+        salida = col1.date_input("Fecha de salida (exit yield)", value=defecto, min_value=liquidacion + timedelta(days=1),
+                                 format="DD/MM/YYYY", key=f"exit_fecha_{c}")
         if editados and col2.button("Volver todo a mercado", width="stretch"):
             st.session_state["cambios_curva"] = {k: v for k, v in cambios.items() if k[0] != c}
             st.session_state["version_editor"] = st.session_state.get("version_editor", 0) + 1
             st.rerun(scope="fragment")
+        cambios_exit = st.session_state.get("cambios_exit", {})
+        if any(k[0] == c for k in cambios_exit) and col3.button("Exit yield: volver a la TIR de hoy", key=f"exit_reset_{c}"):
+            st.session_state["cambios_exit"] = {k: v for k, v in cambios_exit.items() if k[0] != c}
+            st.session_state["version_exit"] = st.session_state.get("version_exit", 0) + 1
+            st.rerun(scope="fragment")
+        for i_serie, serie in enumerate(series):
+            de_serie = [f for f in filas if f["serie"] == serie]
+            contenedor = st.container(border=varias)
+            with contenedor:
+                if varias:
+                    st.markdown(f"#### {nombre_serie(serie)}")
+                bonos_serie = [{"ticker": f["ticker"], "vencimiento": f["vencimiento"], "tea": f["tea"]} for f in de_serie]
+                anterior = calc_forwards.al_anterior(bonos_serie, liquidacion) if con_forwards else {}
+                registros = []
+                for f in de_serie:
+                    antes = f["antes"] or {}
+                    marca_fila = {"precio": "✎ precio", "tea": "✎ TEA", "tna": "✎ TNA", "spread": "✎ spread"}.get(f["editado"], "")
+                    notas = [n for n in (marca_fila,
+                                         f"dual: paga la pata {f['dual_definido']}" if f.get("dual_definido") else "",
+                                         "precio de corte, sin cotizar" if f.get("sin_emitir") else "") if n]
+                    registros.append({
+                        "Ticker": f["ticker"],
+                        "Precio": f["precio"], "Var. precio": _var_precio(f["precio"], antes.get("precio")),
+                        columna_tasa: f[clave_tasa] * 100 if f.get(clave_tasa) is not None else None,
+                        f"Var. {nombre_tasa} (pb)": _var_tasa(f.get(clave_tasa), antes.get(clave_tasa)),
+                        "TNA (%)": f["tna"] * 100 if f.get("tna") is not None else None,
+                        "Var. TNA (pb)": _var_tasa(f.get("tna"), antes.get("tna")),
+                        "Duration (años)": f["x"] / 365,
+                        **({"Forwards (%)": anterior[f["ticker"]] * 100
+                            if anterior.get(f["ticker"]) is not None else None} if con_forwards else {}),
+                        "": " · ".join(notas)})
+                tabla = _numeros_como_texto(_sin_vacios(pd.DataFrame(registros)), ["Forwards (%)"], "{:.2f}")
+                clave = f"editor_{c}_{i_serie}_{st.session_state.get('version_editor', 0)}"
+                st.data_editor(_estilo_tabla(tabla, variaciones, {}),
+                               key=clave, hide_index=True, width="stretch",
+                               disabled=[col for col in tabla.columns if col not in ("Precio", columna_tasa, "TNA (%)")],
+                               on_change=_guardar_edicion, args=(clave, c, de_serie),
+                               column_config={"Precio": st.column_config.NumberColumn(format="%.2f", min_value=0.0001),
+                                              columna_tasa: st.column_config.NumberColumn(
+                                                  format="%.2f", help="TNA de 30 días menos la TAMAR de referencia "
+                                                                      "(promedio de los últimos 5 días hábiles publicados)"
+                                                  if clave_tasa == "spread" else None),
+                                              "TNA (%)": st.column_config.NumberColumn(format="%.2f", help=AYUDA_TNA.get(c, "")),
+                                              "Duration (años)": st.column_config.NumberColumn(format="%.2f"),
+                                              "Forwards (%)": st.column_config.TextColumn(
+                                                  help=AYUDA_FORWARD[c] if con_forwards else None),
+                                              "": st.column_config.TextColumn(width="medium")})
+                if con_forwards:
+                    _matriz_forwards(bonos_serie, liquidacion, c)
+                _tabla_exit(de_serie, c, operacion, salida, str(i_serie))
+        st.caption(f"Escribí un precio, {'un spread' if clave_tasa == 'spread' else 'una TEA'} o una TNA en una tabla y "
+                   "se recalcula el resto del bono y su punto en la curva (rombo; el círculo gris es su lugar a precio "
+                   "de mercado, y la línea punteada, la curva de mercado). Borrar la celda vuelve al mercado. "
+                   "Variaciones contra el cierre del día hábil anterior: en verde con ▲ si suben, en rojo con ▼ si "
+                   "bajan." + (" Cada curva del gráfico se ajusta con sus propios bonos (desde 3) y tiene su tabla."
+                              if varias else "")
+                   + (" Un dual cuya pata ya quedó definida (para que pague la otra, la variable que falta publicar "
+                      "tendría que ser negativa) figura solo en la curva de esa pata." if c in ("tasa_fija", "cer", "tamar", "dl") else ""))
+        if con_forwards:
+            st.caption(_texto_matriz(c))
+        st.caption(_texto_exit(c, salida))
         for aviso in avisos:
             st.warning(f"No se pudo recalcular {aviso}")
-        if con_forwards:
-            for serie in series:
-                bonos_serie = [{"ticker": f["ticker"], "vencimiento": f["vencimiento"], "tea": f["tea"]}
-                               for f in filas if f["serie"] == serie]
-                _matriz_forwards(bonos_serie, liquidacion, c, nombre_serie(serie) if varias else "")
-            if any(sum(1 for f in filas if f["serie"] == s) >= 2 for s in series):
-                st.caption(_texto_matriz(c))
-        _tabla_exit(filas, c, operacion, varias)
         if c == "tasa_fija":
             with st.expander("Curva teórica de tasa fija (a precio de mercado): desvío de cada bono contra la curva y sus vecinos"):
                 mostrar(salida_herramienta("curva_tf", marca_actual, fecha=fecha.isoformat() if fecha else None))

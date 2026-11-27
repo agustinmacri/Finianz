@@ -187,6 +187,7 @@ Al vencimiento, un dual paga la pata de mayor pago final (decisión de Agustin, 
 - **Tasa fija / TAMAR (TTD26):** pago final de la pata fija (cupón de licitación) contra el de la TAMAR proyectada; TAMAR de los días por publicar con la que las dos patas pagan lo mismo.
 - **CER / TAMAR (TXM):** pata CER = 100 × CER final proyectado / CER inicial, con la fuente de inflación elegida (por defecto el REM; también breakeven, escenario o mensual); pata TAMAR con la fuente de TAMAR (por defecto la actual: últimos 5 días). Inflación mensual plana, en los meses sin publicar, con la que las dos patas pagan lo mismo.
 - Rendimiento de cada pata y del dual: TNA = (pago / precio − 1) × 365 / plazo; TEA = (pago / precio)^(365 / plazo) − 1.
+- Pata definida (Agustin, 27/11/2026): una pata queda definida cuando su pago mínimo posible (lo que falta publicar en cero: TAMAR 0, inflación 0, A3500 0) ya es mayor o igual que el pago máximo posible de la otra (solo tiene máximo una pata de tasa fija o con su variable ya publicada). Desde ahí el dual se trata como un bono de esa pata: en el panel figura solo en esa curva. Ej.: TTD26, donde para que pague la tasa fija la TAMAR de los días que faltan tendría que ser negativa. Pendiente: probabilidad implícita de cada pata.
 
 ## Escenarios de TAMAR y tipo de cambio
 

@@ -8,16 +8,22 @@ Por defecto, solo los bonos de cada curva sin opcionalidad: sin duales y, en har
 - los Globales (ley NY), en una serie aparte de la de los Bonares;
 - en hard dollar, el precio en dólares MEP (ticker D) o cable (ticker C), según 'dolar'.
 Cada punto trae "serie": None en la curva principal, o el nombre de la serie aparte.
+
+Un dual con la pata que va a pagar ya definida (renta_fija/duales.py: el pago mínimo de esa pata ya supera el máximo
+posible de la otra) deja de ser dual: figura solo en la curva de esa pata, como un bono más de la curva principal
+(Agustin, 27/11/2026). Los breakevens siguen sin duales.
 """
 from datetime import date
 
 from fuentes_datos.conexiones.http import ErrorAPI
-from renta_fija import leer_fichas as fichas, metricas
+from renta_fija import duales, leer_fichas as fichas, metricas
 from fuentes_datos import mercado
 
 NOMBRE_FAMILIA = {"tasa_fija": "tasa fija", "cer": "CER", "tamar": "TAMAR", "dl": "dollar linked", "hd": "hard dollar"}
 ORDEN = ("tasa_fija", "cer", "tamar", "dl", "hd")
 SERIE_BONARES, SERIE_GLOBALES = "Bonares (ley AR)", "Globales (ley NY)"
+NOMBRE_PATA = {"tasa_fija_capitalizable": "tasa fija", "cer_cero_cupon": "CER", "tamar_capitalizable": "TAMAR",
+               "dolar_linked_bullet": "dollar linked"}
 
 
 def es_dual(f: dict) -> bool:
@@ -37,6 +43,7 @@ def armar(operacion: date, liquidacion: date, fecha_precios: date | None,
     curvas = {"tasa_fija": [], "cer": [], "dl": [], "tamar": [], "hd": []}
     contexto, errores = {}, []
     sufijo_hd = "C" if dolar == "ccl" else "D"
+    definidas = {}                                           # ticker de un dual -> pata que va a pagar (o None)
     for f in fichas.todas():
         familia, ticker = f["familia"], f["ticker"].upper()
         if familias is not None and familia not in familias:
@@ -48,11 +55,19 @@ def armar(operacion: date, liquidacion: date, fecha_precios: date | None,
             continue                                         # los duales tienen opcionalidad
         if familia == "hard_dollar" and f["ley"] != "AR" and not todas:
             continue                                         # la brecha se mide con Bonares
+        if dual:
+            if ticker not in definidas:
+                try:
+                    definidas[ticker] = duales.pata_que_paga(ticker, operacion)
+                except (ErrorAPI, ValueError, KeyError, ZeroDivisionError):
+                    definidas[ticker] = None
+            if definidas[ticker] is not None and definidas[ticker] != familia:
+                continue                                     # la pata que ya no va a pagar no se muestra
         try:
             precio, origen, liq = mercado.precio_bono(f, fecha_precios, liquidacion,
                                                       sufijo_hd if familia == "hard_dollar" else "")
             m = metricas.calculadora(f, liq, operacion, contexto)(precio)
-            if dual:
+            if dual and definidas[ticker] is None:
                 serie = serie_dual(ticker)
             elif familia == "hard_dollar" and todas:
                 serie = SERIE_GLOBALES if f["ley"] != "AR" else SERIE_BONARES
@@ -62,6 +77,7 @@ def armar(operacion: date, liquidacion: date, fecha_precios: date | None,
             curvas[m["curva"]].append(dict(punto, tea=m["tea"], tna=m["tna"], x=m["duration"] * 365,
                                            spread=m.get("spread"), familia=familia, serie=serie,
                                            ley=f.get("ley"), liquidacion=liq,
+                                           dual_definido=NOMBRE_PATA.get(familia) if dual and definidas[ticker] else None,
                                            sin_emitir=liq != liquidacion, origen=origen))
         except (ErrorAPI, ValueError) as e:
             errores.append(f"{ticker}{' (' + familia.replace('_', ' ') + ')' if dual else ''}: {e}")

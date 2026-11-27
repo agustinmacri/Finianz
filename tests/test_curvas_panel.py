@@ -13,7 +13,7 @@ from pathlib import Path
 from fuentes_datos import mercado
 from fuentes_datos.bases import licitaciones
 from fuentes_datos.carga import fichas_documentos as fd
-from renta_fija import curvas_mercado, leer_fichas, metricas
+from renta_fija import curvas_mercado, duales, leer_fichas, metricas
 from renta_fija.calculadoras import exit_yield
 
 OPERACION, LIQUIDACION = date(2026, 11, 16), date(2026, 11, 17)
@@ -124,9 +124,34 @@ def test_spread_tamar_editable():
         mercado.datos_tamar, mercado.feriados.proximo_dia_habil = originales
 
 
+def test_dual_con_pata_definida():
+    """Una pata queda definida si su pago mínimo (lo que falta publicar en 0) supera el máximo de la otra."""
+    fija = {"ticker": "TDOS", "tipo": "DUAL", "familia": "tasa_fija_capitalizable", "emision": date(2025, 1, 15),
+            "vencimiento": date(2026, 12, 15), "cupon": 0.02}
+    variable = {"ticker": "TDOS", "tipo": "DUAL", "familia": "tamar_capitalizable", "emision": date(2025, 1, 15),
+                "vencimiento": date(2026, 12, 15), "margen": 0.0}
+    originales = mercado.datos_tamar, metricas.fichas_de
+    metricas.fichas_de = lambda t: [dict(fija), dict(variable)]
+
+    def ventana(tamar_publicada: float, faltan: int, fin=date(2026, 11, 30)):
+        mercado.datos_tamar = lambda f, corte: {"conocidas": [tamar_publicada] * 400, "a_estimar": faltan,
+                                                "tamar_bono": tamar_publicada, "referencia": tamar_publicada,
+                                                "fin": fin, "inicio": date(2025, 1, 1), "desde_estimar": corte,
+                                                "ultimas": (corte, corte)}
+    try:
+        ventana(0.40, 4)               # la TAMAR acumuló mucho: aun con 0 en los días que faltan, supera a la fija
+        assert duales.pata_que_paga("TDOS", OPERACION) == "tamar_capitalizable"
+        ventana(0.20, 4)               # TAMAR baja: todavía podría pagar cualquiera (la TAMAR no tiene techo)
+        assert duales.pata_que_paga("TDOS", OPERACION) is None
+        ventana(0.20, 0, fin=date(2026, 11, 10))   # ventana completa: las dos fijas, paga la mayor (la fija)
+        assert duales.pata_que_paga("TDOS", OPERACION) == "tasa_fija_capitalizable"
+    finally:
+        mercado.datos_tamar, metricas.fichas_de = originales
+
+
 if __name__ == "__main__":
     for prueba in (test_series_duales_y_globales, test_precio_de_emision, test_exit_yield_desde_precio,
-                   test_spread_tamar_editable):
+                   test_spread_tamar_editable, test_dual_con_pata_definida):
         prueba()
         print("OK ", prueba.__name__)
     print("Todas las pruebas de curvas del panel pasaron.")
