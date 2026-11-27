@@ -62,10 +62,12 @@ def leer_excel(ruta: Path) -> tuple[str, list[dict]]:
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")                  # el Excel trae imágenes que openpyxl no lee
         libro = openpyxl.load_workbook(ruta, data_only=True, read_only=True)
-    if HOJA not in libro.sheetnames:
-        raise ValueError(f"{ruta.name}: no tiene la hoja '{HOJA}'.")
-    filas_hoja = [list(f) for f in libro[HOJA].iter_rows(min_col=2, max_col=13, values_only=True)]
-    libro.close()
+    try:                       # en modo lectura el archivo queda abierto hasta cerrarlo (en Windows, bloqueado)
+        if HOJA not in libro.sheetnames:
+            raise ValueError(f"{ruta.name}: no tiene la hoja '{HOJA}'.")
+        filas_hoja = [list(f) for f in libro[HOJA].iter_rows(min_col=2, max_col=13, values_only=True)]
+    finally:
+        libro.close()
 
     relevamiento = None
     for fila in filas_hoja[:5]:

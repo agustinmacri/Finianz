@@ -137,6 +137,13 @@ def leer(nombre: str) -> Cartera:
     from openpyxl import load_workbook
     archivo = ruta(nombre)
     libro = load_workbook(archivo, data_only=True, read_only=True)
+    try:                       # en modo lectura openpyxl deja el archivo abierto hasta cerrarlo: en Windows lo bloquea
+        return _leer_libro(libro, archivo)
+    finally:
+        libro.close()
+
+
+def _leer_libro(libro, archivo: Path) -> Cartera:
     hoja = next((libro[h] for h in libro.sheetnames if _clave(h) == "cartera"), libro[libro.sheetnames[0]])
     filas = [list(f) for f in hoja.iter_rows(values_only=True)]
     inicio = next((i for i, f in enumerate(filas) if "ticker" in {_clave(c) for c in f}), None)
