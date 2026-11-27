@@ -167,20 +167,6 @@ def mostrar(texto: str):
             st.markdown(contenido.replace("\n", "  \n"))
 
 
-def grafico_camino(texto: str, titulo: str, porcentaje: bool = True):
-    tabla = salidas.tabla_de_meses(texto)
-    if tabla is None or tabla.empty:
-        return
-    fig = go.Figure()
-    for i, columna in enumerate(tabla.columns):
-        fig.add_trace(go.Scatter(x=tabla.index, y=tabla[columna], mode="lines+markers", name=columna,
-                                 line=dict(color=SERIES[i % len(SERIES)])))
-    estilo_grafico(fig, 380, title=dict(text=titulo, font=dict(color=TEXTO, size=15)),
-                   yaxis_tickformat=".2%" if porcentaje else ",.2f")
-    with st.container(border=True):
-        st.plotly_chart(fig, width="stretch", theme=None)
-
-
 # ---------- Acceso ----------
 
 COOKIE_ACCESO = "panel_acceso"
@@ -403,7 +389,7 @@ def _matriz_forwards(bonos: list[dict], liquidacion: date, curva: str, titulo: s
     df = pd.DataFrame([[f"{celdas[(corto, largo)] * 100:.2f}" if (corto, largo) in celdas else "" for corto in cortos]
                        for largo in largos], index=pd.Index(largos, name="Largo ↓ / Corto →"), columns=cortos)
     real = {"cer": " real (CER + x)", "dl": " en dólares", "hd": " en dólares"}.get(curva, "")
-    st.markdown(f"**Matriz de forwards{real} (TEA, %){' · ' + titulo if titulo else ''}**")
+    st.markdown(f"**{titulo + ' · ' if titulo else ''}Matriz de forwards{real} (TEA, %)**")
     st.dataframe(df, width="stretch", column_config={c: st.column_config.TextColumn(width="small") for c in cortos})
 
 
@@ -489,7 +475,6 @@ def _tabla_exit(filas: list[dict], curva: str, operacion: date, salida: date, su
     """Retorno de cada bono si se vende en una fecha a la exit yield que se elija para él (o a un precio de salida,
     del que sale la exit yield). Sin dato cargado, la exit yield es la TIR de hoy (Agustin, 27/11/2026). Una tabla
     por curva: los bonos de curvas distintas no comparten tabla."""
-    st.markdown("**Retornos con exit yield**")
     cambios = st.session_state.get("cambios_exit", {})
     registros = []
     for f in filas:
@@ -632,78 +617,88 @@ if seccion == "Curvas":
         with st.container(border=True):
             st.plotly_chart(fig, width="stretch", theme=None)
 
-        # Una sección por curva del gráfico: tabla de rendimientos (editable), forwards y exit yield. Los bonos de
-        # curvas distintas (Bonares y Globales, duales) no comparten tabla (Agustin, 27/11/2026).
+        # Debajo del gráfico, en este orden (Agustin, 27/11/2026): las tablas de rendimientos (primero la curva
+        # principal, después los duales o los Globales, cada una aparte), las matrices de forwards y la exit yield,
+        # con su fecha de salida. Los bonos de curvas distintas no comparten tabla.
         con_forwards = c in CURVAS_FORWARD
         variaciones = ["Var. precio", f"Var. {nombre_tasa} (pb)", "Var. TNA (pb)"]
-        col1, col2, col3 = st.columns([1, 1, 2])
-        defecto = min(liquidacion + timedelta(days=182), max(f["vencimiento"] for f in filas))
-        salida = col1.date_input("Fecha de salida (exit yield)", value=defecto, min_value=liquidacion + timedelta(days=1),
-                                 format="DD/MM/YYYY", key=f"exit_fecha_{c}")
+        por_serie = [(i_serie, serie, [f for f in filas if f["serie"] == serie]) for i_serie, serie in enumerate(series)]
+        titulo = lambda serie: st.markdown(f"**{nombre_serie(serie)}**") if varias else None
+
+        st.markdown("#### Rendimientos")
+        for i_serie, serie, de_serie in por_serie:
+            titulo(serie)
+            bonos_serie = [{"ticker": f["ticker"], "vencimiento": f["vencimiento"], "tea": f["tea"]} for f in de_serie]
+            anterior = calc_forwards.al_anterior(bonos_serie, liquidacion) if con_forwards else {}
+            registros = []
+            for f in de_serie:
+                antes = f["antes"] or {}
+                marca_fila = {"precio": "✎ precio", "tea": "✎ TEA", "tna": "✎ TNA", "spread": "✎ spread"}.get(f["editado"], "")
+                notas = [n for n in (marca_fila,
+                                     f"dual: paga la pata {f['dual_definido']}" if f.get("dual_definido") else "",
+                                     "precio de corte, sin cotizar" if f.get("sin_emitir") else "") if n]
+                registros.append({
+                    "Ticker": f["ticker"],
+                    "Precio": f["precio"], "Var. precio": _var_precio(f["precio"], antes.get("precio")),
+                    columna_tasa: f[clave_tasa] * 100 if f.get(clave_tasa) is not None else None,
+                    f"Var. {nombre_tasa} (pb)": _var_tasa(f.get(clave_tasa), antes.get(clave_tasa)),
+                    "TNA (%)": f["tna"] * 100 if f.get("tna") is not None else None,
+                    "Var. TNA (pb)": _var_tasa(f.get("tna"), antes.get("tna")),
+                    "Duration (años)": f["x"] / 365,
+                    **({"Forwards (%)": anterior[f["ticker"]] * 100
+                        if anterior.get(f["ticker"]) is not None else None} if con_forwards else {}),
+                    "": " · ".join(notas)})
+            tabla = _numeros_como_texto(_sin_vacios(pd.DataFrame(registros)), ["Forwards (%)"], "{:.2f}")
+            clave = f"editor_{c}_{i_serie}_{st.session_state.get('version_editor', 0)}"
+            st.data_editor(_estilo_tabla(tabla, variaciones, {}),
+                           key=clave, hide_index=True, width="stretch",
+                           disabled=[col for col in tabla.columns if col not in ("Precio", columna_tasa, "TNA (%)")],
+                           on_change=_guardar_edicion, args=(clave, c, de_serie),
+                           column_config={"Precio": st.column_config.NumberColumn(format="%.2f", min_value=0.0001),
+                                          columna_tasa: st.column_config.NumberColumn(
+                                              format="%.2f", help="TNA de 30 días menos la TAMAR de referencia "
+                                                                  "(promedio de los últimos 5 días hábiles publicados)"
+                                              if clave_tasa == "spread" else None),
+                                          "TNA (%)": st.column_config.NumberColumn(format="%.2f", help=AYUDA_TNA.get(c, "")),
+                                          "Duration (años)": st.column_config.NumberColumn(format="%.2f"),
+                                          "Forwards (%)": st.column_config.TextColumn(
+                                              help=AYUDA_FORWARD[c] if con_forwards else None),
+                                          "": st.column_config.TextColumn(width="medium")})
+        col1, col2 = st.columns([3, 1])
+        col1.caption(f"Escribí un precio, {'un spread' if clave_tasa == 'spread' else 'una TEA'} o una TNA en una tabla "
+                     "y se recalcula el resto del bono y su punto en la curva (rombo; el círculo gris es su lugar a "
+                     "precio de mercado, y la línea punteada, la curva de mercado). Borrar la celda vuelve al mercado. "
+                     "Variaciones contra el cierre del día hábil anterior: en verde con ▲ si suben, en rojo con ▼ si "
+                     "bajan." + (" Cada curva del gráfico se ajusta con sus propios bonos (desde 3)." if varias else "")
+                     + (" Un dual cuya pata ya quedó definida (para que pague la otra, la variable que falta publicar "
+                        "tendría que ser negativa) figura solo en la curva de esa pata."
+                        if c in ("tasa_fija", "cer", "tamar", "dl") else ""))
         if editados and col2.button("Volver todo a mercado", width="stretch"):
             st.session_state["cambios_curva"] = {k: v for k, v in cambios.items() if k[0] != c}
             st.session_state["version_editor"] = st.session_state.get("version_editor", 0) + 1
             st.rerun(scope="fragment")
+
+        if con_forwards and any(len(de_serie) >= 2 for _, _, de_serie in por_serie):
+            st.markdown("#### Forwards")
+            for _, serie, de_serie in por_serie:
+                bonos_serie = [{"ticker": f["ticker"], "vencimiento": f["vencimiento"], "tea": f["tea"]} for f in de_serie]
+                if len(bonos_serie) >= 2:
+                    _matriz_forwards(bonos_serie, liquidacion, c, nombre_serie(serie) if varias else "")
+            st.caption(_texto_matriz(c))
+
+        st.markdown("#### Retornos con exit yield")
+        col1, col2, _ = st.columns([1, 1, 2])
+        defecto = min(liquidacion + timedelta(days=182), max(f["vencimiento"] for f in filas))
+        salida = col1.date_input("Fecha de salida", value=defecto, min_value=liquidacion + timedelta(days=1),
+                                 format="DD/MM/YYYY", key=f"exit_fecha_{c}")
         cambios_exit = st.session_state.get("cambios_exit", {})
-        if any(k[0] == c for k in cambios_exit) and col3.button("Exit yield: volver a la TIR de hoy", key=f"exit_reset_{c}"):
+        if any(k[0] == c for k in cambios_exit) and col2.button("Volver a la TIR de hoy", key=f"exit_reset_{c}"):
             st.session_state["cambios_exit"] = {k: v for k, v in cambios_exit.items() if k[0] != c}
             st.session_state["version_exit"] = st.session_state.get("version_exit", 0) + 1
             st.rerun(scope="fragment")
-        for i_serie, serie in enumerate(series):
-            de_serie = [f for f in filas if f["serie"] == serie]
-            contenedor = st.container(border=varias)
-            with contenedor:
-                if varias:
-                    st.markdown(f"#### {nombre_serie(serie)}")
-                bonos_serie = [{"ticker": f["ticker"], "vencimiento": f["vencimiento"], "tea": f["tea"]} for f in de_serie]
-                anterior = calc_forwards.al_anterior(bonos_serie, liquidacion) if con_forwards else {}
-                registros = []
-                for f in de_serie:
-                    antes = f["antes"] or {}
-                    marca_fila = {"precio": "✎ precio", "tea": "✎ TEA", "tna": "✎ TNA", "spread": "✎ spread"}.get(f["editado"], "")
-                    notas = [n for n in (marca_fila,
-                                         f"dual: paga la pata {f['dual_definido']}" if f.get("dual_definido") else "",
-                                         "precio de corte, sin cotizar" if f.get("sin_emitir") else "") if n]
-                    registros.append({
-                        "Ticker": f["ticker"],
-                        "Precio": f["precio"], "Var. precio": _var_precio(f["precio"], antes.get("precio")),
-                        columna_tasa: f[clave_tasa] * 100 if f.get(clave_tasa) is not None else None,
-                        f"Var. {nombre_tasa} (pb)": _var_tasa(f.get(clave_tasa), antes.get(clave_tasa)),
-                        "TNA (%)": f["tna"] * 100 if f.get("tna") is not None else None,
-                        "Var. TNA (pb)": _var_tasa(f.get("tna"), antes.get("tna")),
-                        "Duration (años)": f["x"] / 365,
-                        **({"Forwards (%)": anterior[f["ticker"]] * 100
-                            if anterior.get(f["ticker"]) is not None else None} if con_forwards else {}),
-                        "": " · ".join(notas)})
-                tabla = _numeros_como_texto(_sin_vacios(pd.DataFrame(registros)), ["Forwards (%)"], "{:.2f}")
-                clave = f"editor_{c}_{i_serie}_{st.session_state.get('version_editor', 0)}"
-                st.data_editor(_estilo_tabla(tabla, variaciones, {}),
-                               key=clave, hide_index=True, width="stretch",
-                               disabled=[col for col in tabla.columns if col not in ("Precio", columna_tasa, "TNA (%)")],
-                               on_change=_guardar_edicion, args=(clave, c, de_serie),
-                               column_config={"Precio": st.column_config.NumberColumn(format="%.2f", min_value=0.0001),
-                                              columna_tasa: st.column_config.NumberColumn(
-                                                  format="%.2f", help="TNA de 30 días menos la TAMAR de referencia "
-                                                                      "(promedio de los últimos 5 días hábiles publicados)"
-                                                  if clave_tasa == "spread" else None),
-                                              "TNA (%)": st.column_config.NumberColumn(format="%.2f", help=AYUDA_TNA.get(c, "")),
-                                              "Duration (años)": st.column_config.NumberColumn(format="%.2f"),
-                                              "Forwards (%)": st.column_config.TextColumn(
-                                                  help=AYUDA_FORWARD[c] if con_forwards else None),
-                                              "": st.column_config.TextColumn(width="medium")})
-                if con_forwards:
-                    _matriz_forwards(bonos_serie, liquidacion, c)
-                _tabla_exit(de_serie, c, operacion, salida, str(i_serie))
-        st.caption(f"Escribí un precio, {'un spread' if clave_tasa == 'spread' else 'una TEA'} o una TNA en una tabla y "
-                   "se recalcula el resto del bono y su punto en la curva (rombo; el círculo gris es su lugar a precio "
-                   "de mercado, y la línea punteada, la curva de mercado). Borrar la celda vuelve al mercado. "
-                   "Variaciones contra el cierre del día hábil anterior: en verde con ▲ si suben, en rojo con ▼ si "
-                   "bajan." + (" Cada curva del gráfico se ajusta con sus propios bonos (desde 3) y tiene su tabla."
-                              if varias else "")
-                   + (" Un dual cuya pata ya quedó definida (para que pague la otra, la variable que falta publicar "
-                      "tendría que ser negativa) figura solo en la curva de esa pata." if c in ("tasa_fija", "cer", "tamar", "dl") else ""))
-        if con_forwards:
-            st.caption(_texto_matriz(c))
+        for i_serie, serie, de_serie in por_serie:
+            titulo(serie)
+            _tabla_exit(de_serie, c, operacion, salida, str(i_serie))
         st.caption(_texto_exit(c, salida))
         for aviso in avisos:
             st.warning(f"No se pudo recalcular {aviso}")
@@ -842,22 +837,49 @@ if seccion == "Proyecciones":
         opciones += [f"escenario:{n}" for n in proyecciones.escenarios(clave)]
     else:
         opciones += [f"escenario:{n}" for n in proyeccion_cer.escenarios()]
-    col1, col2, col3 = st.columns([2, 3, 1])
-    elegida = col1.selectbox("Supuesto", opciones + ["otro (escribilo)"])
-    fuente = col2.text_input("Camino propio", placeholder="camino:2026-12=2.5%;2027=25%;resto=1.5%",
-                             disabled=elegida != "otro (escribilo)") if elegida == "otro (escribilo)" else elegida
-    filtro = col3.text_input("Ticker (opcional)") or None
-    if fuente:
+    PROPIO = "camino propio (escribilo)"
+    col1, col2 = st.columns([4, 1])
+    elegidas = col1.multiselect("Supuestos a graficar", opciones + [PROPIO], default=opciones[:1],
+                                key=f"supuestos_{variable}", placeholder="Tildá uno o más supuestos",
+                                help="Cada supuesto es una línea del gráfico: ninguno, uno o todos.")
+    filtro = col2.text_input("Ticker (opcional)") or None
+    fuentes = [e for e in elegidas if e != PROPIO]
+    if PROPIO in elegidas:
+        propio = st.text_input("Camino propio", placeholder="camino:2026-12=2.5%;2027=25%;resto=1.5%",
+                               key=f"camino_propio_{variable}")
+        if propio:
+            fuentes.append(propio if propio.startswith("camino:") else f"camino:{propio}")
+    if not fuentes:
+        st.info("Tildá uno o más supuestos para verlos en el gráfico.")
+    else:
         fecha_texto = fecha.isoformat() if fecha else None
-        if variable == "Inflación (CER)":
-            texto = salida_herramienta("cer", marca, fuente=fuente, ticker=filtro, fecha=fecha_texto)
-        elif clave == "tamar":
-            texto = salida_herramienta("tamar", marca, fuente=fuente, ticker=filtro, fecha=fecha_texto)
-        else:
-            texto = salida_herramienta("dolar", marca, tipo=clave, fuente=fuente, ticker=filtro, fecha=fecha_texto)
-        grafico_camino(texto, f"Camino de {variable.lower()}: el usado contra el breakeven y el REM",
-                       porcentaje=not variable.startswith("Dólar"))
-        mostrar(texto)
+        textos, caminos = {}, {}
+        for fuente in fuentes:
+            if variable == "Inflación (CER)":
+                texto = salida_herramienta("cer", marca, fuente=fuente, ticker=filtro, fecha=fecha_texto)
+            elif clave == "tamar":
+                texto = salida_herramienta("tamar", marca, fuente=fuente, ticker=filtro, fecha=fecha_texto)
+            else:
+                texto = salida_herramienta("dolar", marca, tipo=clave, fuente=fuente, ticker=filtro, fecha=fecha_texto)
+            textos[fuente] = texto
+            tabla = salidas.tabla_de_meses(texto)
+            if tabla is not None and not tabla.empty:
+                caminos[fuente] = tabla.iloc[:, 0]           # la primera columna es el camino del supuesto usado
+        if caminos:
+            fig = go.Figure()
+            for i, (fuente, serie) in enumerate(caminos.items()):
+                fig.add_trace(go.Scatter(x=serie.index, y=serie.values, mode="lines+markers", name=fuente,
+                                         line=dict(color=SERIES[i % len(SERIES)])))
+            estilo_grafico(fig, 400, title=dict(text=f"Camino de {variable.lower()} según cada supuesto",
+                                                font=dict(color=TEXTO, size=15)),
+                           yaxis_tickformat=",.2f" if variable.startswith("Dólar") else ".2%")
+            fig.update_layout(margin=dict(t=60, b=40))
+            with st.container(border=True):
+                st.plotly_chart(fig, width="stretch", theme=None)
+        for fuente, texto in textos.items():
+            with st.expander(f"Detalle con {fuente}: el camino contra el breakeven y el REM, y los bonos",
+                             expanded=len(textos) == 1):
+                mostrar(texto)
 
 
 # ---------- Fichas ----------
