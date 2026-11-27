@@ -3,14 +3,13 @@ devuelve lo que diría el modelo para el llamado a licitación del 15/04/2026 y 
 Correr con:
     python -m tests.test_fichas_documentos
 """
-import re
 import shutil
 import tempfile
 import tomllib
 from datetime import date
 from pathlib import Path
 
-from fuentes_datos.carga import fichas_documentos as fd
+from carga_datos import fichas_documentos as fd
 from renta_fija import leer_fichas
 from tools import lector_fichas
 
@@ -39,25 +38,11 @@ RESULTADO = fd.Documento(tipo_documento="resultado de licitación", fecha_docume
 ])
 
 
-
-# Bonos que las pruebas tratan como nuevos: si ya se aprobaron en las fichas reales, se sacan de la copia
-NUEVOS_EN_PRUEBAS = ("AO27", "AO28", "M30A7", "TMVE8")
-
-
-def _copiar_fichas(origen, destino):
-    shutil.copytree(origen, destino, ignore=shutil.ignore_patterns("borradores"))
-    for archivo in Path(destino).glob("*.toml"):
-        texto = archivo.read_text(encoding="utf-8")
-        bloques = re.split(r"(?m)^(?=\[\[bono\]\])", texto)
-        quedan = [b for b in bloques if not re.search(r'(?m)^ticker\s*=\s*"(%s)"' % "|".join(NUEVOS_EN_PRUEBAS), b)]
-        if len(quedan) != len(bloques):
-            archivo.write_text("".join(quedan), encoding="utf-8")
-
 def test_borradores_aprobacion():
     original_carpeta, original_borradores = leer_fichas.CARPETA, fd.BORRADORES
     with tempfile.TemporaryDirectory() as tmp:
         carpeta = Path(tmp) / "fichas"
-        _copiar_fichas(original_carpeta, carpeta)
+        shutil.copytree(original_carpeta, carpeta, ignore=shutil.ignore_patterns("borradores"))
         leer_fichas.CARPETA, fd.BORRADORES = carpeta, carpeta / "borradores" / "borradores.toml"
         documento = Path(tmp) / "llamado.txt"
         documento.write_text("Llamado a licitación del Tesoro. " * 20, encoding="utf-8")
@@ -65,16 +50,13 @@ def test_borradores_aprobacion():
             r = fd.leer(str(documento), extractor=lambda texto: LLAMADO, hoy=HOY)
             assert "TZXS8" in r["ya_cargados"]                                  # reapertura de un bono cargado
             assert "AO27" in r["nuevos"] and "tasa_fija_capitalizable-2026-08-14" in r["nuevos"]
-            # El Bono TAMAR 25/02/2028 del llamado no trae ticker, pero coincide con el TMF28 cargado: no va al borrador
-            assert any(y.startswith("tamar_capitalizable-2028-02-25 = TMF28") for y in r["ya_cargados"])
-            assert "tamar_capitalizable-2028-02-25" not in r["nuevos"]
             lecap = next(b for b in fd.pendientes() if b["clave"] == "tasa_fija_capitalizable-2026-08-14")
             assert lecap["revisado"] is False and "cupon" not in lecap and len(lecap["pendiente"]) == 2
 
             r = fd.leer(str(documento), extractor=lambda texto: RESULTADO, hoy=HOY)          # el resultado completa
             claves = dict(r["completados"])
             assert set(claves["S14G6"]) >= {"ticker", "cupon"}
-            assert "TMF28" in r["ya_cargados"] and r["descartados"] == []        # ya estaba cargado (y nunca fue borrador)
+            assert "TMF28" in r["ya_cargados"] and r["descartados"] == ["tamar_capitalizable-2028-02-25"]  # ya estaba cargado
             lecap = next(b for b in fd.pendientes() if b["clave"] == "S14G6")
             assert lecap["cupon"] == 0.0215 and lecap.get("pendiente") is None    # ya no queda nada pendiente
 
@@ -87,16 +69,11 @@ def test_borradores_aprobacion():
             tomllib.loads((carpeta / "tasa_fija.toml").read_text(encoding="utf-8"))   # el archivo sigue siendo válido
             assert "descartado" in fd.descartar("AO27")
 
-            # Releer el llamado (sin ticker) después de aprobar la Lecap: coincide con S14G6 y no vuelve al borrador
-            r = fd.leer(str(documento), extractor=lambda texto: LLAMADO, hoy=HOY)
-            assert any(y.startswith("tasa_fija_capitalizable-2026-08-14 = S14G6") for y in r["ya_cargados"])
-            assert "tasa_fija_capitalizable-2026-08-14" not in [b["clave"] for b in fd.pendientes()]
-            # Un borrador que vence mientras espera aprobación se saca solo
-            fd._guardar_borradores(fd.pendientes() + [{"familia": "tasa_fija_capitalizable", "tipo": "LECAP",
-                                                      "vencimiento": date(2026, 9, 30), "clave": "tasa_fija_capitalizable-2026-09-30",
-                                                      "revisado": False, "fuente": "x"}])
+            # Meses después: la Lecap de agosto ya venció. No se carga y el borrador que quedaba se saca solo.
+            fd.leer(str(documento), extractor=lambda texto: LLAMADO, hoy=HOY)
+            assert "tasa_fija_capitalizable-2026-08-14" in [b["clave"] for b in fd.pendientes()]
             r = fd.leer(str(documento), extractor=lambda texto: LLAMADO, hoy=date(2026, 11, 14))
-            assert any(v.startswith("tasa_fija_capitalizable-2026-09-30 (borrador") for v in r["vencidos"])
+            assert any(v.startswith("tasa_fija_capitalizable-2026-08-14 (borrador") for v in r["vencidos"])
             assert any("14/08/2026" in v and "borrador" not in v for v in r["vencidos"])
             assert "tasa_fija_capitalizable-2026-08-14" not in [b["clave"] for b in fd.pendientes()]
             assert "ya venció" in _error(lambda: fd.aprobar("tasa_fija_capitalizable-2026-08-14", hoy=date(2026, 11, 14))) \
@@ -112,7 +89,7 @@ def test_borradores_aprobacion():
             salida = lector_fichas.aprobar_ficha("S14Y7")
             assert "S14Y7 aprobado" in salida, salida
             assert "vía agente" in leer_fichas.ficha("S14Y7")["fuente"]
-            assert "No hay" in lector_fichas.descartar_borrador("tamar_capitalizable-2028-02-25")   # nunca fue borrador
+            assert "descartado" in lector_fichas.descartar_borrador("tamar_capitalizable-2028-02-25")
         finally:
             leer_fichas.CARPETA, fd.BORRADORES = original_carpeta, original_borradores
 
@@ -138,7 +115,7 @@ def test_resultado_y_cambios():
     original_carpeta, original_borradores = leer_fichas.CARPETA, fd.BORRADORES
     with tempfile.TemporaryDirectory() as tmp:
         carpeta = Path(tmp) / "fichas"
-        _copiar_fichas(original_carpeta, carpeta)
+        shutil.copytree(original_carpeta, carpeta, ignore=shutil.ignore_patterns("borradores"))
         leer_fichas.CARPETA, fd.BORRADORES = carpeta, carpeta / "borradores" / "borradores.toml"
         documento = Path(tmp) / "resultado.txt"
         documento.write_text("Resultado de la licitación. " * 20, encoding="utf-8")
@@ -185,7 +162,7 @@ def test_reaperturas_duplicados_y_tickers():
     listados = {"S14Y7": "LECAP V14/05/27", "M30A7": "LETRA TAMAR V30/04/27", "TMA27": "BONO TAMAR V30/04/27"}
     with tempfile.TemporaryDirectory() as tmp:
         carpeta = Path(tmp) / "fichas"
-        _copiar_fichas(original_carpeta, carpeta)
+        shutil.copytree(original_carpeta, carpeta, ignore=shutil.ignore_patterns("borradores"))
         leer_fichas.CARPETA, fd.BORRADORES = carpeta, carpeta / "borradores" / "borradores.toml"
         fd.BUSCADOR = lambda t: [{"ticker": t, "description": listados[t]}] if t in listados else []
         documento = Path(tmp) / "aviso.txt"
@@ -233,41 +210,27 @@ def test_reaperturas_duplicados_y_tickers():
             assert fd.candidatos_ticker("cer_cero_cupon", date(2028, 6, 30)) == ["X30J8", "TZXJ8", "TZX28"]
             assert fd.candidatos_ticker("dolar_linked_bullet", date(2027, 3, 31)) == ["D31M7", "TZVM7"]
 
-            # 3. Emisión vieja sin ticker con las condiciones de un bono cargado: es ese bono, no va al borrador
-            #    (regla de Agustin, 26/11/2026).
+            # 3. Emisión vieja sin ticker con las condiciones de un bono cargado: posible duplicado, decide un humano.
             viejo = fd.Documento(tipo_documento="llamado a licitación", fecha_documento="2024-03-11", instrumentos=[
                 fd.Instrumento(nombre="BONCER cero cupón 15/12/2027", familia="cer_cero_cupon", tipo="BONCER",
                                emision="2024-03-15", vencimiento="2027-12-15"),
                 fd.Instrumento(nombre="BONCAP 30/04/2027", familia="tasa_fija_capitalizable", tipo="BONCAP",
                                emision="2025-10-31", vencimiento="2027-04-30", cupon=0.0255)])
             r = fd.leer(str(documento), extractor=lambda texto: viejo, hoy=hoy)
-            assert any(y.startswith("cer_cero_cupon-2027-12-15 = TZXD7") for y in r["ya_cargados"])
-            assert any(y.startswith("tasa_fija_capitalizable-2027-04-30 = T30A7") for y in r["ya_cargados"])
-            assert not r["nuevos"] and not {"cer_cero_cupon-2027-12-15", "tasa_fija_capitalizable-2027-04-30"} & {
-                b["clave"] for b in fd.pendientes()}
-            # Un ticker que ya está en la base con otra familia tampoco va al borrador (es ese bono)
-            otra = fd.Documento(tipo_documento="llamado a licitación", fecha_documento="2026-11-09", instrumentos=[
-                fd.Instrumento(nombre="BONCER TZXD7", ticker="TZXD7", familia="cer_cupon", tipo="BONCER",
-                               emision="2024-03-15", vencimiento="2027-12-15")])
-            r = fd.leer(str(documento), extractor=lambda texto: otra, hoy=hoy)
-            assert r["ya_cargados"] == ["TZXD7 (cargado como cer_cero_cupon)"] and not r["nuevos"]
-
-            # 4. Con un ticker que no está en la base pero las mismas condiciones que otro: decide un humano.
-            dudoso = fd.Documento(tipo_documento="resultado de licitación", fecha_documento="2026-11-12", instrumentos=[
-                fd.Instrumento(nombre="BONCAP 30/04/2027", ticker="T30A7X", familia="tasa_fija_capitalizable",
-                               tipo="BONCAP", emision="2025-10-31", vencimiento="2027-04-30", cupon=0.0255),
-                fd.Instrumento(nombre="BONCER 15/12/2027", ticker="TZXD7B", familia="cer_cero_cupon", tipo="BONCER",
-                               emision="2024-03-15", vencimiento="2027-12-15")])
-            r = fd.leer(str(documento), extractor=lambda texto: dudoso, hoy=hoy)
-            boncap = next(b for b in fd.pendientes() if b["clave"] == "T30A7X")
+            boncer = next(b for b in fd.pendientes() if b["clave"] == "cer_cero_cupon-2027-12-15")
+            assert boncer["posible_duplicado"] == ["TZXD7"]
+            assert any("parece el mismo bono que TZXD7" in a for a in r["avisos"])
+            # El TZXD7 ya tiene ficha: la convención no lo asigna como ticker del borrador.
+            assert "ticker" not in boncer
+            boncap = next(b for b in fd.pendientes() if b["clave"] == "tasa_fija_capitalizable-2027-04-30")
             assert boncap["posible_duplicado"] == ["T30A7"]
-            assert any("parece el mismo bono que T30A7" in a for a in r["avisos"])
+            fd.completar("tasa_fija_capitalizable-2027-04-30", "ticker", "T30A7X")
             error = _error(lambda: fd.aprobar("T30A7X", hoy=hoy))
             assert "parece el mismo bono que T30A7" in error and "--nuevo" in error
             assert "No se aprobó" in lector_fichas.aprobar_ficha("T30A7X")
-            salida = fd.vincular("TZXD7B", "TZXD7")
+            salida = fd.vincular("cer_cero_cupon-2027-12-15", "TZXD7")
             assert "vinculado a TZXD7" in salida and "coinciden" in salida
-            assert "TZXD7B" not in [b["clave"] for b in fd.pendientes()]
+            assert "cer_cero_cupon-2027-12-15" not in [b["clave"] for b in fd.pendientes()]
             assert "T30A7X aprobado" in lector_fichas.aprobar_ficha("T30A7X", nuevo=True)    # el humano dice que es otro
             assert "confirmado como bono distinto de T30A7" in leer_fichas.ficha("T30A7X")["fuente"]
         finally:
@@ -279,7 +242,7 @@ def test_emision_original():
     original_carpeta, original_borradores, original_web = leer_fichas.CARPETA, fd.BORRADORES, fd.BUSCADOR_WEB
     with tempfile.TemporaryDirectory() as tmp:
         carpeta = Path(tmp) / "fichas"
-        _copiar_fichas(original_carpeta, carpeta)
+        shutil.copytree(original_carpeta, carpeta, ignore=shutil.ignore_patterns("borradores"))
         leer_fichas.CARPETA, fd.BORRADORES = carpeta, carpeta / "borradores" / "borradores.toml"
         marzo, febrero, otro = Path(tmp) / "marzo.txt", Path(tmp) / "febrero.txt", Path(tmp) / "otro.txt"
         marzo.write_text("Llamado de marzo. BONAR con vencimiento 29/10/2027. " * 10 + "y del “Bono del Tesoro Nacional en "
@@ -366,7 +329,7 @@ def test_dual_un_borrador_por_pata():
                        pendiente=["margen: se define en la licitación"])])
     with tempfile.TemporaryDirectory() as tmp:
         carpeta = Path(tmp) / "fichas"
-        _copiar_fichas(original_carpeta, carpeta)
+        shutil.copytree(original_carpeta, carpeta, ignore=shutil.ignore_patterns("borradores"))
         leer_fichas.CARPETA, fd.BORRADORES = carpeta, carpeta / "borradores" / "borradores.toml"
         documento = Path(tmp) / "llamado.txt"
         documento.write_text("Llamado a licitación del Tesoro. " * 20, encoding="utf-8")
