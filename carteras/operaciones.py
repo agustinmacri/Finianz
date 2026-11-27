@@ -98,7 +98,7 @@ def tipo_de_cambio(moneda: str, d: date) -> float:
 
 def precio_cierre(ticker: str, moneda: str, d: date) -> float:
     """Cierre de un día, para los ingresos sin precio (D o C para los precios en dólares)."""
-    from renta_fija import mercado
+    from fuentes_datos import mercado
     sufijo = {"mep": "D", "ccl": "C"}.get(moneda, "")
     return mercado.precio(ticker + sufijo, d)[0]
 

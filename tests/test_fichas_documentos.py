@@ -10,7 +10,7 @@ import tomllib
 from datetime import date
 from pathlib import Path
 
-from carga_datos import fichas_documentos as fd
+from fuentes_datos.carga import fichas_documentos as fd
 from renta_fija import leer_fichas
 from tools import lector_fichas
 

@@ -80,7 +80,7 @@ def test_interpolar():
 
 def test_herramienta():
     """La herramienta con precios y Treasuries inventados (sin conexión)."""
-    from renta_fija import mercado
+    from fuentes_datos import mercado
     from tools import bonos
     precios = {"AL30D": 60.0, "AL30C": 60.5, "GD30D": 62.0, "GD30C": 62.4, "AL30": 87000.0}
     originales = mercado.precio, bonos._treasuries

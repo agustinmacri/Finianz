@@ -85,8 +85,8 @@ def test_comparacion_con_rem():
     import tempfile
     from pathlib import Path
     import config
-    from admin_datos import rem as db_rem
-    from carga_datos import rem
+    from fuentes_datos.bases import rem as db_rem
+    from fuentes_datos.carga import rem
     infl = {(2026, 11): 0.02, (2026, 12): 0.03}
     acum = be.inflacion_acumulada(infl, date(2026, 11, 16), date(2026, 12, 16))
     assert abs(acum - (1.02 ** (15 / 30) * 1.03 ** (15 / 31) - 1)) < 1e-15

@@ -2,17 +2,17 @@
 
 Leen las bases locales (datos/feriados.db y datos/publicaciones.db). Si están vacías,
 las cargan solas: los feriados desde la librería holidays, las publicaciones del INDEC
-desde los PDF de calendarios/indec/ y las que siguen una regla de días hábiles (no hace falta internet). Las de EE. UU. (FRED)
+desde los PDF de fuentes_datos/manuales/calendarios/indec/ y las que siguen una regla de días hábiles (no hace falta internet). Las de EE. UU. (FRED)
 se cargan con `python actualizar.py`.
 """
 from datetime import date, timedelta
 
-from admin_datos import feriados as db
-from admin_datos import publicaciones as db_pub
-from carga_datos import catalogo
-from carga_datos import feriados as carga_feriados
-from carga_datos import publicaciones_indec as carga_indec
-from carga_datos import publicaciones_regla as carga_regla
+from fuentes_datos.bases import feriados as db
+from fuentes_datos.bases import publicaciones as db_pub
+from fuentes_datos.carga import catalogo
+from fuentes_datos.carga import feriados as carga_feriados
+from fuentes_datos.carga import publicaciones_indec as carga_indec
+from fuentes_datos.carga import publicaciones_regla as carga_regla
 
 DIAS_SEMANA = ["lunes", "martes", "miércoles", "jueves", "viernes", "sábado", "domingo"]
 
@@ -202,7 +202,7 @@ CONSULTAR_PUBLICACIONES = {
         "Sin parámetros, muestra las de importancia alta y media de los próximos 14 días. "
         "Las horas 'ET' son del este de EE. UU. "
         "Para saber cuándo sale un dato puntual, usá 'buscar' con su código: "
-        + (", ".join(f"{c} ({p['nombre']})" for c, p in CATALOGO.items()) or "ver calendarios/publicaciones.toml") +
+        + (", ".join(f"{c} ({p['nombre']})" for c, p in CATALOGO.items()) or "ver fuentes_datos/manuales/calendarios/publicaciones.toml") +
         ". También acepta palabras del título (ej.: 'construcción', 'supermercados')."
     ),
     "parameters": {

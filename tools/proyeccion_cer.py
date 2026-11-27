@@ -1,28 +1,29 @@
 """Proyección del CER con distintas fuentes de inflación y rendimiento nominal de los bonos CER.
 
 Fuentes: "breakeven" (la inflación que descuenta la curva CER contra la tasa fija), "rem", "escenario:<nombre>"
-(renta_fija/escenarios/inflacion.toml) y "mensual:<tasa>" (una inflación mensual plana).
-"rem" usa el último relevamiento cargado (Excel del BCRA en fuentes/rem/, base datos/rem.db): la mediana
+(fuentes_datos/manuales/escenarios/inflacion.toml) y "mensual:<tasa>" (una inflación mensual plana).
+"rem" usa el último relevamiento cargado (Excel del BCRA en fuentes_datos/manuales/rem/, base datos/rem.db): la mediana
 de la inflación de cada mes que trae, y la anual (diciembre contra diciembre) de cada año para completar los
 meses que faltan, de modo que el año cierre en lo que espera el REM. Si no hay ningún Excel cargado, usa la
 mediana a 12 meses de la API, pasada a mensual y plana, y lo aclara como aproximación. Reglas en renta_fija/calculadoras/proyeccion_cer.py y docs/convenciones-renta-fija.md.
 """
 import tomllib
 from datetime import date, timedelta
-from pathlib import Path
+import config
 
-from admin_datos import rem as db_rem
-from admin_datos import series as db_series
-from conexiones import bcra
-from conexiones.http import ErrorAPI
-from renta_fija import leer_fichas as fichas, mercado
+from fuentes_datos.bases import rem as db_rem
+from fuentes_datos.bases import series as db_series
+from fuentes_datos.conexiones import bcra
+from fuentes_datos.conexiones.http import ErrorAPI
+from renta_fija import leer_fichas as fichas
+from fuentes_datos import mercado
 from renta_fija.calculadoras import breakeven as be
 from renta_fija.calculadoras import cer_cupon
 from renta_fija.calculadoras import proyeccion_cer as pc
 from tools import breakevens
 from tools.caminos import pct
 
-ESCENARIOS = Path(__file__).resolve().parent.parent / "renta_fija" / "escenarios" / "inflacion.toml"
+ESCENARIOS = config.ESCENARIOS_DIR / "inflacion.toml"
 MESES = ("ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic")
 
 
@@ -136,7 +137,7 @@ def camino_inflacion(fuente: str, liquidacion: date, hasta_mes: pc.Mes, curvas: 
             tasa = (1 + anual) ** (1 / 12) - 1
             descripcion = (f"REM (relevamiento al {fecha_rem}): mediana de la inflación esperada a 12 meses "
                            f"{pct(anual)}, pasada a mensual ({pct(tasa)}) y aplicada plana. Aproximación: "
-                           "no hay ningún Excel del REM en fuentes/rem/")
+                           "no hay ningún Excel del REM en fuentes_datos/manuales/rem/")
         else:
             tasa = tasa_mensual(fuente.split(":", 1)[1])
             descripcion = f"inflación mensual plana de {pct(tasa)}"
@@ -166,7 +167,7 @@ def camino_inflacion(fuente: str, liquidacion: date, hasta_mes: pc.Mes, curvas: 
         nombre = fuente.split(":", 1)[1]
         todos = escenarios()
         if nombre not in todos:
-            raise ValueError(f"No existe el escenario '{nombre}'. Cargados: {', '.join(todos) or 'ninguno'} (renta_fija/escenarios/inflacion.toml).")
+            raise ValueError(f"No existe el escenario '{nombre}'. Cargados: {', '.join(todos) or 'ninguno'} (fuentes_datos/manuales/escenarios/inflacion.toml).")
         e = todos[nombre]
         caminos = pc.camino(publicadas, e["mensual"], e["anual"], desde, hasta_mes)
         descripcion = f"escenario '{nombre}': {e['descripcion']}"

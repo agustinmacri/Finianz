@@ -9,14 +9,15 @@ Ningún número sale de cálculos externos: de afuera vienen solo datos.
 """
 from datetime import date, timedelta
 
-from conexiones import fred
-from conexiones.http import ErrorAPI
-from renta_fija import leer_fichas as fichas, mercado, metricas
+from fuentes_datos.conexiones import fred
+from fuentes_datos.conexiones.http import ErrorAPI
+from renta_fija import leer_fichas as fichas, metricas
+from fuentes_datos import mercado
 from renta_fija.calculadoras import breakeven, cer, dolar_linked, hard_dollar, motor, tasa_fija
 from tools.caminos import pct as _pct
 
 # Los números salen de renta_fija/metricas.py (la misma calculadora de las curvas, el panel y las carteras, con las
-# reglas de pago conocido); acá se arma el texto. Los datos de mercado vienen de renta_fija/mercado.py.
+# reglas de pago conocido); acá se arma el texto. Los datos de mercado vienen de fuentes_datos/mercado.py.
 
 
 def calcular_bono(ticker: str, precio: float | None = None, fecha: str | None = None,
@@ -77,7 +78,7 @@ def calcular_bono(ticker: str, precio: float | None = None, fecha: str | None = 
                                         date.fromisoformat(fecha) if fecha else None))
     if "cer_cero_cupon" in familias and "tamar_capitalizable" in familias:
         if fuente_inflacion is None:
-            from admin_datos import rem as db_rem
+            from fuentes_datos.bases import rem as db_rem
             fuente_inflacion = "rem" if db_rem.ultimo() else "breakeven"
         secciones.append(_dual_cer_tamar(lista, precio, liquidacion, operacion, fuente_inflacion, fuente_tamar,
                                          date.fromisoformat(fecha) if fecha else None))

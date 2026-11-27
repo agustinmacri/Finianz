@@ -16,8 +16,8 @@ from datetime import date, timedelta
 
 from carteras import valuar
 from carteras.excel import SUPUESTOS, Cartera
-from conexiones.http import ErrorAPI
-from renta_fija import mercado
+from fuentes_datos.conexiones.http import ErrorAPI
+from fuentes_datos import mercado
 
 AVISO_ACCIONES = ("Proyección con TIR constante: no supone cambios de tasa ni de precio de mercado. Las acciones y los "
                   "CEDEARs no cambian de valor: en pesos solo acompañan la devaluación del dólar del escenario. Cupones "
@@ -26,7 +26,7 @@ AVISO_ACCIONES = ("Proyección con TIR constante: no supone cambios de tasa ni d
 
 def escenarios_disponibles(cartera: Cartera) -> dict[str, dict[str, str]]:
     """Juegos de supuestos para elegir: los de la cartera, el REM, el mercado y los escenarios con nombre cargados en
-    renta_fija/escenarios/ (por nombre; las variables sin ese escenario usan el supuesto de la cartera)."""
+    fuentes_datos/manuales/escenarios/ (por nombre; las variables sin ese escenario usan el supuesto de la cartera)."""
     propios = {v: cartera.supuestos.get(v) or "rem" for v in SUPUESTOS}
     juegos = {"Supuestos de la cartera": propios,
               "REM": {v: "rem" for v in SUPUESTOS},

@@ -4,8 +4,9 @@ panel web.
 """
 from datetime import date
 
-from conexiones.http import ErrorAPI
-from renta_fija import leer_fichas as fichas, mercado, metricas
+from fuentes_datos.conexiones.http import ErrorAPI
+from renta_fija import leer_fichas as fichas, metricas
+from fuentes_datos import mercado
 
 
 def armar(operacion: date, liquidacion: date, fecha_precios: date | None,

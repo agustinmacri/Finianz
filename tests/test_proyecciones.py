@@ -31,7 +31,7 @@ def test_escenarios_y_caminos():
             assert camino((2026, 11)) == 0.23                                    # antes del primero, el primero
             plana, _ = pr.camino_tamar("tna:21%", date(2026, 11, 13))
             assert plana((2030, 1)) == 0.21
-            from renta_fija import mercado
+            from fuentes_datos import mercado
             originales = mercado.precio
             mercado.precio = lambda t, f: ({"AL30": 87000.0, "AL30D": 60.0, "AL30C": 58.0}[t], "prueba")
             try:
@@ -56,8 +56,8 @@ def test_escenarios_y_caminos():
 
 def test_rem_oficial_sin_el_mes_en_curso():
     """El A3500 del REM arranca en el valor de hoy y no usa el promedio esperado del mes en curso."""
-    from carga_datos import rem
-    from renta_fija import mercado
+    from fuentes_datos.carga import rem
+    from fuentes_datos import mercado
     original = config.DATOS_DIR
     with tempfile.TemporaryDirectory() as tmp:
         config.DATOS_DIR = Path(tmp)
@@ -83,7 +83,7 @@ def test_caminos_indicados():
             pass
     camino, _ = pr.camino_tamar("camino:2026-12=24%;2027-01=23%;resto=21%", date(2026, 11, 13))
     assert camino((2026, 12)) == 0.24 and camino((2027, 1)) == 0.23 and camino((2027, 6)) == 0.21
-    from renta_fija import mercado
+    from fuentes_datos import mercado
     originales = mercado.a3500
     mercado.a3500 = lambda op: (1450.0, op, False)
     try:
@@ -95,7 +95,7 @@ def test_caminos_indicados():
 
 
 def test_base_propia():
-    from admin_datos import series as db_series
+    from fuentes_datos.bases import series as db_series
     from tools import base_propia
     original = config.DATOS_DIR
     with tempfile.TemporaryDirectory() as tmp:

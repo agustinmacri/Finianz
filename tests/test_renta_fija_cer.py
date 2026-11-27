@@ -62,14 +62,14 @@ def test_el_motor_da_la_misma_tir():
 
 
 def _feriados():
-    from admin_datos import feriados
-    from carga_datos import feriados as carga
+    from fuentes_datos.bases import feriados
+    from fuentes_datos.carga import feriados as carga
     carga.cargar()          # recarga con los ajustes vigentes (ej.: el 7/12/2026 en BYMA)
     return feriados
 
 
 def test_fecha_cer_final():
-    from renta_fija.mercado import CALENDARIO_HABILES
+    from fuentes_datos.mercado import CALENDARIO_HABILES
     feriados = _feriados()
     for t, vto, fecha_cer, *_ in CASOS:
         if t in FECHA_CER_CONOCIDAS:
@@ -80,7 +80,7 @@ def test_fecha_cer_final():
 
 def test_fecha_cer_corriente():
     """Liquidación 13/11/2026: 10.º día hábil anterior con el calendario de BYMA (9/11 y 10/11 feriados)."""
-    from renta_fija.mercado import CALENDARIO_HABILES
+    from fuentes_datos.mercado import CALENDARIO_HABILES
     feriados = _feriados()
     assert feriados.sumar_dias_habiles(LIQUIDACION, -cer.REZAGO_HABILES, CALENDARIO_HABILES) == date(2026, 10, 28)
 
@@ -88,7 +88,7 @@ def test_fecha_cer_corriente():
 def test_fecha_base_con_feriados_puente():
     """Emisión del 31/03/2026 (TZXM8, TZXM9, TZXS7, TZXS8): con el 23/03 (puente) y el 24/03 inhábiles,
     el 10.º día hábil anterior es el 13/03/2026, como en el Excel."""
-    from renta_fija.mercado import CALENDARIO_HABILES
+    from fuentes_datos.mercado import CALENDARIO_HABILES
     feriados = _feriados()
     assert feriados.sumar_dias_habiles(date(2026, 3, 31), -cer.REZAGO_HABILES, CALENDARIO_HABILES) == date(2026, 3, 13)
 

@@ -25,7 +25,8 @@ from renta_fija import leer_fichas
 from renta_fija.calculadoras import curva as calc_curva
 from renta_fija.calculadoras import exit_yield as calc_exit
 from renta_fija.calculadoras import forwards as calc_forwards
-from renta_fija import curvas_mercado, mercado, metricas
+from renta_fija import curvas_mercado, metricas
+from fuentes_datos import mercado
 from tools import bonos, breakevens, curvas, proyeccion_cer, proyecciones
 from web import carteras_panel, salidas
 
@@ -230,7 +231,7 @@ seccion = st.sidebar.radio("Calculadoras", SECCIONES, format_func=lambda s: f"{I
                            index=SECCIONES.index(inicial) if inicial in SECCIONES else 0, label_visibility="collapsed")
 st.query_params["seccion"] = seccion
 try:                                     # novedades de la revisión automática de avisos del Tesoro
-    from carga_datos import novedades as novedades_tesoro
+    from fuentes_datos.carga import novedades as novedades_tesoro
     _sin_ver = novedades_tesoro.sin_ver()
 except Exception:
     _sin_ver = []
@@ -661,7 +662,7 @@ if seccion == "Proyecciones":
 # ---------- Fichas ----------
 
 if seccion == "Fichas":
-    from carga_datos import fichas_documentos as fd
+    from fuentes_datos.carga import fichas_documentos as fd
     if _sin_ver:
         with st.container(border=True):
             st.markdown(f"**🆕 Novedades de la revisión automática ({len(_sin_ver)} aviso{'s' if len(_sin_ver) > 1 else ''})**")
@@ -686,7 +687,7 @@ if seccion == "Fichas":
         col2.code(fd.describir_borradores(), language="toml")
     except ValueError as e:
         col2.error(str(e))
-    col2.caption("Para aprobar: python -m carga_datos.fichas_documentos aprobar <TICKER>, o pedíselo al agente.")
+    col2.caption("Para aprobar: python -m fuentes_datos.carga.fichas_documentos aprobar <TICKER>, o pedíselo al agente.")
 
 
 # ---------- Carteras ----------

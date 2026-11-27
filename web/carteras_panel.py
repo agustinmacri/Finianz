@@ -286,7 +286,7 @@ def _proyeccion(nombre: str, moneda: str, fecha, marca: int, estilo, paleta: dic
     hasta = col1.date_input("Hasta", value=date(hoy.year + 1, hoy.month, min(hoy.day, 28)), min_value=hoy,
                             format="DD/MM/YYYY", key="proyeccion_hasta")
     elegidos = col2.multiselect("Escenarios", disponibles, default=disponibles[:1], key="proyeccion_escenarios",
-                                help="Los escenarios con nombre se cargan en renta_fija/escenarios/.")
+                                help="Los escenarios con nombre se cargan en fuentes_datos/manuales/escenarios/.")
     if not elegidos:
         st.info("Elegí al menos un escenario.")
         return

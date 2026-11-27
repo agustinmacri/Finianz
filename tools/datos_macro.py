@@ -7,9 +7,9 @@ para gastar pocos tokens.
 import math
 from datetime import date, timedelta
 
-from calculos import series as calc
-from conexiones import bcra, fred, series_tiempo
-from conexiones.http import ErrorAPI
+from macro import series as calc
+from fuentes_datos.conexiones import bcra, fred, series_tiempo
+from fuentes_datos.conexiones.http import ErrorAPI
 
 MAX_PUNTOS = 40      # si la serie tiene más valores, se resume
 PUNTOS_RESUMEN = 15  # cuántos de los últimos valores se muestran al resumir

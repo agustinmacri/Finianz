@@ -3,7 +3,7 @@
 Aprobar solo cuando el usuario lo pide de forma explícita y nombra el bono (o pide "todos"). La validación es la
 misma que la del comando: si al borrador le falta un dato o el bono ya venció, no se aprueba.
 """
-from carga_datos import fichas_documentos
+from fuentes_datos.carga import fichas_documentos
 from renta_fija import leer_fichas
 
 

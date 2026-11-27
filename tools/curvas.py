@@ -1,9 +1,9 @@
 """curva_tasa_fija: curva teórica de las Lecap/Boncap (y letras a descuento) a precios de mercado."""
 from datetime import date
 
-from conexiones.http import ErrorAPI
+from fuentes_datos.conexiones.http import ErrorAPI
 from renta_fija.calculadoras import curva
-from renta_fija import mercado
+from fuentes_datos import mercado
 from tools import breakevens
 from tools.caminos import pct
 

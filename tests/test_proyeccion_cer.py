@@ -98,12 +98,12 @@ def test_escenarios_del_archivo():
 
 
 def test_rem_del_excel():
-    """El Excel de octubre de 2026 (fuentes/rem/) se lee bien y arma el camino de inflación del escenario REM."""
+    """El Excel de octubre de 2026 (fuentes_datos/manuales/rem/) se lee bien y arma el camino de inflación del escenario REM."""
     import tempfile
     from pathlib import Path
     import config
-    from admin_datos import rem as db_rem
-    from carga_datos import rem
+    from fuentes_datos.bases import rem as db_rem
+    from fuentes_datos.carga import rem
     original = config.DATOS_DIR
     with tempfile.TemporaryDirectory() as tmp:
         config.DATOS_DIR = Path(tmp)

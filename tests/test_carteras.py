@@ -9,7 +9,8 @@ from pathlib import Path
 from openpyxl import Workbook, load_workbook
 
 from carteras import excel, valuar
-from renta_fija import leer_fichas, mercado
+from renta_fija import leer_fichas
+from fuentes_datos import mercado
 
 OPERACION, LIQUIDACION = date(2026, 11, 16), date(2026, 11, 17)
 MEP, CCL = 1450.0, 1500.0
@@ -237,7 +238,7 @@ def test_liquidez_cuadros_y_cobros(d):
 
 
 def test_precio_con_ppi_caido():
-    from conexiones.http import ErrorAPI
+    from fuentes_datos.conexiones.http import ErrorAPI
     originales = mercado.precio, valuar.carga_precios.actualizar, valuar.db_precios.entre
 
     def caido(*a, **k):

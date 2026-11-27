@@ -5,8 +5,8 @@ La usa el agente de renta fija para el contexto de sus cálculos. Si necesita un
 """
 from datetime import date
 
-from admin_datos import rem as db_rem
-from admin_datos import series as db_series
+from fuentes_datos.bases import rem as db_rem
+from fuentes_datos.bases import series as db_series
 from renta_fija.calculadoras import proyeccion_cer as pc
 
 VARIABLES = ("CER", "TAMAR", "A3500", "inflacion", "REM")
@@ -41,7 +41,7 @@ def consultar_base(variable: str, desde: str | None = None, hasta: str | None = 
                 "CER del 16 de m+1 al 15 de m+2.\n" + "\n".join(f"{m[0]}-{m[1]:02d}: {v * 100:.2f}%" for m, v in mostrar))
     relevamiento = db_rem.ultimo()
     if relevamiento is None:
-        return "No hay ningún relevamiento del REM cargado (fuentes/rem/)."
+        return "No hay ningún relevamiento del REM cargado (fuentes_datos/manuales/rem/)."
     if variable_rem not in VARIABLES_REM:
         return f"Variable del REM desconocida: {variable_rem}. Opciones: {', '.join(VARIABLES_REM)}."
     valores = db_rem.valores(variable_rem, relevamiento)

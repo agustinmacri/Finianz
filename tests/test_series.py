@@ -8,10 +8,10 @@ from datetime import date, timedelta
 from pathlib import Path
 
 import config
-from admin_datos import series as db
-from carga_datos import series as carga
-from conexiones import bcra
-from conexiones.http import ErrorAPI
+from fuentes_datos.bases import series as db
+from fuentes_datos.carga import series as carga
+from fuentes_datos.conexiones import bcra
+from fuentes_datos.conexiones.http import ErrorAPI
 
 
 PUBLICADO_HASTA = date.today() + timedelta(days=40)
@@ -53,7 +53,7 @@ def test_carga_completa_e_incremental():
             assert carga.actualizar("CER") == 0                      # ya está al día: no guarda nada nuevo
             assert pedidos == []                                     # ni siquiera le pregunta al BCRA
 
-            from renta_fija import mercado                            # la calculadora lee el CER de la base
+            from fuentes_datos import mercado                            # la calculadora lee el CER de la base
             assert mercado.cer_de(date(2020, 8, 20)) == db.valor("CER", date(2020, 8, 20))
         finally:
             config.DATOS_DIR, bcra.obtener_serie, bcra.listar_variables = original_dir, original_api, original_listado

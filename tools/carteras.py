@@ -1,6 +1,6 @@
 """Carteras de clientes para el agente de renta fija: listarlas y valuarlas (los Excel están en datos/carteras/)."""
 from carteras import excel, valuar
-from conexiones.http import ErrorAPI
+from fuentes_datos.conexiones.http import ErrorAPI
 
 
 def listar_carteras() -> str:

@@ -2,7 +2,8 @@
 resumen de qué pata paga. Correr con: python -m tests.test_duales"""
 from datetime import date
 
-from renta_fija import mercado, metricas
+from renta_fija import metricas
+from fuentes_datos import mercado
 from renta_fija.calculadoras import tamar
 from tools import bonos, proyecciones
 

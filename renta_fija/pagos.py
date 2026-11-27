@@ -12,8 +12,9 @@ variaciones y el backtest (carteras/historia.py).
 """
 from datetime import date, timedelta
 
-from admin_datos import series as db_series
-from renta_fija import mercado, metricas
+from fuentes_datos.bases import series as db_series
+from renta_fija import metricas
+from fuentes_datos import mercado
 
 
 def pagos(ticker: str, desde: date, hasta: date) -> list[dict]:

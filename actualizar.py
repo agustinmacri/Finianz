@@ -8,18 +8,18 @@ Hoy carga los feriados (datos/feriados.db) y el calendario de publicaciones
 hábiles (ISM, recaudación) y las de EE. UU. desde FRED. También suma los cierres nuevos
 de los activos seguidos a la base de precios (datos/precios.db) y los valores nuevos del CER
 la TAMAR y el A3500 a la base de series (datos/series.db), y las expectativas del REM
-(Excel en fuentes/rem/) a datos/rem.db, y lee los llamados y resultados de licitación nuevos del Tesoro
-(borradores de fichas para aprobar; ver carga_datos/avisos_tesoro.py).
+(Excel en fuentes_datos/manuales/rem/) a datos/rem.db, y lee los llamados y resultados de licitación nuevos del Tesoro
+(borradores de fichas para aprobar; ver fuentes_datos/carga/avisos_tesoro.py).
 Conviene correrlo después de actualizar la librería holidays, de editar
-calendarios/feriados_ajustes.toml o calendarios/publicaciones.toml, de agregar un PDF
-del INDEC en calendarios/indec/, y una vez por semana para traer las fechas nuevas de FRED.
+fuentes_datos/manuales/calendarios/feriados_ajustes.toml o fuentes_datos/manuales/calendarios/publicaciones.toml, de agregar un PDF
+del INDEC en fuentes_datos/manuales/calendarios/indec/, y una vez por semana para traer las fechas nuevas de FRED.
 """
 import sys
 
 import config
-from carga_datos import catalogo, feriados, precios, publicaciones_fred, publicaciones_indec, publicaciones_regla, rem, series
-from admin_datos.feriados import NOMBRES_CALENDARIO
-from conexiones.http import ErrorAPI
+from fuentes_datos.carga import catalogo, feriados, precios, publicaciones_fred, publicaciones_indec, publicaciones_regla, rem, series
+from fuentes_datos.bases.feriados import NOMBRES_CALENDARIO
+from fuentes_datos.conexiones.http import ErrorAPI
 
 
 def main():
@@ -39,7 +39,7 @@ def main():
         indec = publicaciones_indec.cargar()
     except catalogo.ErrorCatalogo as e:
         sys.exit(f"\nNo se actualizaron las publicaciones. Corregí el catálogo:\n  {e}")
-    print(f"\nCalendario del INDEC ({', '.join(indec['archivos']) or 'sin PDF en calendarios/indec/'}):")
+    print(f"\nCalendario del INDEC ({', '.join(indec['archivos']) or 'sin PDF en fuentes_datos/manuales/calendarios/indec/'}):")
     print(f"  {indec['total']} publicaciones del {indec['desde']} al {indec['hasta']}, "
           f"{indec['seguidas']} de las que seguís")
     if indec["sin_encontrar"]:
@@ -64,7 +64,7 @@ def _avisos_tesoro():
     if not config.GEMINI_API_KEY:
         print("  Se omitió: falta GEMINI_API_KEY en el .env (el lector de fichas usa el modelo).")
         return
-    from carga_datos import avisos_tesoro
+    from fuentes_datos.carga import avisos_tesoro
     for renglon in avisos_tesoro.revisar():
         print("  " + renglon.replace("\n", "\n  "))
 
@@ -87,14 +87,14 @@ def _publicaciones_fred():
 
 
 def _rem():
-    print("\nREM del BCRA (Excel en fuentes/rem/):")
+    print("\nREM del BCRA (Excel en fuentes_datos/manuales/rem/):")
     try:
         resumen = rem.cargar()
     except (ValueError, OSError) as e:
         print(f"  error: {e}")
         return
     if not resumen:
-        print("  no hay Excel cargados: bajá las tablas del REM del sitio del BCRA a fuentes/rem/")
+        print("  no hay Excel cargados: bajá las tablas del REM del sitio del BCRA a fuentes_datos/manuales/rem/")
     for relevamiento, filas in resumen.items():
         print(f"  relevamiento {relevamiento}: {filas} valores")
 

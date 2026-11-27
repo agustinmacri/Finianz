@@ -22,8 +22,8 @@ import config
 PREAMBULO = """\
 import math
 from datetime import date
-from conexiones import bcra, fred, series_tiempo
-from calculos.series import transformar
+from fuentes_datos.conexiones import bcra, fred, series_tiempo
+from macro.series import transformar
 """
 
 DEFINICION = {

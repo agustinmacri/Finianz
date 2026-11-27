@@ -10,7 +10,7 @@ import sys
 from datetime import date
 
 from carteras import excel, valuar
-from conexiones.http import ErrorAPI
+from fuentes_datos.conexiones.http import ErrorAPI
 
 
 def main(argv: list[str]):

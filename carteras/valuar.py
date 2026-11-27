@@ -19,10 +19,11 @@ from datetime import timedelta
 
 from carteras.excel import TIPOS_LIQUIDEZ, Cartera, Liquidez, Posicion
 import config
-from admin_datos import precios as db_precios
-from carga_datos import precios as carga_precios
-from conexiones.http import ErrorAPI
-from renta_fija import mercado, metricas
+from fuentes_datos.bases import precios as db_precios
+from fuentes_datos.carga import precios as carga_precios
+from fuentes_datos.conexiones.http import ErrorAPI
+from renta_fija import metricas
+from fuentes_datos import mercado
 from renta_fija.calculadoras import motor
 from renta_fija.calculadoras import proyeccion_cer as pc
 

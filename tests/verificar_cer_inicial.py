@@ -10,7 +10,7 @@ se aproxima con el nacional).
 from renta_fija import leer_fichas
 from tests.test_renta_fija_cer import CASOS
 from tests.test_renta_fija_cer_cupon import CER_INICIAL as BASE_TX28
-from renta_fija import mercado
+from fuentes_datos import mercado
 from renta_fija.calculadoras import cer
 
 EXCEL = {t: base for t, _vto, _fecha, base, *_ in CASOS} | {

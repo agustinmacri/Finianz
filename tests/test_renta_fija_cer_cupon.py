@@ -80,8 +80,8 @@ def test_tx31_estructura():
 
     Sin valores de contraste todavía: verifica el cronograma, el corrido y las fechas corridas.
     """
-    from admin_datos import feriados
-    from carga_datos import feriados as carga
+    from fuentes_datos.bases import feriados
+    from fuentes_datos.carga import feriados as carga
     if not feriados.rango_cargado() or feriados.rango_cargado()[1] < 2031:
         carga.cargar()
     f = leer_fichas.ficha("TX31")

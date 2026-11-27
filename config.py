@@ -47,7 +47,7 @@ MAX_ITERACIONES = _int("MAX_ITERACIONES", 15)
 CONFIRMAR_CODIGO = _bool("CONFIRMAR_CODIGO", True)
 
 # ---------------------------------------------------------------------------
-# Conexiones HTTP (las usa conexiones/http.py para todas las APIs)
+# Conexiones HTTP (las usa fuentes_datos/conexiones/http.py para todas las APIs)
 # ---------------------------------------------------------------------------
 HTTP_TIMEOUT = _int("HTTP_TIMEOUT", 15)          # segundos máximos de espera por pedido
 HTTP_REINTENTOS = _int("HTTP_REINTENTOS", 3)     # reintentos si la API falla momentáneamente
@@ -99,9 +99,12 @@ CACHE_NOTICIAS_MINUTOS = _int("CACHE_NOTICIAS_MINUTOS", 15)
 # ---------------------------------------------------------------------------
 # Base de datos local y calendarios
 # ---------------------------------------------------------------------------
-DATOS_DIR = BASE_DIR / "datos"               # bases SQLite (no se suben a git): feriados, publicaciones, cartera
-CALENDARIOS_DIR = BASE_DIR / "calendarios"   # sí se sube a git: correcciones manuales
-FUENTES_DIR = BASE_DIR / "fuentes"           # sí se sube a git: archivos oficiales bajados a mano (REM del BCRA)
+DATOS_DIR = BASE_DIR / "datos"               # bases SQLite y carteras de clientes (no se suben a git)
+# Lo que se carga o corrige a mano (sí se sube a git): fuentes_datos/manuales/
+MANUALES_DIR = BASE_DIR / "fuentes_datos" / "manuales"
+CALENDARIOS_DIR = MANUALES_DIR / "calendarios"   # ajustes de feriados, catálogo de publicaciones, PDF del INDEC
+REM_DIR = MANUALES_DIR / "rem"                   # Excel del REM del BCRA, bajados a mano
+ESCENARIOS_DIR = MANUALES_DIR / "escenarios"     # escenarios propios: inflación, TAMAR, dólar oficial, MEP y CCL
 
 # Feriados: se cargan desde FERIADOS_DESDE hasta FERIADOS_ANIOS_ADELANTE años después del actual
 # (los bonos necesitan días hábiles hasta su vencimiento: el CUAP vence en 2045)

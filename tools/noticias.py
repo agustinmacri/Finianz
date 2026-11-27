@@ -5,8 +5,8 @@ Sin links, para gastar pocos tokens (el medio y la fecha alcanzan para citar).
 """
 from datetime import timezone, timedelta
 
-from conexiones import noticias
-from conexiones.http import ErrorAPI
+from fuentes_datos.conexiones import noticias
+from fuentes_datos.conexiones.http import ErrorAPI
 
 HORA_ARGENTINA = timezone(timedelta(hours=-3))
 

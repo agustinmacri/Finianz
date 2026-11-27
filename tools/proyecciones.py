@@ -4,12 +4,12 @@ Fuentes de la TAMAR (TNA en fracción):
 - "actual": el promedio de los últimos 5 días hábiles publicados, plano (lo que usa la calculadora TAMAR).
 - "rem": la mediana mensual del último REM en los meses que trae y, después, su valor a 12 meses sin cambios.
 - "tna:<tasa>": una TNA plana (ej.: "tna:24%").
-- "escenario:<nombre>": renta_fija/escenarios/tamar.toml.
+- "escenario:<nombre>": fuentes_datos/manuales/escenarios/tamar.toml.
 
 Fuentes del tipo de cambio (pesos por dólar), partiendo del valor de hoy:
 - Oficial (A3500): "rem" (promedios mensuales, a 12 meses y de diciembre del REM, a mitad de mes),
   "breakeven" (el A3500 implícito de los dollar linked contra la tasa fija), "mensual:<tasa>" (devaluación
-  mensual plana) o "escenario:<nombre>" (renta_fija/escenarios/dolar_oficial.toml).
+  mensual plana) o "escenario:<nombre>" (fuentes_datos/manuales/escenarios/dolar_oficial.toml).
 - MEP y CCL: "mensual:<tasa>" o "escenario:<nombre>" (dolar_mep.toml, dolar_ccl.toml). El valor de hoy es el
   implícito del AL30 (precio en pesos / precio en dólares MEP o cable).
 Entre puntos, crecimiento geométrico; después del último, sigue con la variación mensual del último tramo
@@ -17,16 +17,16 @@ Entre puntos, crecimiento geométrico; después del último, sigue con la variac
 """
 import tomllib
 from datetime import date, timedelta
-from pathlib import Path
+import config
 
-from admin_datos import rem as db_rem
-from admin_datos import series as db_series
-from conexiones.http import ErrorAPI
-from renta_fija import mercado
+from fuentes_datos.bases import rem as db_rem
+from fuentes_datos.bases import series as db_series
+from fuentes_datos.conexiones.http import ErrorAPI
+from fuentes_datos import mercado
 from renta_fija.calculadoras import breakeven as be
 from tools.caminos import pct
 
-ESCENARIOS_DIR = Path(__file__).resolve().parent.parent / "renta_fija" / "escenarios"
+ESCENARIOS_DIR = config.ESCENARIOS_DIR
 ARCHIVOS = {"tamar": "tamar.toml", "oficial": "dolar_oficial.toml", "mep": "dolar_mep.toml", "ccl": "dolar_ccl.toml"}
 TIPOS_DOLAR = {"oficial": "A3500", "mep": "MEP", "ccl": "CCL"}
 
@@ -89,7 +89,7 @@ def _escenario(variable: str, fuente: str) -> tuple[str, dict]:
     todos = escenarios(variable)
     if nombre not in todos:
         raise ValueError(f"No existe el escenario '{nombre}' de {variable}. Cargados: {', '.join(todos) or 'ninguno'} "
-                         f"(renta_fija/escenarios/{ARCHIVOS[variable]}).")
+                         f"(fuentes_datos/manuales/escenarios/{ARCHIVOS[variable]}).")
     return nombre, todos[nombre]
 
 
@@ -108,7 +108,7 @@ def camino_tamar(fuente: str, operacion: date):
         mensual = db_rem.por_mes("TAMAR", relevamiento, incluir_anuales=False) if relevamiento else {}
         doce = db_rem.valores("TAMAR", relevamiento).get("prox12") if relevamiento else None
         if not mensual or doce is None:
-            raise ValueError("No hay REM cargado con TAMAR (fuentes/rem/).")
+            raise ValueError("No hay REM cargado con TAMAR (fuentes_datos/manuales/rem/).")
         return (be.camino_con_resto({m: v / 100 for m, v in mensual.items()}, doce / 100),
                 f"REM {relevamiento}: TAMAR mensual de {_mes(min(mensual))} a {_mes(max(mensual))} y después la de 12 meses "
                 f"({pct(doce / 100)})")
@@ -203,7 +203,7 @@ def camino_dolar(tipo: str, fuente: str, operacion: date, fecha_precios: date | 
         relevamiento = db_rem.ultimo()
         tc = db_rem.por_mes("TIPO_CAMBIO", relevamiento, incluir_proximos=True) if relevamiento else {}
         if not tc:
-            raise ValueError("No hay REM cargado con tipo de cambio (fuentes/rem/).")
+            raise ValueError("No hay REM cargado con tipo de cambio (fuentes_datos/manuales/rem/).")
         # El mes en curso no se usa: el REM lo estimó antes y hoy ya está el dato real
         puntos = [(operacion, hoy)] + [(date(a, m, 15), v) for (a, m), v in tc.items() if (a, m) > (operacion.year, operacion.month)]
         return (_extender(puntos, None), f"REM {relevamiento}: tipo de cambio esperado (promedios mensuales a mitad de mes, "

@@ -8,10 +8,10 @@ El histórico sale de la base propia (datos/precios.db): cada activo consultado 
 y a la API solo se le piden los días que faltan. El precio del momento se consulta en vivo.
 """
 import config
-from admin_datos import precios as db
-from carga_datos import precios as carga
-from conexiones import ppi
-from conexiones.http import ErrorAPI
+from fuentes_datos.bases import precios as db
+from fuentes_datos.carga import precios as carga
+from fuentes_datos.conexiones import ppi
+from fuentes_datos.conexiones.http import ErrorAPI
 
 PUNTOS_HISTORICO = 15   # cuántos precios diarios se muestran del histórico
 

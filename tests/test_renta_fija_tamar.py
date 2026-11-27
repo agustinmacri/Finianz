@@ -59,8 +59,8 @@ def test_promedio_con_estimacion():
 def test_ventana_y_dias_estimados():
     """Con una TAMAR inventada en una base temporal: la ventana, los días publicados y los estimados."""
     import config
-    from admin_datos import series as db_series
-    from renta_fija import mercado
+    from fuentes_datos.bases import series as db_series
+    from fuentes_datos import mercado
     from tools import bonos
     original = config.DATOS_DIR
     with tempfile.TemporaryDirectory() as tmp:

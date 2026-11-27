@@ -6,9 +6,9 @@ import tempfile
 from datetime import date
 from pathlib import Path
 
-from carga_datos import avisos_tesoro as at
-from carga_datos import fichas_documentos as fd
-from carga_datos import novedades
+from fuentes_datos.carga import avisos_tesoro as at
+from fuentes_datos.carga import fichas_documentos as fd
+from fuentes_datos.carga import novedades
 
 # Las pruebas nunca escriben las novedades reales ni mandan notificaciones
 novedades.REGISTRO = Path(tempfile.gettempdir()) / "finianz_prueba_novedades.json"

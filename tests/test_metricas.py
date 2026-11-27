@@ -5,7 +5,8 @@ de afuera (Lecap y Bonares/Globales). Correr con:
 from datetime import date, timedelta
 
 from renta_fija import leer_fichas
-from renta_fija import mercado, metricas
+from renta_fija import metricas
+from fuentes_datos import mercado
 
 LIQUIDACION = date(2026, 11, 17)
 # Sin base de feriados (datos/ puede no existir): las fechas de pago no se corren. No cambia la ida y vuelta.
@@ -86,7 +87,7 @@ def test_dl_y_tamar_con_pago_conocido():
 def test_conocido_segun_la_fecha_de_analisis():
     """Lo que se sabía el día del análisis: en una fecha pasada, un bono sigue siendo indexado aunque hoy el dato
     ya esté publicado (Agustin, 26/11/2026)."""
-    from admin_datos import publicaciones
+    from fuentes_datos.bases import publicaciones
     originales = mercado.db_series.valor, mercado.feriados.sumar_dias_habiles, publicaciones.hay_datos
     mercado.db_series.valor = lambda variable, fecha: 250.0
     mercado.feriados.sumar_dias_habiles = lambda d, n, calendario=None: d - timedelta(days=14)

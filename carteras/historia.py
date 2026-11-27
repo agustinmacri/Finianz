@@ -19,12 +19,13 @@ import bisect
 from datetime import date, timedelta
 
 import config
-from admin_datos import precios as db_precios
-from admin_datos import series as db_series
-from carga_datos import precios as carga_precios
-from carga_datos import series as carga_series
-from conexiones.http import ErrorAPI
-from renta_fija import mercado, metricas
+from fuentes_datos.bases import precios as db_precios
+from fuentes_datos.bases import series as db_series
+from fuentes_datos.carga import precios as carga_precios
+from fuentes_datos.carga import series as carga_series
+from fuentes_datos.conexiones.http import ErrorAPI
+from renta_fija import metricas
+from fuentes_datos import mercado
 from renta_fija import pagos as pagos_bono
 
 PERIODOS = [("Día", lambda hoy: hoy - timedelta(days=1)), ("Semana", lambda hoy: hoy - timedelta(days=7)),

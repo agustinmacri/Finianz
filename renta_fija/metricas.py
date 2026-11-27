@@ -17,7 +17,8 @@ from typing import Callable
 
 from renta_fija.calculadoras import cer, cer_cupon, dolar_linked, hard_dollar, motor, tamar, tasa_fija
 from renta_fija.calculadoras import proyeccion_cer
-from renta_fija import leer_fichas, mercado
+from renta_fija import leer_fichas
+from fuentes_datos import mercado
 
 UNIDAD = {"tasa_fija_capitalizable": "pesos", "tasa_fija_descuento": "pesos", "tasa_fija_cupon": "pesos",
           "cer_cero_cupon": "pesos reales (se ajustan por CER)", "cer_cupon": "pesos reales (se ajustan por CER)",

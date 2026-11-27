@@ -32,8 +32,8 @@ def test_fichas():
 def test_a3500_del_dia_o_estimado():
     """Con el A3500 del día de concertación publicado se usa ese; si no, el del día hábil anterior (estimado)."""
     import config
-    from admin_datos import series as db_series
-    from renta_fija import mercado
+    from fuentes_datos.bases import series as db_series
+    from fuentes_datos import mercado
     from tools import bonos
     original, original_carga = config.DATOS_DIR, mercado.carga_series.actualizar
     with tempfile.TemporaryDirectory() as tmp:

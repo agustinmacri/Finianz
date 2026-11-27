@@ -5,10 +5,11 @@ renta_fija/calculadoras/breakeven.py. Definiciones en docs/convenciones-renta-fi
 """
 from datetime import date, timedelta
 
-from admin_datos import rem as db_rem
-from conexiones.http import ErrorAPI
+from fuentes_datos.bases import rem as db_rem
+from fuentes_datos.conexiones.http import ErrorAPI
 from renta_fija.calculadoras import breakeven as be, tamar
-from renta_fija import curvas_mercado, mercado
+from renta_fija import curvas_mercado
+from fuentes_datos import mercado
 from tools.caminos import pct
 
 TIPOS = ("inflacion", "devaluacion", "tipo_cambio_real", "brecha", "tamar")
