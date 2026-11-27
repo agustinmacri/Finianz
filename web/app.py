@@ -36,8 +36,8 @@ IMAGENES = Path(__file__).resolve().parent / "imagenes"
 MOSTRAR_NOMBRE = False
 NOMBRE = "Finianz" if MOSTRAR_NOMBRE else ""
 st.set_page_config(page_title=f"{NOMBRE} · Renta fija" if NOMBRE else "Renta fija", page_icon=str(IMAGENES / "icono.svg"), layout="wide")
-NOMBRES_CURVA = {"tasa_fija": "Tasa fija (TEA)", "cer": "CER (TEA real)", "tamar": "TAMAR (TEA)",
-                 "dl": "Dollar linked (TEA en USD)", "hd": "Bonares (TEA en USD)"}
+NOMBRES_CURVA = {"tasa_fija": "Tasa fija (TEA)", "cer": "CER (TEA real)", "tamar": "TAMAR (spread sobre TAMAR)",
+                 "dl": "Dollar linked (TEA en USD)", "hd": "Hard dollar (TEA en USD)"}
 TITULOS = set(breakevens.NOMBRES.values())
 AYUDA_TNA = {"tasa_fija": "TNA simple al vencimiento (las Boncap con cupón: semestral)",
              "cer": "TNA real: simple al vencimiento en los cero cupón, semestral en los que pagan cupón",
@@ -55,7 +55,6 @@ MODO = "dark" if st.context.theme.type == "dark" else "light"
 P = PALETAS[MODO]
 SUPERFICIE, GRILLA = P["tarjeta"], P["borde"]
 ESMERALDA, ORO, TEXTO, GRIS = P["esmeralda"], P["oro"], P["texto"], P["secundario"]
-COLORES = {c: ESMERALDA for c in ("tasa_fija", "cer", "tamar", "dl", "hd")}
 SERIES = [ESMERALDA, ORO, GRIS, P["serie_extra"]]      # para varias líneas en un mismo gráfico
 
 # El logo queda fijo arriba a la izquierda (con la barra lateral cerrada, se ve el ícono)
@@ -134,10 +133,19 @@ def _contexto(fecha: date | None):
 
 
 @st.cache_data(ttl=60, show_spinner="Trayendo precios y calculando las curvas…")
-def datos_curvas(fecha: date | None, _marca: int):
+def datos_curvas(fecha: date | None, _marca: int, dolar: str = "mep"):
+    """Todas las curvas del panel: con duales y Globales, y los hard dollar en dólares MEP o cable."""
     operacion, liquidacion, fecha_precios = _contexto(fecha)
-    puntos, contexto, errores = curvas_mercado.armar(operacion, liquidacion, fecha_precios)
+    puntos, contexto, errores = curvas_mercado.armar(operacion, liquidacion, fecha_precios, todas=True, dolar=dolar)
     return puntos, contexto, errores, liquidacion
+
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def datos_anteriores(operacion: date, dolar: str = "mep") -> tuple[dict, date]:
+    """Los bonos al cierre del día hábil anterior, para las variaciones: {(curva, ticker, familia): punto}."""
+    anterior, liquidacion, fecha_precios = mercado.contexto_anterior(operacion)
+    puntos, _, _ = curvas_mercado.armar(anterior, liquidacion, fecha_precios, todas=True, dolar=dolar)
+    return {(c, p["ticker"], p["familia"]): p for c, lista in puntos.items() for p in lista}, anterior
 
 
 @st.cache_data(ttl=60, show_spinner="Calculando…")
@@ -269,38 +277,47 @@ st.markdown(f'<div class="encabezado"><div class="titulo">{seccion}</div><span>{
 
 # ---------- Curvas ----------
 
-def _ficha_de_curva(ticker: str, curva: str) -> dict | None:
-    """La ficha del bono en esa curva. Un CER, TAMAR o dollar linked con el pago final ya conocido figura en la de
-    tasa fija."""
-    return next((f for f in leer_fichas.fichas_de(ticker) if (metricas.FAMILIAS_CURVA.get(f["familia"]) == curva
-                 or (curva == "tasa_fija" and metricas.FAMILIAS_CURVA.get(f["familia"]) in ("cer", "tamar", "dl")))
-                 and "DUAL" not in f.get("tipo", "").upper()), None)
+def _ficha(ticker: str, familia: str) -> dict | None:
+    """La ficha del bono para esa familia (en un dual, la de esa pata)."""
+    return next((f for f in metricas.fichas_de(ticker) if f["familia"] == familia), None)
 
 
-def _recalcular(ticker: str, curva: str, cambio: tuple[str, float], referencia: float) -> dict:
-    """Precio, TEA, TNA y duration de un bono con el precio o la tasa que cargó el usuario."""
-    operacion, liquidacion, _ = _contexto(fecha)
-    calc = metricas.calculadora(_ficha_de_curva(ticker, curva), liquidacion, operacion)
+# La tasa que se grafica y se edita en cada curva: TEA, salvo en TAMAR, donde es el spread sobre la TAMAR de
+# referencia (TNA 30 d − promedio de los últimos 5 días publicados; Agustin, 27/11/2026).
+TASA_CURVA = {"tamar": ("spread", "Spread (%)")}
+CAMPOS_EDITABLES = {"Precio": "precio", "TEA (%)": "tea", "TNA (%)": "tna", "Spread (%)": "spread"}
+
+
+def _tasa(curva: str) -> tuple[str, str]:
+    return TASA_CURVA.get(curva, ("tea", "TEA (%)"))
+
+
+def _recalcular(fila: dict, cambio: tuple[str, float], operacion: date) -> dict:
+    """Precio, TEA, TNA, spread y duration de un bono con el precio o la tasa que cargó el usuario."""
+    calc = metricas.calculadora(_ficha(fila["ticker"], fila["familia"]), fila["liquidacion"], operacion)
     campo, valor = cambio
-    precio = valor if campo == "precio" else metricas.precio_para(calc, valor, campo, referencia=referencia)
+    precio = valor if campo == "precio" else metricas.precio_para(calc, valor, campo, referencia=fila["precio"])
     m = calc(precio)
-    return {"precio": precio, "tea": m["tea"], "tna": m["tna"], "x": m["duration"] * 365}
+    return {"precio": precio, "tea": m["tea"], "tna": m["tna"], "spread": m.get("spread"), "x": m["duration"] * 365}
+
+
+def _clave_bono(curva: str, fila: dict) -> tuple:
+    return (curva, fila["ticker"], fila["familia"])
 
 
 def _guardar_edicion(clave_editor: str, curva: str, filas: list[dict]):
-    """Pasa lo que se escribió en la tabla a la lista de cambios del usuario (por ticker)."""
+    """Pasa lo que se escribió en la tabla a la lista de cambios del usuario (por bono)."""
     cambios = st.session_state.setdefault("cambios_curva", {})
-    columnas = {"Precio": "precio", "TEA (%)": "tea", "TNA (%)": "tna"}
     for fila, editado in st.session_state[clave_editor].get("edited_rows", {}).items():
-        ticker = filas[int(fila)]["ticker"]
+        clave = _clave_bono(curva, filas[int(fila)])
         for columna, valor in editado.items():
-            if columna not in columnas:
+            campo = CAMPOS_EDITABLES.get(columna)
+            if campo is None:
                 continue
             if valor is None:
-                cambios.pop((curva, ticker), None)          # borrar la celda vuelve al precio de mercado
+                cambios.pop(clave, None)                    # borrar la celda vuelve al precio de mercado
             else:
-                campo = columnas[columna]
-                cambios[(curva, ticker)] = (campo, valor if campo == "precio" else valor / 100)
+                cambios[clave] = (campo, valor if campo == "precio" else valor / 100)
     st.session_state["version_editor"] = st.session_state.get("version_editor", 0) + 1
 
 
@@ -308,28 +325,96 @@ CURVAS_FORWARD = ("tasa_fija", "cer", "tamar", "dl", "hd")
 UNIDAD_CURVA = {"tasa_fija": ("TEA", "pesos"), "cer": ("TEA real (CER + x)", "pesos reales"),
                 "tamar": ("TEA", "pesos (TAMAR estimada con la publicada y la última para lo que falta)"),
                 "dl": ("TEA en dólares", "dólares"), "hd": ("TEA en dólares", "dólares")}
-AYUDA_FORWARD = {c: f"{UNIDAD_CURVA[c][0]} entre el vencimiento del bono anterior de la curva y el de este bono: la tasa "
-                    "a la que habría que renovar el anterior para rendir lo mismo que comprar este hoy. El más corto "
-                    "queda vacío." for c in CURVAS_FORWARD}
+AYUDA_FORWARD = {c: f"{UNIDAD_CURVA[c][0]} entre el vencimiento del bono anterior de la misma curva y el de este bono: "
+                    "la tasa a la que habría que renovar el anterior para rendir lo mismo que comprar este hoy. El más "
+                    "corto de cada curva queda vacío." for c in CURVAS_FORWARD}
+FLECHA_SUBE, FLECHA_BAJA = "▲", "▼"
+COLOR_SUBE, COLOR_BAJA = "#15803D", "#B91C1C"
 
 
-def _matriz_forwards(bonos: list[dict], liquidacion: date, curva: str):
+def _color_series() -> list[str]:
+    """Un color por curva del gráfico: la principal en esmeralda; las demás, oro, azul y gris."""
+    return [ESMERALDA, ORO, P["serie_extra"], GRIS]
+
+
+def _var_precio(hoy: float | None, antes: float | None) -> str:
+    if hoy is None or antes is None or not antes:
+        return ""
+    d = hoy - antes
+    if abs(d) < 0.005:
+        return "= 0.00 (0.00%)"
+    return f"{FLECHA_SUBE if d > 0 else FLECHA_BAJA} {d:+,.2f} ({d / antes:+.2%})"
+
+
+def _var_tasa(hoy: float | None, antes: float | None) -> str:
+    if hoy is None or antes is None:
+        return ""
+    pb = round((hoy - antes) * 1e4)
+    return "= 0 pb" if pb == 0 else f"{FLECHA_SUBE if pb > 0 else FLECHA_BAJA} {pb:+d} pb"
+
+
+def _color_variacion(texto) -> str:
+    """Verde con flecha hacia arriba si sube, rojo con flecha hacia abajo si baja (Agustin, 27/11/2026)."""
+    texto = str(texto or "")
+    if texto.startswith(FLECHA_SUBE):
+        return f"color: {COLOR_SUBE}; font-weight: 600"
+    if texto.startswith(FLECHA_BAJA):
+        return f"color: {COLOR_BAJA}; font-weight: 600"
+    return f"color: {GRIS}"
+
+
+def _sin_vacios(df: pd.DataFrame) -> pd.DataFrame:
+    """Las celdas sin dato quedan en blanco: columnas de números como números (vacío = NaN) y de texto con ""."""
+    df = df.copy()
+    for columna in df.columns:
+        valores = [v for v in df[columna] if v is not None and not (isinstance(v, float) and pd.isna(v))]
+        if all(isinstance(v, (int, float)) and not isinstance(v, bool) for v in valores):
+            df[columna] = pd.to_numeric(df[columna], errors="coerce").astype(float)
+        elif df[columna].dtype == object:
+            df[columna] = df[columna].map(lambda v: "" if v is None or (isinstance(v, float) and pd.isna(v)) else v)
+    return df
+
+
+def _numeros_como_texto(df: pd.DataFrame, columnas, formato: str = "{:,.2f}") -> pd.DataFrame:
+    """Columnas de solo lectura con celdas sin dato: pasan a texto ya formateado, con "" donde no hay dato (la grilla
+    muestra "None" en un número vacío)."""
+    df = df.copy()
+    for columna in columnas:
+        if columna in df.columns:
+            df[columna] = [("" if v is None or (isinstance(v, float) and pd.isna(v)) else formato.format(v))
+                           for v in df[columna]]
+    return df
+
+
+def _estilo_tabla(df: pd.DataFrame, columnas_variacion: list[str], formatos: dict[str, str]):
+    """Styler con las variaciones coloreadas y las celdas vacías en blanco (en vez de "None")."""
+    estilo = df.style.format({c: f for c, f in formatos.items() if c in df.columns}, na_rep="")
+    if columnas_variacion:
+        estilo = estilo.map(_color_variacion, subset=[c for c in columnas_variacion if c in df.columns])
+    return estilo
+
+
+def _matriz_forwards(bonos: list[dict], liquidacion: date, curva: str, titulo: str = ""):
     """Forward entre cada par de bonos: el corto en las columnas y el largo en las filas (decisión de Agustin)."""
     tickers, celdas = calc_forwards.matriz(bonos, liquidacion)
     if len(tickers) < 2:
         return
     cortos, largos = tickers[:-1], tickers[1:]
-    df = pd.DataFrame([[celdas[(corto, largo)] * 100 if (corto, largo) in celdas else None for corto in cortos]
+    df = pd.DataFrame([[f"{celdas[(corto, largo)] * 100:.2f}" if (corto, largo) in celdas else "" for corto in cortos]
                        for largo in largos], index=pd.Index(largos, name="Largo ↓ / Corto →"), columns=cortos)
     real = {"cer": " real (CER + x)", "dl": " en dólares", "hd": " en dólares"}.get(curva, "")
-    st.markdown(f"**Matriz de forwards{real} (TEA, %)**")
-    st.dataframe(df.style.format("{:.2f}", na_rep=""), width="stretch")
-    st.caption(f"Columnas: bono corto; filas: bono largo. Cada celda es la tasa{real} a la que habría que renovar el "
-               "corto, a su vencimiento, hasta el vencimiento del largo para rendir lo mismo que comprar el largo hoy: "
-               "f = [(1 + TIR largo)^t largo / (1 + TIR corto)^t corto]^(1 / (t largo − t corto)) − 1, con t en años "
-               "desde la liquidación hasta cada vencimiento. Con los precios o tasas que hayas cargado en la tabla. "
-               "En bonos con cupones es la aproximación con la TIR de cada bono.")
+    st.markdown(f"**Matriz de forwards{real} (TEA, %){' · ' + titulo if titulo else ''}**")
+    st.dataframe(df, width="stretch", column_config={c: st.column_config.TextColumn(width="small") for c in cortos})
 
+
+def _texto_matriz(curva: str) -> str:
+    real = {"cer": " real (CER + x)", "dl": " en dólares", "hd": " en dólares"}.get(curva, "")
+    return (f"Columnas: bono corto; filas: bono largo. Cada celda es la tasa{real} a la que habría que renovar el corto, "
+            "a su vencimiento, hasta el vencimiento del largo para rendir lo mismo que comprar el largo hoy: "
+            "f = [(1 + TIR largo)^t largo / (1 + TIR corto)^t corto]^(1 / (t largo − t corto)) − 1, con t en años "
+            "desde la liquidación hasta cada vencimiento. Solo entre bonos de la misma curva, con los precios o tasas "
+            "que hayas cargado en la tabla. En bonos con cupones es la aproximación con la TIR de cada bono."
+            + (" En TAMAR, con la TEA de cada bono (no con el spread)." if curva == "tamar" else ""))
 
 
 def _exit_bono(m: dict, ficha: dict, liquidacion: date):
@@ -371,140 +456,237 @@ def _exit_bono(m: dict, ficha: dict, liquidacion: date):
 
 
 @st.cache_data(ttl=60, show_spinner=False)
-def _flujos_bono(ticker: str, curva: str, precio: float, liquidacion: date, operacion: date) -> list[dict]:
-    ficha = _ficha_de_curva(ticker, curva)
+def _flujos_bono(ticker: str, familia: str, precio: float, liquidacion: date, operacion: date) -> list[dict]:
+    ficha = _ficha(ticker, familia)
     return metricas.calculadora(ficha, liquidacion, operacion)(precio)["flujos"] if ficha else []
 
 
-def _tabla_exit(filas: list[dict], curva: str, liquidacion: date, operacion: date):
-    """Retorno de cada bono de la curva si se vende en una fecha a una TIR de salida (editable por bono)."""
+def _guardar_exit(clave_editor: str, curva: str, filas: list[dict]):
+    """La exit yield o el precio de salida que se escribió para cada bono (se recuerdan aunque cambie la fecha)."""
+    cambios = st.session_state.setdefault("cambios_exit", {})
+    for fila, editado in st.session_state[clave_editor].get("edited_rows", {}).items():
+        clave = _clave_bono(curva, filas[int(fila)])
+        for columna, valor in editado.items():
+            campo = {"Exit yield (%)": "tea", "Precio de salida": "precio"}.get(columna)
+            if campo is None:
+                continue
+            if isinstance(valor, str):                      # el precio de salida se escribe como texto
+                texto = valor.strip().replace(" ", "")
+                texto = texto.replace(".", "").replace(",", ".") if "," in texto else texto.replace(",", "")
+                try:
+                    valor = float(texto) if texto else None
+                except ValueError:
+                    st.session_state["aviso_exit"] = f"'{valor}' no es un precio."
+                    continue
+            if valor is None:
+                cambios.pop(clave, None)                    # borrar la celda vuelve a la TIR de hoy
+            else:
+                cambios[clave] = (campo, valor / 100 if campo == "tea" else valor)
+    st.session_state["version_exit"] = st.session_state.get("version_exit", 0) + 1
+
+
+def _tabla_exit(filas: list[dict], curva: str, operacion: date, con_curva: bool):
+    """Retorno de cada bono si se vende en una fecha a la exit yield que se elija para él (o a un precio de salida,
+    del que sale la exit yield). Sin dato cargado, la exit yield es la TIR de hoy (Agustin, 27/11/2026)."""
     st.markdown("**Retornos con exit yield**")
+    liquidacion = min(f["liquidacion"] for f in filas)
     col1, col2, _ = st.columns([1, 1, 2])
     defecto = min(liquidacion + timedelta(days=182), max(f["vencimiento"] for f in filas))
     salida = col1.date_input("Fecha de salida", value=defecto, min_value=liquidacion + timedelta(days=1),
                              format="DD/MM/YYYY", key=f"exit_fecha_{curva}")
-    desplazamiento = col2.number_input("Exit yield: TIR de hoy ± (pb)", value=0, step=25, key=f"exit_pb_{curva}",
-                                       help="Cambio paralelo para todos los bonos. Después podés editar la exit yield "
-                                            "de cada uno en la tabla.")
-    clave = f"exit_tabla_{curva}_{salida}_{desplazamiento}"
-    editadas = st.session_state.get(clave, {}).get("edited_rows", {})
-    filas_tabla = []
-    for i, f in enumerate(filas):
-        exit_pct = editadas.get(i, {}).get("Exit yield (%)", (f["tea"] + desplazamiento / 1e4) * 100)
-        fila = {"Ticker": f["ticker"], "TIR hoy (%)": f["tea"] * 100, "Exit yield (%)": exit_pct,
-                "Precio de salida": None, "Cobrado hasta la salida": None, "Retorno del período (%)": None,
-                "Retorno anualizado (%)": None, "": ""}
+    cambios = st.session_state.get("cambios_exit", {})
+    if any(k[0] == curva for k in cambios) and col2.button("Volver a la TIR de hoy", key=f"exit_reset_{curva}"):
+        st.session_state["cambios_exit"] = {k: v for k, v in cambios.items() if k[0] != curva}
+        st.session_state["version_exit"] = st.session_state.get("version_exit", 0) + 1
+        st.rerun(scope="fragment")
+    registros = []
+    for f in filas:
+        cambio = cambios.get(_clave_bono(curva, f))
+        fila = {"Ticker": f["ticker"], **({"Curva": f["serie"] or NOMBRES_CURVA[curva].split(" (")[0]} if con_curva else {}),
+                "TIR hoy (%)": f["tea"] * 100, "Exit yield (%)": None, "Precio de salida": "",
+                "Cobrado hasta la salida": None, "Retorno del período (%)": None, "Retorno anualizado (%)": None,
+                "": "✎ exit yield" if cambio and cambio[0] == "tea" else "✎ precio" if cambio else ""}
+        fila["Exit yield (%)"] = (cambio[1] if cambio and cambio[0] == "tea" else f["tea"]) * 100
         try:
-            r = calc_exit.retorno(_flujos_bono(f["ticker"], curva, f["precio"], liquidacion, operacion), f["tea"],
-                                  liquidacion, salida, exit_pct / 100)
-            fila.update({"Precio de salida": r["precio_salida"], "Cobrado hasta la salida": r["cobrado"],
-                         "Retorno del período (%)": r["retorno"] * 100,
-                         "Retorno anualizado (%)": r["anualizado"] * 100 if r["anualizado"] is not None else None,
-                         "": "vence antes" if r["vence_antes"] else ""})
-        except Exception:
-            fila[""] = "sin cálculo"
-        filas_tabla.append(fila)
-    formato = {c: st.column_config.NumberColumn(format="%.2f") for c in
-               ("TIR hoy (%)", "Exit yield (%)", "Precio de salida", "Cobrado hasta la salida",
-                "Retorno del período (%)", "Retorno anualizado (%)")}
-    st.data_editor(pd.DataFrame(filas_tabla), key=clave, hide_index=True, width="stretch", column_config=formato,
-                   disabled=[c for c in filas_tabla[0] if c != "Exit yield (%)"] if filas_tabla else True)
+            flujos = _flujos_bono(f["ticker"], f["familia"], f["precio"], f["liquidacion"], operacion)
+            if cambio and cambio[0] == "precio":
+                tea_salida = calc_exit.tasa_para(flujos, f["liquidacion"], salida, cambio[1])
+            else:
+                tea_salida = cambio[1] if cambio else f["tea"]
+            r = calc_exit.retorno(flujos, f["tea"], f["liquidacion"], salida, tea_salida)
+            fila.update({"Exit yield (%)": tea_salida * 100,
+                         "Precio de salida": f"{r['precio_salida']:,.2f}" if not r["vence_antes"] else "",
+                         "Cobrado hasta la salida": r["cobrado"], "Retorno del período (%)": r["retorno"] * 100,
+                         "Retorno anualizado (%)": r["anualizado"] * 100 if r["anualizado"] is not None else None})
+            if r["vence_antes"]:
+                fila[""] = "vence antes"
+        except Exception as e:
+            fila[""] = f"sin cálculo: {e}"
+        registros.append(fila)
+    tabla = _numeros_como_texto(_sin_vacios(pd.DataFrame(registros)),
+                                ["Cobrado hasta la salida", "Retorno del período (%)", "Retorno anualizado (%)"])
+    clave = f"exit_tabla_{curva}_{st.session_state.get('version_exit', 0)}"
+    st.data_editor(_estilo_tabla(tabla, [], {"TIR hoy (%)": "{:.2f}"}), key=clave, hide_index=True,
+                   width="stretch", on_change=_guardar_exit, args=(clave, curva, filas),
+                   column_config={**{c: st.column_config.NumberColumn(format="%.2f") for c in ("TIR hoy (%)", "Exit yield (%)")},
+                                  "Exit yield (%)": st.column_config.NumberColumn(
+                                      format="%.2f", help="TEA de salida de este bono. Escribí una tasa, o un precio de "
+                                                          "salida en la columna de al lado y sale la tasa."),
+                                  "Precio de salida": st.column_config.TextColumn(
+                                      help="Dirty teórico por 100 VN original, en la unidad del bono, a la fecha de "
+                                           "salida. Escribí uno y sale la exit yield."),
+                                  "Curva": st.column_config.TextColumn(width="medium"),
+                                  "": st.column_config.TextColumn(width="medium")},
+                   disabled=[c for c in tabla.columns if c not in ("Exit yield (%)", "Precio de salida")])
+    if st.session_state.get("aviso_exit"):
+        st.warning(st.session_state.pop("aviso_exit"))
     unidad = UNIDAD_CURVA.get(curva, ("", "su unidad"))[1]
-    st.caption(f"Vendiendo el {salida:%d/%m/%Y} a la exit yield de cada bono (editable). Precio de salida: dirty "
-               f"teórico por 100 VN original, en {unidad}. Cobrado: cupones y amortizaciones hasta la salida, "
-               "reinvertidos a la exit yield. Con exit yield igual a la TIR de hoy, el retorno anualizado es la TIR de "
-               "hoy. \"vence antes\": se cobra todo y se reinvierte a la exit yield hasta la fecha. Retornos en "
-               f"{unidad}.")
+    st.caption(f"Vendiendo el {salida:%d/%m/%Y}. Cada bono arranca con la TIR de hoy como exit yield: cambiala casilla por "
+               "casilla, o escribí un precio de salida y se calcula la tasa a esa fecha. Borrar la celda vuelve a la TIR "
+               f"de hoy. Precio de salida: dirty teórico por 100 VN original, en {unidad}. Cobrado: cupones y "
+               "amortizaciones hasta la salida, reinvertidos a la exit yield. \"vence antes\": se cobra todo y se "
+               "reinvierte a la exit yield hasta la fecha."
+               + (" En TAMAR, la exit yield es la TEA del bono (no el spread)." if curva == "tamar" else ""))
 
 
 if seccion == "Curvas":
     @st.fragment(run_every=segundos)
     def panel_curvas():
         marca_actual = int(pd.Timestamp.now().timestamp() // segundos) if segundos else 0
+        dolar = "ccl" if st.session_state.get("dolar_hd") == "Cable" else "mep"
         try:
-            puntos, contexto, errores, liquidacion = datos_curvas(fecha, marca_actual)
+            puntos, contexto, errores, liquidacion = datos_curvas(fecha, marca_actual, dolar)
         except Exception as e:                       # sin conexión, sin feriados, etc.
             st.error(f"No se pudieron armar las curvas: {e}")
             return
+        operacion = _contexto(fecha)[0]
+        try:
+            anteriores, dia_anterior = datos_anteriores(operacion, dolar)
+        except Exception:
+            anteriores, dia_anterior = {}, None
         st.caption(f"Liquidación {liquidacion:%d/%m/%Y} · actualizado {pd.Timestamp.now():%H:%M:%S}"
-                   + (f" · se actualiza {refresco.lower()}" if segundos else ""))
+                   + (f" · se actualiza {refresco.lower()}" if segundos else "")
+                   + (f" · variaciones contra el cierre del {dia_anterior:%d/%m/%Y}" if dia_anterior else ""))
         disponibles = [c for c in NOMBRES_CURVA if puntos.get(c)]
         if not disponibles:
             st.warning("No hay bonos con precio para armar curvas.")
             return
         if st.session_state.get("curva_elegida") not in disponibles:
             st.session_state["curva_elegida"] = disponibles[0]
-        c = st.segmented_control("Curva", disponibles, format_func=NOMBRES_CURVA.get, key="curva_elegida") or disponibles[0]
+        col_curva, col_dolar = st.columns([4, 1])
+        c = col_curva.segmented_control("Curva", disponibles, format_func=NOMBRES_CURVA.get,
+                                        key="curva_elegida") or disponibles[0]
+        if c == "hd":
+            col_dolar.segmented_control("Dólar", ["MEP", "Cable"], default="MEP", key="dolar_hd",
+                                        help="Precio en dólares MEP (ticker D) o cable (ticker C)")
+        clave_tasa, columna_tasa = _tasa(c)
+        nombre_tasa = "spread" if clave_tasa == "spread" else "TEA"
 
         # Mercado y, encima, lo que cargó el usuario en la tabla (precio o tasa de un bono)
         de_mercado = sorted(puntos[c], key=lambda p: p["x"])
         cambios = st.session_state.get("cambios_curva", {})
         filas, avisos = [], []
         for p in de_mercado:
-            fila = dict(p, editado=None)
-            cambio = cambios.get((c, p["ticker"]))
+            fila = dict(p, editado=None, antes=anteriores.get(_clave_bono(c, p)))
+            cambio = cambios.get(_clave_bono(c, p))
             if cambio:
                 try:
-                    fila.update(_recalcular(p["ticker"], c, cambio, p["precio"]), editado=cambio[0])
+                    fila.update(_recalcular(p, cambio, operacion), editado=cambio[0])
                 except (ValueError, ArithmeticError, TypeError) as e:
                     avisos.append(f"{p['ticker']}: {e}")
             filas.append(fila)
+        series = list(dict.fromkeys(f["serie"] for f in filas))
+        series.sort(key=lambda s: (s is not None, s != curvas_mercado.SERIE_BONARES, str(s)))
+        nombre_serie = lambda s: s or NOMBRES_CURVA[c].split(" (")[0]
+        colores = dict(zip(series, _color_series() * 3))
+        varias = len(series) > 1
 
         fig = go.Figure()
         editados = [f for f in filas if f["editado"]]
         if editados:                                        # dónde estaban a precio de mercado
-            originales = [p for p in de_mercado if (c, p["ticker"]) in cambios]
-            fig.add_trace(go.Scatter(x=[p["x"] / 365 for p in originales], y=[p["tea"] for p in originales],
+            originales = [p for p in de_mercado if _clave_bono(c, p) in cambios]
+            fig.add_trace(go.Scatter(x=[p["x"] / 365 for p in originales], y=[p[clave_tasa] for p in originales],
                                      mode="markers", name="A precio de mercado", hoverinfo="skip",
                                      marker=dict(size=9, color="rgba(0,0,0,0)", line=dict(color=GRIS, width=1.5))))
-        xs = [f["x"] / 365 for f in filas]
-        fig.add_trace(go.Scatter(x=xs, y=[f["tea"] for f in filas], mode="markers+text", name=NOMBRES_CURVA[c],
-                                 text=[f["ticker"] for f in filas], textposition="top center", textfont=dict(size=10, color=GRIS),
-                                 marker=dict(size=[12 if f["editado"] else 9 for f in filas],
-                                             color=[ORO if f["editado"] else COLORES[c] for f in filas],
-                                             line=dict(color=TEXTO, width=0.6),
-                                             symbol=["diamond" if f["editado"] else "circle" for f in filas]),
-                                 hovertemplate="%{text}<br>Duration %{x:.2f} años<br>TEA %{y:.2%}<extra></extra>"))
-        if len(de_mercado) >= 3:                           # la curva ajustada es la de mercado: la referencia
-            try:
-                xs_mercado = [p["x"] / 365 for p in de_mercado]
-                ajuste = calc_curva.ajustar_log([(x, p["tea"]) for x, p in zip(xs_mercado, de_mercado) if x > 0])
-                grilla = [min(xs_mercado) + i * (max(xs_mercado) - min(xs_mercado)) / 60 for i in range(61)]
-                fig.add_trace(go.Scatter(x=grilla, y=[calc_curva.tea_teorica(ajuste, x) for x in grilla], mode="lines",
-                                         name=f"Curva de mercado (R² {ajuste['r2']:.2f})", hoverinfo="skip",
-                                         line=dict(color=GRIS, dash="dot")))
-            except Exception:
-                pass
-        estilo_grafico(fig, 480, xaxis_title="Duration (años)", yaxis_title="TEA", yaxis_tickformat=".1%")
+        for serie in series:
+            de_serie = [f for f in filas if f["serie"] == serie]
+            color = colores[serie]
+            fig.add_trace(go.Scatter(
+                x=[f["x"] / 365 for f in de_serie], y=[f[clave_tasa] for f in de_serie], mode="markers+text",
+                name=nombre_serie(serie), text=[f["ticker"] for f in de_serie], textposition="top center",
+                textfont=dict(size=10, color=GRIS),
+                marker=dict(size=[12 if f["editado"] else 9 for f in de_serie], color=color,
+                            line=dict(color=TEXTO, width=[1.6 if f["editado"] else 0.6 for f in de_serie]),
+                            symbol=["diamond" if f["editado"] else "circle" for f in de_serie]),
+                hovertemplate="%{text}<br>Duration %{x:.2f} años<br>" + nombre_tasa + " %{y:.2%}<extra>"
+                              + nombre_serie(serie) + "</extra>"))
+            mercado_serie = [p for p in de_mercado if p["serie"] == serie and p["x"] > 0]
+            if len(mercado_serie) >= 3:                    # cada curva se ajusta aparte, con sus bonos a mercado
+                try:
+                    xs = [p["x"] / 365 for p in mercado_serie]
+                    ajuste = calc_curva.ajustar_log([(x, p[clave_tasa]) for x, p in zip(xs, mercado_serie)])
+                    grilla = [min(xs) + i * (max(xs) - min(xs)) / 60 for i in range(61)]
+                    fig.add_trace(go.Scatter(x=grilla, y=[calc_curva.tea_teorica(ajuste, x) for x in grilla],
+                                             mode="lines", hoverinfo="skip", line=dict(color=color, dash="dot"),
+                                             name=f"Curva {nombre_serie(serie)} (R² {ajuste['r2']:.2f})"))
+                except Exception:
+                    pass
+        estilo_grafico(fig, 500, xaxis_title="Duration (años)",
+                       yaxis_title="Spread sobre TAMAR" if clave_tasa == "spread" else "TEA", yaxis_tickformat=".1%")
+        fig.update_layout(legend=dict(orientation="h", y=1.02, yanchor="bottom", x=0, font=dict(color=GRIS)),
+                          margin=dict(t=60, b=50))
         with st.container(border=True):
             st.plotly_chart(fig, width="stretch", theme=None)
 
-        # La tabla se puede editar: precio, TEA o TNA de cualquier bono; lo demás se recalcula (también las forwards)
+        # La tabla se puede editar: precio, tasa o TNA de cualquier bono; lo demás se recalcula (también las forwards)
         con_forwards = c in CURVAS_FORWARD
-        bonos_fwd = [{"ticker": f["ticker"], "vencimiento": f["vencimiento"], "tea": f["tea"]} for f in filas]
-        anterior = calc_forwards.al_anterior(bonos_fwd, liquidacion) if con_forwards else {}
-        tabla = pd.DataFrame([{"Ticker": f["ticker"], "Precio": f["precio"], "TEA (%)": f["tea"] * 100,
-                               "TNA (%)": f["tna"] * 100 if f.get("tna") is not None else None,
-                               "Duration (años)": f["x"] / 365,
-                               **({"Forwards (%)": anterior[f["ticker"]] * 100
-                                   if anterior.get(f["ticker"]) is not None else None} if con_forwards else {}),
-                               "": {"precio": "✎ precio", "tea": "✎ TEA", "tna": "✎ TNA"}.get(f["editado"], "")}
-                              for f in filas])
+        anterior = {}
+        if con_forwards:
+            for serie in series:
+                bonos_serie = [{"ticker": f["ticker"], "vencimiento": f["vencimiento"], "tea": f["tea"]}
+                               for f in filas if f["serie"] == serie]
+                anterior.update({(serie, t): v for t, v in calc_forwards.al_anterior(bonos_serie, liquidacion).items()})
+        registros = []
+        for f in filas:
+            antes = f["antes"] or {}
+            marca_fila = {"precio": "✎ precio", "tea": "✎ TEA", "tna": "✎ TNA", "spread": "✎ spread"}.get(f["editado"], "")
+            if f.get("sin_emitir"):
+                marca_fila = (marca_fila + " · " if marca_fila else "") + "precio de corte, sin cotizar"
+            registros.append({
+                "Ticker": f["ticker"], **({"Curva": nombre_serie(f["serie"])} if varias else {}),
+                "Precio": f["precio"], "Var. precio": _var_precio(f["precio"], antes.get("precio")),
+                columna_tasa: f[clave_tasa] * 100 if f.get(clave_tasa) is not None else None,
+                f"Var. {nombre_tasa} (pb)": _var_tasa(f.get(clave_tasa), antes.get(clave_tasa)),
+                "TNA (%)": f["tna"] * 100 if f.get("tna") is not None else None,
+                "Var. TNA (pb)": _var_tasa(f.get("tna"), antes.get("tna")),
+                "Duration (años)": f["x"] / 365,
+                **({"Forwards (%)": anterior[(f["serie"], f["ticker"])] * 100
+                    if anterior.get((f["serie"], f["ticker"])) is not None else None} if con_forwards else {}),
+                "": marca_fila})
+        tabla = _numeros_como_texto(_sin_vacios(pd.DataFrame(registros)), ["Forwards (%)"], "{:.2f}")
+        variaciones = ["Var. precio", f"Var. {nombre_tasa} (pb)", "Var. TNA (pb)"]
         clave = f"editor_{c}_{st.session_state.get('version_editor', 0)}"
-        st.data_editor(tabla, key=clave, hide_index=True, width="stretch",
-                       disabled=["Ticker", "Duration (años)", "Forwards (%)", ""],
+        st.data_editor(_estilo_tabla(tabla, variaciones, {}),
+                       key=clave, hide_index=True, width="stretch",
+                       disabled=[col for col in tabla.columns if col not in ("Precio", columna_tasa, "TNA (%)")],
                        on_change=_guardar_edicion, args=(clave, c, filas),
                        column_config={"Precio": st.column_config.NumberColumn(format="%.2f", min_value=0.0001),
-                                      "TEA (%)": st.column_config.NumberColumn(format="%.2f"),
+                                      columna_tasa: st.column_config.NumberColumn(
+                                          format="%.2f", help="TNA de 30 días menos la TAMAR de referencia (promedio de "
+                                                              "los últimos 5 días hábiles publicados)"
+                                          if clave_tasa == "spread" else None),
                                       "TNA (%)": st.column_config.NumberColumn(format="%.2f", help=AYUDA_TNA.get(c, "")),
                                       "Duration (años)": st.column_config.NumberColumn(format="%.2f"),
-                                      "Forwards (%)": st.column_config.NumberColumn(format="%.2f", help=AYUDA_FORWARD[c]
-                                                                                    if con_forwards else None),
-                                      "": st.column_config.TextColumn(width="small")})
+                                      "Forwards (%)": st.column_config.TextColumn(help=AYUDA_FORWARD[c] if con_forwards
+                                                                                  else None),
+                                      "Curva": st.column_config.TextColumn(width="medium"),
+                                      "": st.column_config.TextColumn(width="medium")})
         col1, col2 = st.columns([3, 1])
-        col1.caption("Escribí un precio, una TEA o una TNA en la tabla y se recalcula el resto del bono y su punto en "
-                     "la curva (en dorado; el círculo gris es su lugar a precio de mercado, y la línea punteada, la "
-                     "curva de mercado). Borrar la celda vuelve al mercado.")
+        col1.caption(f"Escribí un precio, {'un spread' if clave_tasa == 'spread' else 'una TEA'} o una TNA en la tabla y "
+                     "se recalcula el resto del bono y su punto en la curva (rombo; el círculo gris es su lugar a precio "
+                     "de mercado, y la línea punteada, la curva de mercado). Borrar la celda vuelve al mercado. "
+                     "Variaciones contra el cierre del día hábil anterior: en verde con ▲ si suben, en rojo con ▼ si "
+                     "bajan." + (" Cada curva del gráfico se ajusta con sus propios bonos (desde 3)." if varias else ""))
         if editados and col2.button("Volver todo a mercado", width="stretch"):
             st.session_state["cambios_curva"] = {k: v for k, v in cambios.items() if k[0] != c}
             st.session_state["version_editor"] = st.session_state.get("version_editor", 0) + 1
@@ -512,8 +694,13 @@ if seccion == "Curvas":
         for aviso in avisos:
             st.warning(f"No se pudo recalcular {aviso}")
         if con_forwards:
-            _matriz_forwards(bonos_fwd, liquidacion, c)
-        _tabla_exit(filas, c, liquidacion, _contexto(fecha)[0])
+            for serie in series:
+                bonos_serie = [{"ticker": f["ticker"], "vencimiento": f["vencimiento"], "tea": f["tea"]}
+                               for f in filas if f["serie"] == serie]
+                _matriz_forwards(bonos_serie, liquidacion, c, nombre_serie(serie) if varias else "")
+            if any(sum(1 for f in filas if f["serie"] == s) >= 2 for s in series):
+                st.caption(_texto_matriz(c))
+        _tabla_exit(filas, c, operacion, varias)
         if c == "tasa_fija":
             with st.expander("Curva teórica de tasa fija (a precio de mercado): desvío de cada bono contra la curva y sus vecinos"):
                 mostrar(salida_herramienta("curva_tf", marca_actual, fecha=fecha.isoformat() if fecha else None))
@@ -527,8 +714,9 @@ if seccion == "Curvas":
 # ---------- Bono ----------
 
 @st.cache_data(ttl=60, show_spinner=False)
-def precio_de_mercado(ticker: str, familia: str, fecha: date | None, _marca: int) -> float:
-    return mercado.precio(ticker + ("D" if familia == "hard_dollar" else ""), fecha)[0]
+def precio_de_mercado(ticker: str, familia: str, fecha: date | None, liquidacion: date, _marca: int) -> tuple[float, str, date]:
+    """(precio, de dónde salió, liquidación): un bono todavía no emitido va al precio de corte, liquidando en la emisión."""
+    return mercado.precio_bono(_ficha(ticker, familia), fecha, liquidacion, "D" if familia == "hard_dollar" else "")
 
 
 NOMBRES_DETALLE = {"valor_tecnico": "Valor técnico", "paridad": "Paridad", "interes_corrido": "Interés corrido",
@@ -551,10 +739,16 @@ if seccion == "Bono":
                       horizontal=True, key="bono_modo")
     try:
         operacion, liquidacion, fecha_precios = _contexto(fecha)
+        origen_precio = None
+        try:
+            precio_mkt, origen_precio, liquidacion = precio_de_mercado(ticker, ficha["familia"], fecha_precios,
+                                                                       liquidacion, marca)
+        except Exception:
+            precio_mkt = None
+            liquidacion = max(liquidacion, ficha["emision"])     # sin emitir y sin corte: desde la emisión
         calc = metricas.calculadora(ficha, liquidacion, operacion)
         try:
-            precio_mkt = precio_de_mercado(ticker, ficha["familia"], fecha_precios, marca)
-            m_mercado = calc(precio_mkt)
+            m_mercado = calc(precio_mkt) if precio_mkt else None
         except Exception:
             precio_mkt, m_mercado = None, None
         col1, col2, col3 = st.columns([1, 1, 2])
@@ -574,7 +768,8 @@ if seccion == "Bono":
 
     st.caption(f"{ficha.get('tipo', '')} · {ficha['familia'].replace('_', ' ')} · vence {ficha['vencimiento']:%d/%m/%Y} · "
                f"liquidación {liquidacion:%d/%m/%Y}"
-               + (f" · precio de mercado {precio_mkt:,.2f}" if precio_mkt else " · sin precio de mercado"))
+               + (f" · precio de mercado {precio_mkt:,.2f}" if precio_mkt and not (origen_precio or "").startswith("precio de corte")
+                  else f" · {origen_precio}: {precio_mkt:,.2f}" if precio_mkt else " · sin precio de mercado"))
     def _delta(valor, referencia, pb=False):
         if referencia is None or valor is None or abs(valor - referencia) < (5e-5 if pb else 0.005):
             return None

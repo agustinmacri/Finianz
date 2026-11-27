@@ -43,3 +43,29 @@ def sensibilidad(flujos: list[dict], tea_hoy: float, liquidacion: date, salida: 
     """El retorno para TIR de salida alrededor de la elegida (en puntos básicos)."""
     return [{"pb": pb, "tea_salida": tea_salida + pb / 1e4,
              **retorno(flujos, tea_hoy, liquidacion, salida, tea_salida + pb / 1e4)} for pb in pasos_pb]
+
+
+def tasa_para(flujos: list[dict], liquidacion: date, salida: date, precio_salida: float) -> float:
+    """La exit yield (TEA) a la que el precio de salida es 'precio_salida': la TIR, desde la fecha de salida, de los
+    flujos posteriores a esa fecha (en la unidad del bono, por 100 VN original)."""
+    restantes = [x for x in flujos if x["fecha"] > max(salida, liquidacion) and x["total"]]
+    if not restantes:
+        raise ValueError("El bono vence antes de la fecha de salida: no tiene precio de salida.")
+    if precio_salida <= 0:
+        raise ValueError("El precio de salida tiene que ser positivo.")
+    bajo, alto = -0.99, 1.0
+    while _descontar(restantes, salida, alto) > precio_salida:      # a mayor tasa, menor precio
+        alto = alto * 2 + 1
+        if alto > 1e6:
+            raise ValueError("No hay una tasa razonable para ese precio de salida.")
+    if _descontar(restantes, salida, bajo) < precio_salida:
+        raise ValueError("No hay una tasa razonable para ese precio de salida.")
+    for _ in range(200):
+        medio = (bajo + alto) / 2
+        if _descontar(restantes, salida, medio) > precio_salida:
+            bajo = medio
+        else:
+            alto = medio
+        if alto - bajo < 1e-12:
+            break
+    return (bajo + alto) / 2

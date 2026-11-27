@@ -100,7 +100,7 @@ Bonos TAMAR capitalizables del Tesoro (TMF27, TML27, TMG27, TMF28, TMG28) y la p
 | Pago final teórico | 100 × (1 + TEM) ^ (días 30/360 entre emisión y vencimiento / 30) |
 | Plazo residual, duration, TNA, TEA (TIR), TEM 30 d | Como las Lecap/Boncap |
 | TNA 30 d | ((1 + TIR) ^ (30/365) − 1) × 365/30 |
-| Spread sobre TAMAR | TNA 30 d − promedio de la TAMAR de los últimos 5 días hábiles publicados. Se usa la TNA de 30 días y no la del plazo porque la TAMAR es una tasa a 30 días |
+| Spread sobre TAMAR | TNA 30 d − promedio de la TAMAR de los últimos 5 días hábiles publicados. Se usa la TNA de 30 días y no la del plazo porque la TAMAR es una tasa a 30 días. Es la tasa que muestra la curva TAMAR del panel, en el gráfico y en la tabla (Agustin, 27/11/2026) |
 
 Correcciones a la planilla del 13/11/2026: la serie proyectada terminaba el 10/01/2029, así que en TXMJ9, TXMD9 y TXMJ0 el promedio dejaba afuera el resto de la ventana (TXMD9 y TXMJ0 daban la misma TEM); ahora se proyecta hasta el final de la ventana. La proyección usaba valores fijos (24,22% y 24%) y el spread restaba un 24,19% cargado a mano; ahora ambos usan el promedio de los últimos 5 días hábiles publicados. La TNA 30 d pasa de NOMINAL(TEA; 12) a la de 30 días corridos (menos de 3 pb de diferencia).
 
@@ -257,3 +257,4 @@ Decisión de Agustin, 14/11/2026: toda respuesta que dependa de un supuesto mues
 - **15/11/2026:** reaperturas sin la emisión del aviso, chequeo de posibles duplicados con aprobación humana y búsqueda automática de tickers en PPI.
 - **15/11/2026:** búsqueda automática del documento de la primera emisión de las reaperturas y lectura dirigida (`--solo`).
 - **15/11/2026:** búsqueda automática de la emisión original en pausa; revisión periódica de avisos nuevos del Tesoro.
+- **27/11/2026:** panel, sección Curvas: la curva TAMAR (y la pata TAMAR de los duales) se muestra como spread sobre la TAMAR de referencia; los duales entran a los gráficos con su serie, cada pata en la curva de su familia; hard dollar con Bonares y Globales, en MEP o cable. Un bono nuevo, entre el resultado de la licitación y su liquidación, se calcula al precio de corte (por 100 VN; a la par si se licitó por tasa o margen) con la liquidación en la fecha de emisión.

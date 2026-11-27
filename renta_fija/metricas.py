@@ -129,6 +129,7 @@ def calculadora(f: dict, liquidacion: date, operacion: date, contexto: dict | No
                     "unidad": "pesos (TAMAR de toda la ventana publicada: tasa fija)",
                     "ajuste": None, "pago_conocido": True}
         return {"curva": FAMILIAS_CURVA.get(familia), "tea": tea, "tna": tna, "duration": r["duration"], "extra": extra,
+                "spread": r.get("spread") if familia == "tamar_capitalizable" else None,   # TNA 30 d − TAMAR de referencia
                 "detalle": r, "flujos": _escalar(_flujos(r)), "unidad": UNIDAD[familia] + (
                     " por 100 VN en dólares (VN al tipo de cambio inicial)" if _escala() != 1 else ""),
                 "ajuste": _ajuste()}
@@ -215,7 +216,7 @@ def calculadora(f: dict, liquidacion: date, operacion: date, contexto: dict | No
 
 
 def precio_para(metricas: Callable[[float], dict], objetivo: float, campo: str = "tea", referencia: float = 100.0) -> float:
-    """El precio al que la tasa ('tea' o 'tna') es igual al objetivo. A mayor precio, menor tasa: se busca por
+    """El precio al que la tasa ('tea', 'tna' o, en TAMAR, 'spread') es igual al objetivo. A mayor precio, menor tasa: se busca por
     bisección en escala logarítmica, entre referencia/1000 y referencia×1000 (si en un extremo la calculadora no
     converge, se acerca de a 10 veces hacia la referencia)."""
     def diferencia(log_precio: float) -> float | None:

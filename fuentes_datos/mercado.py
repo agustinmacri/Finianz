@@ -173,6 +173,43 @@ def precio(ticker: str, fecha: date | None) -> tuple[float, str]:
     return cierre[0]["cierre"], f"cierre del {fecha} (base propia, fuente PPI)"
 
 
+def precio_licitacion(f: dict) -> tuple[float, str] | None:
+    """Precio de emisión de un bono nuevo (resultado de la licitación, datos/licitaciones.json), por 100 VN en pesos:
+    el de corte o, si se licitó por tasa o margen, a la par (en un dual con VN en dólares, por el tipo de cambio
+    inicial). None si no está cargado."""
+    from fuentes_datos.bases import licitaciones
+    from renta_fija import leer_fichas
+    dato = licitaciones.de(f["ticker"])
+    if not dato:
+        return None
+    if dato["a_la_par"] or dato["precio"] is None:
+        escala = max([tipo_cambio_inicial(x) for x in leer_fichas.fichas_de(f["ticker"])] or [1.0])
+        precio_emision = 100.0 * escala
+    else:
+        precio_emision = dato["precio"]
+    return precio_emision, (f"precio de corte de la licitación{' del ' + dato['resultado'] if dato.get('resultado') else ''}"
+                            f" (emisión {dato['emision']:%d/%m/%Y}; todavía no cotiza)")
+
+
+def precio_bono(f: dict, fecha_precios: date | None, liquidacion: date, sufijo: str = "") -> tuple[float, str, date]:
+    """Precio de un bono para calcularlo: (precio, de dónde salió, liquidación a usar). Un bono que todavía no se
+    emitió (la liquidación de hoy es anterior a su emisión) va al precio de corte de la licitación, con la
+    liquidación en la fecha de emisión (decisión de Agustin, 27/11/2026)."""
+    if liquidacion < f["emision"]:
+        licitacion = precio_licitacion(f)
+        if licitacion is None:
+            raise ValueError(f"todavía no se emitió (emisión {f['emision']:%d/%m/%Y}) y no hay precio de corte cargado")
+        return licitacion[0], licitacion[1], f["emision"]
+    p, origen = precio(f["ticker"].upper() + sufijo, fecha_precios)
+    return p, origen, liquidacion
+
+
+def contexto_anterior(operacion: date) -> tuple[date, date, date]:
+    """Contexto del día hábil anterior a la operación (para las variaciones contra el cierre anterior)."""
+    anterior = feriados.sumar_dias_habiles(operacion, -1, CALENDARIO_HABILES)
+    return anterior, feriados.sumar_dias_habiles(anterior, PLAZO_LIQUIDACION, CALENDARIO_HABILES), anterior
+
+
 def datos_cer(f: dict, liquidacion: date) -> tuple[str, dict, float]:
     """CER corriente (10.º día hábil anterior a la liquidación) y CER inicial (10.º día hábil anterior a la
     emisión), ambos de la base propia de series: las fichas no traen valores de CER."""

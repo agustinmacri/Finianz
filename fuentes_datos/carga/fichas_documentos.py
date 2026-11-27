@@ -32,6 +32,10 @@ Resultados de licitación: de cada instrumento se lee qué se licitó (precio, t
    - La TEM o el margen de un instrumento nuevo completa su borrador (que después aprobás).
    - Si un bono que ya tiene ficha trae un dato de condiciones distinto del cargado, queda como CAMBIO PROPUESTO en
      renta_fija/fichas/borradores/cambios.toml; la ficha cambia solo si lo aplicás (aplicar <TICKER>).
+   - El precio de emisión de cada instrumento nuevo (el de corte, que viene por 1.000 VNO, o a la par si se licitó por
+     tasa o margen) queda en datos/licitaciones.json: hasta la liquidación, el bono entra a las curvas y a la
+     calculadora a ese precio, con la liquidación en la fecha de emisión (Agustin, 27/11/2026). A mano:
+     corte <TICKER> <precio por 100 VN o "par"> <emisión AAAA-MM-DD>.
 
 Desde la terminal:
     python -m fuentes_datos.carga.fichas_documentos leer <url o archivo>
@@ -44,6 +48,7 @@ Desde la terminal:
     python -m fuentes_datos.carga.fichas_documentos tickers                    (busca en PPI el ticker de los borradores sin ticker)
     python -m fuentes_datos.carga.fichas_documentos emision <clave> [--detalle] (busca y lee el documento de la primera emisión)
     python -m fuentes_datos.carga.fichas_documentos leer <URL> --solo <clave>  (de ese documento, solo los datos de ese bono)
+    python -m fuentes_datos.carga.fichas_documentos corte <TICKER> <precio por 100 VN | par> <emisión AAAA-MM-DD>
     python -m fuentes_datos.carga.fichas_documentos cambios
     python -m fuentes_datos.carga.fichas_documentos aplicar <TICKER> [campo]
     python -m fuentes_datos.carga.fichas_documentos rechazar <TICKER> [campo]
@@ -581,7 +586,7 @@ def leer(fuente: str, extractor=extraer_con_modelo, hoy: date | None = None, sol
     cambios = _leer_cambios()
     resumen = {"documento": documento.tipo_documento, "fecha": documento.fecha_documento, "ya_cargados": [],
                "vencidos": [], "nuevos": [], "completados": [], "sin_familia": [], "descartados": [],
-               "cortes": [], "cambios": [], "reaperturas": [], "avisos": []}
+               "cortes": [], "cambios": [], "reaperturas": [], "avisos": [], "precios_emision": []}
     for b in [b for b in borradores if _vencido(b, hoy)]:
         borradores.remove(b)
         resumen["vencidos"].append(f"{b['clave']} (borrador, venció el {b['vencimiento']:%d/%m/%Y})")
@@ -595,6 +600,9 @@ def leer(fuente: str, extractor=extraer_con_modelo, hoy: date | None = None, sol
             continue
         if corte:
             resumen["cortes"].append(corte)
+            emision_nueva = registrar_corte(ins, documento.fecha_documento, origen)
+            if emision_nueva and emision_nueva not in resumen["precios_emision"]:
+                resumen["precios_emision"].append(emision_nueva)
         if _vencido(ficha, hoy):
             resumen["vencidos"].append(f"{ticker or ins.nombre} (venció el {ficha['vencimiento']:%d/%m/%Y})")
             continue
@@ -641,6 +649,22 @@ def leer(fuente: str, extractor=extraer_con_modelo, hoy: date | None = None, sol
         for clave in resumen["reaperturas"]:
             resumen["avisos"].append(buscar_emision_original(clave, extractor=extractor, hoy=hoy))
     return resumen
+
+
+def registrar_corte(ins: "Instrumento", fecha_documento: str | None, origen: str) -> str | None:
+    """Guarda el precio de emisión de un instrumento nuevo de un resultado de licitación (datos/licitaciones.json).
+    Precio por 100 VN: el de corte (viene por 1.000 VNO) o a la par si se licitó por tasa o margen."""
+    from fuentes_datos.bases import licitaciones
+    ticker, emision = (ins.ticker or "").upper(), _fecha(ins.emision)
+    if ins.reapertura or not ticker or emision is None or (ins.valor_corte is None and ins.variable_licitada is None):
+        return None
+    if ins.variable_licitada == "precio" and ins.valor_corte is not None:
+        precio, a_la_par = ins.valor_corte / 10, False
+    else:
+        precio, a_la_par = None, True
+    licitaciones.guardar(ticker, emision, precio, a_la_par, origen, fecha_documento)
+    return (f"{ticker}: precio de emisión {'a la par' if a_la_par else _numero_ar(precio, 4) + ' por 100 VN'}, emisión "
+            f"{emision:%d/%m/%Y} (hasta la liquidación entra a las curvas a ese precio)")
 
 
 def _fecha_larga(d: date) -> str:
@@ -985,6 +1009,8 @@ def describir(resumen: dict) -> str:
     if resumen.get("cortes"):
         lineas.append("Resultado de la licitación: " + "; ".join(resumen["cortes"])
                       + ". Los precios de corte son datos de mercado: no cambian las fichas.")
+    if resumen.get("precios_emision"):
+        lineas.append("Precios de emisión guardados: " + "; ".join(resumen["precios_emision"]))
     if resumen.get("cambios"):
         lineas.append("Datos distintos de fichas ya aprobadas (cambios propuestos, la ficha NO cambia hasta que los apliques): "
                       + "; ".join(resumen["cambios"]))
@@ -1016,7 +1042,7 @@ def describir(resumen: dict) -> str:
 
 def main(argv: list[str]):
     if len(argv) < 1 or argv[0] not in ("leer", "pendientes", "aprobar", "descartar", "completar", "cambios",
-                                        "aplicar", "rechazar", "vincular", "tickers", "emision"):
+                                        "aplicar", "rechazar", "vincular", "tickers", "emision", "corte"):
         print(__doc__)
         return
     try:
@@ -1031,6 +1057,12 @@ def main(argv: list[str]):
             print(salida)
         elif argv[0] == "tickers":
             print("\n".join(actualizar_borradores()) or "Nada nuevo: no aparecieron tickers ni posibles duplicados.")
+        elif argv[0] == "corte":
+            from fuentes_datos.bases import licitaciones
+            par = argv[2].lower() == "par"
+            licitaciones.guardar(argv[1], date.fromisoformat(argv[3]), None if par else float(argv[2].replace(",", ".")),
+                                 par, "cargado a mano")
+            print(f"{argv[1].upper()}: precio de emisión {'a la par' if par else argv[2] + ' por 100 VN'}, emisión {argv[3]}.")
         elif argv[0] == "vincular":
             print(vincular(argv[1], argv[2]))
         elif argv[0] == "pendientes":
