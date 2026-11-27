@@ -830,7 +830,7 @@ if seccion == "Proyecciones":
     variable = st.radio("Variable", ["Inflación (CER)", "TAMAR", "Dólar oficial (A3500)", "Dólar MEP", "Dólar CCL"],
                         horizontal=True)
     clave = {"TAMAR": "tamar", "Dólar oficial (A3500)": "oficial", "Dólar MEP": "mep", "Dólar CCL": "ccl"}.get(variable)
-    opciones = {"Inflación (CER)": ["breakeven", "rem", "mensual:2%"], "TAMAR": ["rem", "actual", "tna:30%"],
+    opciones = {"Inflación (CER)": ["breakeven", "rem", "mensual:2%"], "TAMAR": ["rem", "breakeven", "actual", "tna:30%"],
                 "Dólar oficial (A3500)": ["rem", "breakeven", "mensual:1.5%"], "Dólar MEP": ["mensual:1.5%"],
                 "Dólar CCL": ["mensual:1.5%"]}[variable]
     if clave:

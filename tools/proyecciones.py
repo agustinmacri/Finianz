@@ -4,6 +4,10 @@ Fuentes de la TAMAR (TNA en fracción):
 - "actual": el promedio de los últimos 5 días hábiles publicados, plano (lo que usa la calculadora TAMAR).
 - "rem": la mediana mensual del último REM en los meses que trae y, después, su valor a 12 meses sin cambios.
 - "tna:<tasa>": una TNA plana (ej.: "tna:24%").
+- "breakeven": la que descuenta el mercado. Para cada bono TAMAR, la TAMAR promedio de sus días por publicar con
+  la que rinde lo mismo que la tasa fija a su plazo (breakeven.tamar_implicita); encadenando los bonos por el fin
+  de su ventana sale una TAMAR por tramo (constante entre el fin de una ventana y el de la siguiente) y, después del
+  último bono, la del último tramo.
 - "escenario:<nombre>": fuentes_datos/manuales/escenarios/tamar.toml.
 
 Fuentes del tipo de cambio (pesos por dólar), partiendo del valor de hoy:
@@ -95,7 +99,51 @@ def _escenario(variable: str, fuente: str) -> tuple[str, dict]:
 
 # --- TAMAR ---
 
-def camino_tamar(fuente: str, operacion: date):
+def _tamar_breakeven(operacion: date, fecha_precios: date | None = None):
+    """Camino de la TAMAR que descuenta el mercado (bonos TAMAR contra la tasa fija), por tramos entre los fines de
+    ventana de los bonos. (función mes -> TNA, descripción)."""
+    from renta_fija.calculadoras import motor
+    from tools import breakevens
+    liquidacion = mercado.feriados.sumar_dias_habiles(operacion, mercado.PLAZO_LIQUIDACION, mercado.CALENDARIO_HABILES)
+    familias = {"tasa_fija_capitalizable", "tasa_fija_descuento", "tasa_fija_cupon", "tamar_capitalizable"}
+    curvas, _, _ = breakevens._curvas(operacion, liquidacion, fecha_precios, familias)
+    puntos_tf = [(p["x"], p["tea"]) for p in curvas["tasa_fija"]]
+    implicitas = []                                          # (inicio de lo que falta, fin de ventana, TAMAR implícita)
+    for p in curvas["tamar"]:
+        tf = be.interpolar(puntos_tf, p["x"])
+        if tf is None or not p.get("a_estimar"):
+            continue
+        imp = be.tamar_implicita(tf, p["precio"], p["plazo"], motor.dias_30_360(p["emision"], p["vencimiento"]),
+                                 p["margen"], p["conocidas"], p["a_estimar"])
+        if imp is not None:
+            implicitas.append((p["desde_estimar"], p["fin_ventana"], imp))
+    if not implicitas:
+        raise ValueError("No alcanzan los bonos TAMAR y la tasa fija con precio para la TAMAR breakeven.")
+    inicio = min(i[0] for i in implicitas)
+    dias = lambda hasta: len(mercado.feriados.dias_habiles_entre(inicio, hasta, mercado.CALENDARIO_HABILES))
+    # Encadenado: la TAMAR del tramo entre el fin de una ventana y el de la siguiente
+    tramos, anterior_fin, anterior_suma, anterior_n = [], None, 0.0, 0
+    for _, fin, imp in sorted(implicitas, key=lambda i: i[1]):
+        n = dias(fin)
+        if n <= anterior_n:
+            continue
+        tramos.append((anterior_fin, fin, (imp * n - anterior_suma) / (n - anterior_n)))
+        anterior_fin, anterior_suma, anterior_n = fin, imp * n, n
+    ultimo = tramos[-1][2]
+
+    def del_dia(d: date) -> float:
+        return next((t for desde, hasta, t in tramos if (desde is None or d > desde) and d <= hasta), ultimo)
+    mensual = {}
+    for desde, hasta, _ in tramos:
+        for d in mercado.feriados.dias_habiles_entre(max(inicio, desde or inicio), hasta, mercado.CALENDARIO_HABILES):
+            mensual.setdefault((d.year, d.month), []).append(del_dia(d))
+    mensual = {m: sum(v) / len(v) for m, v in mensual.items()}
+    return (be.camino_con_resto(mensual, ultimo),
+            f"breakeven: la TAMAR implícita en los bonos TAMAR contra la tasa fija a su plazo, encadenada por tramos "
+            f"entre los fines de ventana ({len(tramos)} tramos); después del último, {pct(ultimo)}")
+
+
+def camino_tamar(fuente: str, operacion: date, fecha_precios: date | None = None):
     """(función mes -> TNA, descripción)."""
     if fuente == "actual":
         publicadas = db_series.entre("TAMAR", None, operacion.isoformat())[-5:]
@@ -112,6 +160,8 @@ def camino_tamar(fuente: str, operacion: date):
         return (be.camino_con_resto({m: v / 100 for m, v in mensual.items()}, doce / 100),
                 f"REM {relevamiento}: TAMAR mensual de {_mes(min(mensual))} a {_mes(max(mensual))} y después la de 12 meses "
                 f"({pct(doce / 100)})")
+    if fuente == "breakeven":
+        return _tamar_breakeven(operacion, fecha_precios)
     if fuente.startswith("tna:"):
         valor = leer_tasa(fuente.split(":", 1)[1])
         return (lambda mes: valor), f"TAMAR plana de {pct(valor)} TNA"
@@ -133,7 +183,8 @@ def camino_tamar(fuente: str, operacion: date):
         return (be.camino_con_resto(mensual, resto),
                 "camino de TAMAR indicado: " + ", ".join(f"{_mes(m)} {pct(v)}" for m, v in sorted(mensual.items()))
                 + f"; después {pct(resto)}")
-    raise ValueError("Fuente de TAMAR desconocida. Opciones: actual, rem, tna:<tasa>, camino:<meses>, escenario:<nombre>.")
+    raise ValueError("Fuente de TAMAR desconocida. Opciones: actual, rem, breakeven, tna:<tasa>, camino:<meses>, "
+                     "escenario:<nombre>.")
 
 
 def tamar_del_bono(f: dict, operacion: date, camino) -> tuple[float, dict]:
@@ -279,9 +330,9 @@ def _comparar(puntos_tf, dias) -> str:
     return pct(tf) if tf is not None else "fuera de la curva"
 
 
-def _otro_camino_tamar(fuente: str, operacion: date):
+def _otro_camino_tamar(fuente: str, operacion: date, fecha_precios: date | None = None):
     try:
-        return camino_tamar(fuente, operacion)[0]
+        return camino_tamar(fuente, operacion, fecha_precios)[0]
     except (ErrorAPI, ValueError):
         return None
 
@@ -292,7 +343,7 @@ def proyectar_tamar(fuente: str = "rem", ticker: str | None = None, fecha: str |
     from tools import caminos as tc
     try:
         operacion, liquidacion, fecha_precios = _contexto(fecha)
-        camino, descripcion = camino_tamar(fuente, operacion)
+        camino, descripcion = camino_tamar(fuente, operacion, fecha_precios)
         lista = [f for f in fichas.todas() if f["familia"] == "tamar_capitalizable" and liquidacion < f["vencimiento"]
                  and (ticker is None or f["ticker"].upper() == ticker.upper())]
         if not lista:
@@ -302,18 +353,19 @@ def proyectar_tamar(fuente: str = "rem", ticker: str | None = None, fecha: str |
         return f"Error: {e}"
     rem = camino if fuente == "rem" else _otro_camino_tamar("rem", operacion)
     actual = camino if fuente == "actual" else _otro_camino_tamar("actual", operacion)
+    mercado_be = camino if fuente == "breakeven" else _otro_camino_tamar("breakeven", operacion, fecha_precios)
 
     filas, fin = [], (operacion.year, operacion.month)
     for f in sorted(lista, key=lambda f: f["vencimiento"]):
         t = f["ticker"].upper()
         try:
             precio, _ = mercado.precio(t, fecha_precios)
-            r, d, tamar_bono, _ = tamar_proyectada(f, precio, liquidacion, operacion, camino)
+            r, d, tamar_bono, escala = tamar_proyectada(f, precio, liquidacion, operacion, camino)
             dias = mercado.feriados.dias_habiles_entre(d["desde_estimar"], d["fin"], mercado.CALENDARIO_HABILES)
             fin = max(fin, (d["fin"].year, d["fin"].month))
             promedio = lambda c: sum(c((x.year, x.month)) for x in dias) / len(dias) if dias and c else None
             tf = be.interpolar(puntos_tf, r["plazo_residual"])
-            implicita = (be.tamar_implicita(tf, precio, r["plazo_residual"], motor.dias_30_360(f["emision"], f["vencimiento"]),
+            implicita = (be.tamar_implicita(tf, precio / escala, r["plazo_residual"], motor.dias_30_360(f["emision"], f["vencimiento"]),
                                             f["margen"], d["conocidas"], d["a_estimar"]) if tf is not None else None)
             dual = " (dual: pata TAMAR)" if "DUAL" in f["tipo"].upper() else ""
             filas.append(f"{t}{dual} | {f['vencimiento']} | {tc.pct(promedio(camino))} | {tc.pct(promedio(rem))} | "
@@ -329,10 +381,13 @@ def proyectar_tamar(fuente: str = "rem", ticker: str | None = None, fecha: str |
     columnas = [tc.Columna(f"usada ({_titulo(fuente)})", camino, tc.promedio(camino))]
     if fuente != "rem":
         columnas.append(tc.Columna("REM", rem or (lambda mes: None), tc.promedio(rem or (lambda mes: None))))
+    if fuente != "breakeven":
+        columnas.append(tc.Columna("breakeven (mercado)", mercado_be or (lambda mes: None),
+                                   tc.promedio(mercado_be or (lambda mes: None))))
     if fuente != "actual":
         columnas.append(tc.Columna("actual (plana)", actual or (lambda mes: None), tc.promedio(actual or (lambda mes: None))))
-    texto.append("\nCamino de la TAMAR (TNA), el usado contra el REM y la TAMAR actual. El mercado no da un camino mes a mes: "
-                 "su contraste es la TAMAR implícita de cada bono en la tabla de arriba.")
+    texto.append("\nCamino de la TAMAR (TNA), el usado contra el REM, el breakeven del mercado (la TAMAR implícita de los "
+                 "bonos TAMAR contra la tasa fija, encadenada por tramos) y la TAMAR actual.")
     texto += tc.tabla("Mes", columnas, (operacion.year, operacion.month), fin, operacion.year, nota_anual="promedio")
     return "\n".join(texto)
 
@@ -456,11 +511,12 @@ PROYECTAR_TAMAR = {
     "name": "proyectar_tamar",
     "description": (
         "Rendimiento de los bonos TAMAR (y la pata TAMAR de los duales) con un camino de TAMAR: 'actual' (los últimos 5 "
-        "días, plana), 'rem' (mediana mensual del REM y después la de 12 meses), 'tna:<tasa>' (plana, ej.: 'tna:24%') o "
+        "días, plana), 'rem' (mediana mensual del REM y después la de 12 meses), 'breakeven' (la que descuenta el "
+        "mercado: bonos TAMAR contra la tasa fija, por tramos), 'tna:<tasa>' (plana, ej.: 'tna:24%') o "
         "'escenario:<nombre>'. Da la TAMAR del bono, el pago final, la TNA, la TEA y la tasa fija al mismo plazo."
     ),
     "parameters": {"type": "object", "properties": {
-        "fuente": {"type": "string", "description": "actual, rem, tna:<tasa>, camino:<meses> (TNA por mes y resto, ej.: camino:2026-12=24%;2027-01=23%;resto=21%) o escenario:<nombre> (por defecto, rem)"},
+        "fuente": {"type": "string", "description": "actual, rem, breakeven, tna:<tasa>, camino:<meses> (TNA por mes y resto, ej.: camino:2026-12=24%;2027-01=23%;resto=21%) o escenario:<nombre> (por defecto, rem)"},
         "ticker": {"type": "string", "description": "Un bono TAMAR puntual (opcional)"},
         "fecha": {"type": "string", "description": "Fecha de operación AAAA-MM-DD (opcional)"},
     }},

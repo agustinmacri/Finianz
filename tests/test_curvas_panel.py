@@ -149,9 +149,37 @@ def test_dual_con_pata_definida():
         mercado.datos_tamar, metricas.fichas_de = originales
 
 
+def test_tamar_breakeven_por_tramos():
+    """Camino de TAMAR breakeven: la implícita de cada bono es el promedio de sus días por publicar; encadenadas, dan
+    la TAMAR de cada tramo entre fines de ventana (y después del último, la del último tramo)."""
+    from datetime import timedelta
+    from tools import breakevens, proyecciones as pr
+    inicio = date(2026, 11, 17)
+    bono = lambda fin, imp: {"x": 100, "tea": 0.3, "precio": imp, "plazo": 100, "emision": date(2026, 1, 1),
+                             "vencimiento": fin + timedelta(days=14), "margen": 0.0, "conocidas": [0.3],
+                             "a_estimar": 10, "desde_estimar": inicio, "fin_ventana": fin}
+    curvas = {"tasa_fija": [{"x": 50, "tea": 0.3}, {"x": 400, "tea": 0.3}],
+              "tamar": [bono(date(2026, 12, 31), 0.30), bono(date(2027, 2, 26), 0.27)]}
+    habiles = lambda desde, hasta, calendario=None: [desde + timedelta(days=i) for i in range((hasta - desde).days + 1)
+                                                     if (desde + timedelta(days=i)).weekday() < 5]
+    originales = breakevens._curvas, pr.be.tamar_implicita, mercado.feriados.dias_habiles_entre, mercado.feriados.sumar_dias_habiles
+    breakevens._curvas = lambda *a, **k: (curvas, {}, [])
+    pr.be.tamar_implicita = lambda tf, precio, *a: precio          # en la prueba, la implícita es el "precio"
+    mercado.feriados.dias_habiles_entre = habiles
+    mercado.feriados.sumar_dias_habiles = lambda d, n, calendario=None: d + timedelta(days=n)
+    try:
+        camino, descripcion = pr.camino_tamar("breakeven", OPERACION)
+        n1, n2 = len(habiles(inicio, date(2026, 12, 31))), len(habiles(inicio, date(2027, 2, 26)))
+        segundo = (0.27 * n2 - 0.30 * n1) / (n2 - n1)
+        assert abs(camino((2026, 12)) - 0.30) < 1e-12 and abs(camino((2027, 2)) - segundo) < 1e-12
+        assert abs(camino((2028, 6)) - segundo) < 1e-12 and "2 tramos" in descripcion
+    finally:
+        breakevens._curvas, pr.be.tamar_implicita, mercado.feriados.dias_habiles_entre, mercado.feriados.sumar_dias_habiles = originales
+
+
 if __name__ == "__main__":
     for prueba in (test_series_duales_y_globales, test_precio_de_emision, test_exit_yield_desde_precio,
-                   test_spread_tamar_editable, test_dual_con_pata_definida):
+                   test_spread_tamar_editable, test_dual_con_pata_definida, test_tamar_breakeven_por_tramos):
         prueba()
         print("OK ", prueba.__name__)
     print("Todas las pruebas de curvas del panel pasaron.")
